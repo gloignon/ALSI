@@ -63,4 +63,4 @@ Behavior Research Methods, Instruments, & Computers, 36(1), 156-166.
 Stanké, B., Mené, M. L., Rezzonico, S., Moreau, A., Dumais, C.,
 Robidoux, J., ... & Royle, P. (2019). ÉQOL: Une nouvelle base de données
 québécoise du lexique scolaire du primaire comportant une échelle
-d’acquisition de l’orthographe lexicale. Corpus, (19). \## ALSI
+d’acquisition de l’orthographe lexicale. Corpus, (19).

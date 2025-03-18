@@ -238,4 +238,3 @@ docwise_graph_stats <- function(df_corpus) {
   
   return(df_result)
 }
-
