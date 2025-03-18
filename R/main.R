@@ -23,7 +23,7 @@ library(tidyverse)
 library(utf8)
 
 source('R/fnt_corpus.R', encoding = 'UTF-8')
-source('R/fnt_lexical_experimental.R', encoding = 'UTF-8')
+source('R/fnt_lexical.R', encoding = 'UTF-8')
 source('R/fnt_heights.R', encoding = 'UTF-8')
 source('R/fnt_counters.R', encoding = 'UTF-8')
 source('R/fnt_pos_surprisal.R', encoding = 'UTF-8')
@@ -65,14 +65,18 @@ features$simple_counts <- simple_count_features(features$parsed_corpus)
 # Verb tense counts
 features$verb_tenses <- verb_tense_features(features$parsed_corpus, features$simple_counts$doc_level_counts)
 
+# Lexical diversity indices
+features$lexical_diversity <- lexical_diversity_general(df = features$parsed_corpus, window_size = 50)
+
 # Syntactic depth/height
 features$heights <- batch_graph_stats(features$parsed_corpus)
 
 # Head final/initial tokens
 features$head_final <- head_final_initial(features$parsed_corpus)
 
-# Lexical diversity indices
-features$lexical_diversity <- lexical_diversity_general(df = features$parsed_corpus, window_size = 50)
+# More dependency tree related features
+features$syntactic <- extra_syntactic_features(features$parsed_corpus)
 
 # POS surprisal
 features$pos_surprisal <- pos_surprisal(features$parsed_corpus)
+
