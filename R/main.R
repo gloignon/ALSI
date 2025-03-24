@@ -27,8 +27,10 @@ source('R/fnt_lexical.R', encoding = 'UTF-8')
 source('R/fnt_heights.R', encoding = 'UTF-8')
 source('R/fnt_counters.R', encoding = 'UTF-8')
 source('R/fnt_pos_surprisal.R', encoding = 'UTF-8')
+source('R/fnt_extra_syntax.R', encoding = 'UTF-8')
+source('R/fnt_cohesion.R', encoding = 'UTF-8')
 
-corpus_dir <- "corpus/test/"  # this folder should contain your text files in .txt format
+corpus_dir <- "corpus/french_corpus_20240403/"  # this folder should contain your text files in .txt format
 
 udmodel_french <-
   udpipe_load_model(file = "models/french_gsd-remix_2.udpipe") #chargement du modèle linguistique
@@ -44,14 +46,12 @@ dt_flelex <- readRDS("lexical_dbs/dt_corpus_flelex.Rds")
 dt_txt <- constituerCorpus(corpus_dir)
 
 # Parse the files using udpipe
-dt_parsed_raw <- parserTexte(dt_txt)  # analyse lexicale avec udpipe, pourrait prendre quelques minutes...
+dt_parsed_raw <- parserTexte(dt_txt, nCores = 10)  # analyse lexicale avec udpipe, pourrait prendre quelques minutes...
 
 # # Edit the resulting dt
 features <- list(parsed_corpus = postTraitementLexique(dt_parsed_raw))  # post-traitement du corpus
-                 
 
 ## check for duplicated tokens in dt_parsed_edited
-# # dt_parsed_edited[duplicated(vraiTokenId)]
 # 
 # # Add lexical information ----
 features$lexical_db$eqol <- fuzzy_match_lexical_db(features$parsed_corpus, dt_eqol, prefix = "eqol")
@@ -69,14 +69,22 @@ features$verb_tenses <- verb_tense_features(features$parsed_corpus, features$sim
 features$lexical_diversity <- lexical_diversity_general(df = features$parsed_corpus, window_size = 50)
 
 # Syntactic depth/height
-features$heights <- batch_graph_stats(features$parsed_corpus)
-
-# Head final/initial tokens
-features$head_final <- head_final_initial(features$parsed_corpus)
+features$heights <- docwise_graph_stats(features$parsed_corpus)
 
 # More dependency tree related features
 features$syntactic <- extra_syntactic_features(features$parsed_corpus)
 
 # POS surprisal
 features$pos_surprisal <- pos_surprisal(features$parsed_corpus)
+
+# Lexical cohesion 
+features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
+
+# If you've got classes, now would be the time to add them to the features list
+# Get the class from doc_id - the part before the first underscore, without the g prefix
+# e.g. g01_pri_amélieetlesoeufs is class 01
+features$parsed_corpus[, class := as.numeric(str_extract(doc_id, "(?<=g)\\d+"))]
+
+# Save the features ----
+saveRDS(features, "corpus/french_corpus_20240403_features.Rds")
 

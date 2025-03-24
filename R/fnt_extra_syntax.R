@@ -51,6 +51,7 @@ extra_syntactic_features <- function(dt) {
       avg_clause_length = n() / (sum(is_clause_indicator, na.rm = T) + 1),
       complex_nom_per_sent = sum(is_complex_nominal, na.rm = T) / n_distinct(sentence_id),
       complex_verb_per_sent = sum(is_complex_verb, na.rm = T) / n_distinct(sentence_id),
+      verb_per_sent = sum(upos == "VERB", na.rm = T) / n_distinct(sentence_id),
       avg_dep_dist = mean(dep_dist, na.rm = T),
       avg_dep_count = mean(dep_count, na.rm = T)
     )
