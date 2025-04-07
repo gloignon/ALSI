@@ -34,9 +34,6 @@ compute_document_match <- function(dt) {
 }
 
 
-# View result
-View(result)
-
 # Aggregate the new features by doc_id
 simple_lexical_cohesion <- function(dt_corpus) {
 
