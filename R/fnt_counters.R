@@ -62,7 +62,7 @@ simple_count_features <- function(parsed_data, content_word_upos = c("NOUN", "VE
   
   # pivot the count and proportion table to wide, fill missing values with 0
   upos_counts <- dcast(upos_counts, doc_id ~ upos, value.var = c("count", "prop"), fill = 0)
-
+  
   # Add the UPOS distribution as part of the results
   results <- list(
     doc_level_counts = results,
@@ -73,49 +73,52 @@ simple_count_features <- function(parsed_data, content_word_upos = c("NOUN", "VE
 }
 
 # Function to calculate verb tense features
+# Function to calculate verb tense features
 verb_tense_features <- function(parsed_corpus, counts) {
   if (!is.data.table(parsed_corpus)) {
     stop("parsed_corpus must be a data.table.")
   }
   dt <- copy(parsed_corpus)
   
-  # make sure counts is also a dt
   if (!is.data.table(counts)) {
     stop("Counts must be a data.table.")
   }
- 
+  
   results_n <- dt[, .(
-    present_count = sum(feats == "Tense=Pres", na.rm = T),  # number of present tense verbs
-    past_count = sum(feats == "Tense=Past", na.rm = T),      # number of past tense verbs
-    future_count = sum(feats == "Tense=Fut", na.rm = T),     # number of future tense verbs
-    conditional_count = sum(feats == "Tense=Cond", na.rm = T),  # number of conditional tense verbs
-    subjunctive_count = sum(feats == "Mood=Sub", na.rm = T),    # number of subjunctive mood verbs
-    indicative_count = sum(feats == "Mood=Ind", na.rm = T),    # number of indicative mood verbs
-    imperative_count = sum(feats == "Mood=Imp", na.rm = T),    # number of imperative mood verbs
-    infinitive_count = sum(feats == "VerbForm=Inf", na.rm = T), # number of infinitive verbs
-    # past participles
-    past_participle_count = sum(feats == "VerbForm=Part" & feats == "Tense=Past", na.rm = T),
-    # present participles
-    present_participle_count = sum(feats == "VerbForm=Part" & feats == "Tense=Pres", na.rm = T),
-    # passé simple
-    past_simple_count = sum(feats == "Tense=Past" & feats == "Mood=Ind" & feats == "VerbForm=Fin", na.rm = T),
-    # passé composé
-    past_compose_count = sum(feats == "Tense=Past" & feats == "Mood=Ind" & feats == "VerbForm=Part", na.rm = T)
+    present_count = sum(grepl("Tense=Pres", feats), na.rm = TRUE),
+    past_count = sum(grepl("Tense=Past", feats), na.rm = TRUE),
+    future_count = sum(grepl("Tense=Fut", feats), na.rm = TRUE),
+    conditional_count = sum(grepl("Mood=Cnd", feats), na.rm = TRUE),
+    subjunctive_count = sum(grepl("Mood=Sub", feats), na.rm = TRUE),
+    indicative_count = sum(grepl("Mood=Ind", feats), na.rm = TRUE),
+    imperative_count = sum(grepl("Mood=Imp", feats), na.rm = TRUE),
+    infinitive_count = sum(grepl("VerbForm=Inf", feats), na.rm = TRUE),
+    past_participle_count = sum(grepl("VerbForm=Part", feats) & grepl("Tense=Past", feats), na.rm = TRUE),
+    present_participle_count = sum(grepl("VerbForm=Part", feats) & grepl("Tense=Pres", feats), na.rm = TRUE),
+    past_simple_count = sum(grepl("Tense=Past", feats) & grepl("Mood=Ind", feats) & grepl("VerbForm=Fin", feats), na.rm = TRUE)
   ), by = doc_id]
   
-
-  # to long
+  # Long format
   results_p <- melt(results_n, id.vars = "doc_id", variable.name = "feature", value.name = "count")
   
-  # Merge total counts into results_n for consistent alignment
+  # Merge word counts
   results_p <- merge(results_p, counts[, .(doc_id, word_count)], by = "doc_id", all.x = TRUE)
   
-  # calculate proportions
+  # Compute proportions
   results_p[, proportion := count / word_count]
   
-  # back to wide
+  # Wide format
   results_p <- dcast(results_p, doc_id + word_count ~ feature, value.var = "proportion")
-
-  return(list(counts = results_n, proportions = results_p))
   
+  # Rename columns from *_count → *_prop
+  setnames(
+    results_p,
+    old = setdiff(names(results_p), c("doc_id", "word_count")),
+    new = gsub("_count$", "_prop", setdiff(names(results_p), c("doc_id", "word_count")))
+  )
+  
+  # we no longer need the word_count column in results_p
+  results_p[, word_count := NULL]
+  
+  return(list(counts = results_n, proportions = results_p))
 }

@@ -61,7 +61,8 @@ encode_embeddings <- function(dt_corpus,
     n_sent_in_doc <- nrow(doc_dt)
     
     embeddings <- tryCatch({
-      emb_matrix <- embed_sentences(doc_dt$sentence, mode = mode, instruction = instruction, bs = batch_size)
+      emb_matrix <- embed_sentences(doc_dt$sentence, mode = mode, 
+                                    instruction = instruction, bs = batch_size)
       
       # Fix for 1D case (only one sentence)
       if (is.null(dim(emb_matrix))) {
@@ -96,7 +97,8 @@ encode_embeddings <- function(dt_corpus,
   
   # Optional: message if anything failed
   if (length(failed_docs)) {
-    message(sprintf("⚠️ Embedding failed for %d document(s): %s", length(failed_docs), paste(failed_docs, collapse = ", ")))
+    message(sprintf("⚠️ Embedding failed for %d document(s): %s", length(failed_docs), 
+                    paste(failed_docs, collapse = ", ")))
   }
   
   return(dt_embed)
@@ -109,7 +111,8 @@ corpus_embeddings <- function(dt_corpus,
                                 model_name = "Lajavaness/bilingual-embedding-large",
                                 mode = "basic",
                                 batch_size = 32,
-                                instruction = "Identifiez le thème principal et secondaire dans le texte.") {
+                                instruction = "Identifiez le thème principal et secondaire dans le texte."
+                              ) {
 
   dt_sentences <- as.data.table(dt_corpus)[
     , .(sentence = first(sentence)), by = .(doc_id, sentence_id)
@@ -130,7 +133,6 @@ corpus_embeddings <- function(dt_corpus,
     )
   
   return(result)
-  
 }
 
 
@@ -140,7 +142,6 @@ corpus_embeddings <- function(dt_corpus,
 #   dt_corpus = dt_corpus
 # )
 # 
-
 
 # PCA/UMAP ----
 # Load the pretrained models

@@ -5,13 +5,24 @@
 # 50% vikidia, the simple wikipedia equivalent).
 #
 
+#pos entropy
+# will compute the entropy of the POS tags
+# based on the trigram frequency table
+pos_entropy_table <- function(trigram_freq) {
+  dt <- as.data.table(copy(trigram_freq))
+  
+  dt_entropy <- dt[, .(
+    entropy = -sum(proportion * log2(proportion))
+  ), by = .(upos1, upos2)]
+  
+  return(dt_entropy)
+  
+}
 
-# Function to compute POS surprisal for a given corpus
-# back_off_coef: Backoff coefficient for bigram probabilities
-# i.e. for unseen trigrams it will use the bigram probability penalized by this coefficient
 compute_pos_surprisal <- function(dt,
                                   trigram_freq,
                                   backoff_coef = 0.4) {
+  
   # Ensure data is ordered by sentence and position
   setorder(dt, doc_id, sentence_id, position)
   
@@ -58,15 +69,13 @@ compute_pos_surprisal <- function(dt,
     all.x = TRUE
   )
   
-  # Apply bigram backoff coefficient
   dt[missing_trigrams, surprisal := ifelse(
     !is.na(bigram_data$proportion),
     backoff_coef * bigram_data$proportion,
-    NA_real_ # Keep NA for now to trigger the unigram backoff step
+    NA_real_
   )]
   
   # ---- Backoff to unigram if bigram is missing
-  # Create a unigram table from the bigram table 
   unigram_freq <- bigram_freq[, .(freq = sum(freq)), by = upos1]
   unigram_freq[, proportion := freq / sum(freq)]
   
@@ -79,64 +88,101 @@ compute_pos_surprisal <- function(dt,
     all.x = TRUE
   )
   
-  # Apply unigram backoff coefficient
   dt[missing_bigrams, surprisal := ifelse(
     !is.na(unigram_data$proportion),
     backoff_coef * unigram_data$proportion,
-    1e-6                                           # Final fallback probability
+    1e-6
   )]
   
-  # ---- Convert to log surprisal at the end
+  # ---- Convert to log surprisal
   dt[, log_surprisal := -log2(surprisal)]
   
   # ---- Clean up intermediate columns
-  dt[, c("surprisal", "upos1", "upos2") := NULL]
+  dt[, c("surprisal") := NULL]
+  
+  
+  # Optionally clean up if you want
+  # dt[is.na(entropy), entropy := 0]  # Fill NA if you want a default value
+  
+  # Final clean-up of upos1 and upos2 (optional)
+  # dt[, c("upos1", "upos2") := NULL]
   
   return(dt)
 }
 
+
 # Wrapper function to apply POS surprisal to a corpus
 pos_surprisal <- function(dt_corpus, trigram_freq = NA, backoff_coef = 0.4)  {
   
-  # ---- APPLY FUNCTION TO CORPUS ----
+  # make a copy to avoid modifying the original data
+  dt_corpus <- setDT(copy(dt_corpus))
+  
   # Load frequency table
-  # If the parameter is missing, load the default
   if (missing(trigram_freq)) {
-    trigram_freq <- readRDS("models/trigram_freq_500.Rds")  # Columns: upos1, upos2, upos3, freq, proportion
+    trigram_freq <- readRDS("models/trigram_freq_1860.Rds")  
   }
-
+  
   setkey(trigram_freq, upos1, upos2, upos3)
-
+  
   # Ensure corpus has a "position" column
   dt_corpus[, position := vrai_token_id]
   
-  k_pos <- length(unique(trigram_freq$upos1))
-  dt_corpus <- compute_pos_surprisal(dt_corpus, trigram_freq = trigram_freq, 
-                                     backoff_coef = .7)
+  # ---- Compute token-level surprisal and entropy
+  dt_corpus <- compute_pos_surprisal(
+    dt_corpus, 
+    trigram_freq = trigram_freq,
+    backoff_coef = backoff_coef
+  )
+  
+  # Add POS Entropy by 2-gram Context
+  dt_pos_entropy <- pos_entropy_table(trigram_freq)  # call your entropy function
+  dt_corpus <- merge(
+    dt_corpus,
+    dt_pos_entropy,
+    by = c("upos1", "upos2"),
+    all.x = TRUE
+  )
+  
+  # Add entropy reduction (current token entropy minus previous token entropy)
+  dt_corpus[, entropy_reduction := entropy - shift(entropy, type = "lag"), by = c("doc_id", "sentence_id")]
+  
+  # ---- Keep necessary columns
+  dt_pos_surprisal <- dt_corpus[, .(
+    doc_id,
+    sentence_id,
+    token_id,
+    vrai_token_id,
+    upos,
+    pos_surprisal = log_surprisal,
+    pos_entropy = entropy,
+    pos_entropy_reduction = entropy_reduction
+  )]
   
   
-  
-  dt_pos_surprisal <- dt_corpus %>% select(doc_id,
-                                           sentence_id,
-                                           token_id,
-                                           vrai_token_id,
-                                           upos,
-                                           pos_surprisal = log_surprisal)
-  
-  # By doc_id
+  # ---- Summarise by doc_id
   df_doc <- dt_pos_surprisal %>%
     filter(!is.na(upos) & !upos %in% c("X", "INTJ", "NUM", "SYM", "PUNCT")) %>%
     group_by(doc_id) %>%
-    summarise(mean_pos_surprisal = mean(pos_surprisal, na.rm = TRUE),
-              sd_pos_surprisal = sd(pos_surprisal, na.rm = TRUE)
+    summarise(
+      mean_pos_surprisal = mean(pos_surprisal, na.rm = TRUE),
+      sd_pos_surprisal = sd(pos_surprisal, na.rm = TRUE),
+      mean_pos_entropy = mean(pos_entropy, na.rm = TRUE),
+      sd_pos_entropy = sd(pos_entropy, na.rm = TRUE),
+      mean_pos_entropy_reduction = mean(pos_entropy_reduction, na.rm = TRUE),
+      sd_pos_entropy_reduction = sd(pos_entropy_reduction, na.rm = TRUE)
     )
   
-  # By doc_id and sentence_id
+  # ---- Summarise by doc_id and sentence_id
   df_doc_sent <- dt_pos_surprisal %>%
     filter(!is.na(upos) & !upos %in% c("X", "INTJ", "NUM", "SYM", "PUNCT")) %>%
     group_by(doc_id, sentence_id) %>%
-    summarise(mean_pos_surprisal = mean(pos_surprisal, na.rm = TRUE),
-              sd_pos_surprisal = sd(pos_surprisal, na.rm = TRUE)
+    summarise(
+      mean_pos_surprisal = mean(pos_surprisal, na.rm = TRUE),
+      sd_pos_surprisal = sd(pos_surprisal, na.rm = TRUE),
+      mean_pos_entropy = mean(pos_entropy, na.rm = TRUE),
+      sd_pos_entropy = sd(pos_entropy, na.rm = TRUE),
+      mean_pos_entropy_reduction = mean(pos_entropy_reduction, na.rm = TRUE),
+      sd_pos_entropy_reduction = sd(pos_entropy_reduction, na.rm = TRUE)
     )
   
   return(list(
@@ -144,5 +190,6 @@ pos_surprisal <- function(dt_corpus, trigram_freq = NA, backoff_coef = 0.4)  {
     sent_surprisal = df_doc_sent,
     token_surprisal = dt_pos_surprisal
   ))
-  
 }
+
+
