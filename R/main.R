@@ -14,7 +14,7 @@
 # 3. Lexical database merging
 # 4. More feature extraction
 #
-# Last update: 2025-03-14
+# Last update: 2025-04-08
 #
 
 library("data.table") #together forever...
@@ -51,19 +51,49 @@ dt_parsed_raw <- parserTexte(dt_txt, nCores = 10)  # analyse lexicale avec udpip
 # # Edit the resulting dt
 features <- list(parsed_corpus = postTraitementLexique(dt_parsed_raw))  # post-traitement du corpus
 
-## check for duplicated tokens in dt_parsed_edited
-# 
-# # Add lexical information ----
-features$lexical_db$eqol <- fuzzy_match_lexical_db(features$parsed_corpus, dt_eqol, prefix = "eqol")
-features$lexical_db$franqus <- fuzzy_match_lexical_db(features$parsed_corpus, dt_franqus, prefix = "franqus")
-features$lexical_db$manulex <- fuzzy_match_lexical_db(features$parsed_corpus, dt_manulex, prefix = "manulex")
-features$lexical_db$flelex <- fuzzy_match_lexical_db(features$parsed_corpus, dt_flelex, prefix = "flelex")
+#save the parsed corpus, in case you need to restart
+saveRDS(features, "corpus/french_corpus_parsed_raw.Rds")
+# features <- readRDS("corpus/french_corpus_parsed_raw.Rds")
 
 # Simple counts
 features$simple_counts <- simple_count_features(features$parsed_corpus)
 
 # Verb tense counts
 features$verb_tenses <- verb_tense_features(features$parsed_corpus, features$simple_counts$doc_level_counts)
+
+# # Add lexical information ----
+features$lexical_db$eqol_imp <- add_lexical_freq_with_imputation(
+  parsed_corpus = features$parsed_corpus,
+  lexical_db = dt_eqol,
+  prefix = "eqol",
+  freq_col = "freq_u",
+  mode = "u"
+)
+features$lexical_db$manulex_imp <- add_lexical_freq_with_imputation(
+  parsed_corpus = features$parsed_corpus,
+  lexical_db = dt_manulex,
+  prefix = "manulex",
+  freq_col = "freq_u",
+  mode = "u"
+)
+features$lexical_db$flelex_imp <- add_lexical_freq_with_imputation(
+  parsed_corpus = features$parsed_corpus,
+  lexical_db = dt_flelex,
+  prefix = "flelex",
+  freq_col = "freq_u",
+  mode = "u"
+)
+features$lexical_db$franqus_imp <- add_lexical_freq_with_imputation(
+  parsed_corpus = features$parsed_corpus,
+  lexical_db = dt_franqus,
+  prefix = "franqus",
+  freq_col = "freq_u",
+  mode = "u"
+)
+features$lexical_db$eqol <- fuzzy_match_lexical_db(features$parsed_corpus, dt_eqol, prefix = "eqol")
+features$lexical_db$franqus <- fuzzy_match_lexical_db(features$parsed_corpus, dt_franqus, prefix = "franqus")
+features$lexical_db$manulex <- fuzzy_match_lexical_db(features$parsed_corpus, dt_manulex, prefix = "manulex")
+features$lexical_db$flelex <- fuzzy_match_lexical_db(features$parsed_corpus, dt_flelex, prefix = "flelex")
 
 # Lexical diversity indices
 features$lexical_diversity <- lexical_diversity_general(df = features$parsed_corpus, window_size = 50)
@@ -80,11 +110,10 @@ features$pos_surprisal <- pos_surprisal(features$parsed_corpus)
 # Lexical cohesion 
 features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
 
-# If you've got classes, now would be the time to add them to the features list
-# Get the class from doc_id - the part before the first underscore, without the g prefix
-# e.g. g01_pri_amélieetlesoeufs is class 01
+# If you've got classes (e.g. school grades), now would be the time to add them to 
+# the features list.
 features$parsed_corpus[, class := as.numeric(str_extract(doc_id, "(?<=g)\\d+"))]
 
 # Save the features ----
-saveRDS(features, "corpus/french_corpus_20240403_features.Rds")
+saveRDS(features, "corpus/french_corpus_20250430_features.Rds")
 

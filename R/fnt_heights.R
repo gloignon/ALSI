@@ -6,60 +6,6 @@
 library(data.table)
 library(igraph)
 
-# nouvelle méthode, printemps 2022
-# beaucoup plus rapide
-sentenceHeight <- function(dt, verbose = TRUE) {
-  
-  # if dt is not data.table, make it so
-  if (!is.data.table(dt)) {
-    dt <- as.data.table(dt)
-  }
-  
-  dt_corpus_temp <- copy(dt[!upos %in% c("PUNCT", NA)])
-  # for each combination of doc_id and sentence_id....
-  dt_corpus_temp[, idPhrase := paste(doc_id, paragraph_id, sentence_id)]
-  
-  climbATree <- function(phrase) {
-    # j'initialise la liste avec les mots qui dépendent directement du root
-    root_id <- phrase[head_token_id == 0, token_id ]
-    if(length(root_id) == 0) { # root pas trouvé
-      return (1)
-    }
-    tree_heigth <- 1
-    phrase[, estParent := token_id %in% phrase$head_token_id]
-    liste_check <- phrase[head_token_id == root_id, .(token_id, estParent, head_token_id) ]
-    height_found <- FALSE
-    
-    while(nrow(liste_check > 0)) {
-      tree_heigth <- tree_heigth + 1
-      # je limite la liste aux mots qui ont effectivement des descendants
-      liste_check <- liste_check[estParent == TRUE]
-      
-      # je remplis une liste de mots dont je veux vérifier la descendance
-      liste_check <- phrase[head_token_id %in% liste_check$token_id, .(token_id, estParent, head_token_id) ]
-    }
-    
-    return(tree_heigth)
-  }
-  
-  df_depths <- data.frame(idPhrase = unique(dt_corpus_temp$idPhrase), sentenceDepth = NA, sentence_id = NA, doc_id = NA)
-  for (id in unique(dt_corpus_temp$idPhrase)) {
-    cur_phrase <- dt_corpus_temp[idPhrase == id] 
-    # if cur_phrase is the first of its doc_id, message the doc_id
-    if (verbose) {
-      if (cur_phrase$sentence_id[1] == 1) {
-        message("Calcul de la hauteur des phrases pour le document ", cur_phrase$doc_id[1])
-      }
-    }
-    # write to results
-    df_depths[df_depths$idPhrase == id, "sentenceDepth"] <- climbATree(cur_phrase)
-    df_depths[df_depths$idPhrase == id, "sentence_id"] <- cur_phrase$sentence_id[1]
-    df_depths[df_depths$idPhrase == id, "doc_id"] <- cur_phrase$doc_id[1]
-  }
-  
-  return(df_depths)
-}
-
 # new code using igraph
 sentence_graph_stats <- function(dt_sentence, verbose = FALSE) {
   
@@ -117,91 +63,64 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE) {
   ))
 }
 
-# Head final or head initial tokens
+
 head_final_initial <- function(df) {
   
-  df$temp_global_id <- 1:nrow(df)
+  df <- as.data.table(df)
+  df[, temp_global_id := .I]  # Preserve original row order
   
-  df_copy <- df
+  df_copy <- copy(df)
   
-  # remove punctuation and tokens without a token_id or head_token_id
-  df <- df %>% filter(!is.na(token_id) & !is.na(head_token_id) & 
-                        !(upos == "PUNCT"))
-  
-  df$token_id <- as.numeric(df$token_id)
-  df$head_token_id <- as.numeric(df$head_token_id)
-  
-  df <- df %>% group_by(doc_id, paragraph_id, sentence_id) %>% 
-    mutate(head_final = if_else(head_token_id > token_id, TRUE, FALSE, missing = NA),
-           head_initial = if_else(head_token_id < token_id, TRUE, FALSE, missing = NA))
-  
-  # find rows in df_copy that are not in df and add them back to df
-  df_lost <- df_copy %>% 
-    anti_join(df, by = "temp_global_id")
-  
-  # token_id and head_token_id back to char
-  df$token_id <- as.character(df$token_id)
-  df$head_token_id <- as.character(df$head_token_id)
-  
-  # add back, and sort
-  df <- rbind(df, df_lost) %>% arrange(temp_global_id)
-  
-  # select what we need only for the output
-  df_result <- df %>%
-    select(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial)
-  return(df_result)
-}
-
-# Will accept a whole corpus and batch process the sentences
-# Batch processing function
-batch_graph_stats <- function(dt, verbose = FALSE) {
-  
-  # If data is not data.table, convert it
-  if (!is.data.table(dt)) {
-    dt <- as.data.table(dt)
-  }
-  
-  # Clean token list
-  dt <- dt[!is.na(head_token_id) & !is.na(token_id) & !(upos == "PUNCT")]
-  
-  # Make a unique sentence identifier
-  dt[, unique_sentence_id := paste(doc_id, paragraph_id, sentence_id, sep = "___")]
-  
-  # Vector of unique sentence identifiers
-  v_sentences <- unique(dt$unique_sentence_id)
-  n_sentence <- length(v_sentences)
-  
-  # Initialize a list to store results
-  results <- vector("list", n_sentence)
-  
-  # Loop through each sentence
-  for (i in seq_len(n_sentence)) {
-    # Get the current sentence
-    sentence <- dt[unique_sentence_id == v_sentences[i]]
+  # Filter valid rows and compute booleans
+  df_valid <- df[!is.na(token_id) & !is.na(head_token_id) & upos != "PUNCT", {
+    token_id_num <- as.numeric(token_id)
+    head_token_id_num <- as.numeric(head_token_id)
     
-    # Get sentence identifiers
-    doc_id <- sentence$doc_id[1]
-    paragraph_id <- sentence$paragraph_id[1]
-    sentence_id <- sentence$sentence_id[1]
-    
-    # Get the sentence graph stats
-    stats <- sentence_graph_stats(dt_sentence = sentence, verbose = verbose)
-    
-    # Add the stats to the results list
-    results[[i]] <- data.table(
+    list(
       doc_id = doc_id,
       paragraph_id = paragraph_id,
       sentence_id = sentence_id,
-      max_path = stats$max_path,
+      token_id = token_id,
+      head_final = head_token_id_num > token_id_num,
+      head_initial = head_token_id_num < token_id_num,
+      temp_global_id = temp_global_id
+    )
+  }]
+  
+  # Rows that were excluded in filtering
+  df_lost <- df_copy[!temp_global_id %in% df_valid$temp_global_id, 
+                     .(doc_id, paragraph_id, sentence_id, token_id, head_final = NA, head_initial = NA, temp_global_id)]
+  
+  # Combine and restore original order
+  df_result <- rbindlist(list(df_valid, df_lost), use.names = TRUE, fill = TRUE)
+  setorder(df_result, temp_global_id)
+  
+  # Return selected columns
+  df_result[, .(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial)]
+}
+
+
+# This function will batch process sentence height/depth calculations
+# Uses data.table for efficient processing.
+# Note: in current version, we let data.table print progress messages even
+# if verbose = FALSE
+batch_graph_stats <- function(dt_corpus, verbose = FALSE) {
+  
+  dt <- as.data.table(copy(dt_corpus))  # ensure dt is a data.table and safely copied
+  
+  # Filter and create sentence ID
+  dt <- dt[!is.na(head_token_id) & !is.na(token_id) & upos != "PUNCT"]
+  dt[, unique_sentence_id := paste(doc_id, paragraph_id, sentence_id, sep = "___")]
+  
+  # Apply sentence_graph_stats by sentence using data.table's grouping
+  results <- dt[, {
+    stats <- sentence_graph_stats(.SD, verbose = verbose)
+    .(max_path = stats$max_path,
       avg_path = stats$avg_path,
       count_path = stats$count_path,
       sentence_length = stats$sentence_length,
-      adj_max_path = stats$adj_max_path
-    )
-  }
-  
-  # Combine list of results into a single data.table
-  results <- rbindlist(results, use.names = TRUE, fill = TRUE)
+      adj_max_path = stats$adj_max_path)
+  }, by = .(doc_id, paragraph_id, sentence_id)]
   
   return(results)
 }
@@ -210,6 +129,18 @@ batch_graph_stats <- function(dt, verbose = FALSE) {
 # computing height & height final stats
 docwise_graph_stats <- function(df_corpus) {
   
+  df_corpus <- copy(df_corpus)
+  
+  message("Head final/initial...")
+  df_head_final <- head_final_initial(df_corpus)
+  sum_head_final <- df_head_final %>% 
+    group_by(doc_id) %>% 
+    summarise(
+      prop_hf = sum(head_final, na.rm = T) / n(),
+      prop_hi = sum(head_initial, na.rm = T) / n()
+    )  
+  
+  message("Heights...")
   df_heights <- batch_graph_stats(df_corpus, verbose = FALSE)
   
   sum_heights <- df_heights %>% 
@@ -224,14 +155,6 @@ docwise_graph_stats <- function(df_corpus) {
     mutate(
       avg_path = (1 / (n - s)) * total_paths
     )
-  
-  df_head_final <- head_final_initial(df_corpus)
-  sum_head_final <- df_head_final %>% 
-    group_by(doc_id) %>% 
-    summarise(
-      prop_hf = sum(head_final, na.rm = T) / n(),
-      prop_hi = sum(head_initial, na.rm = T) / n()
-    )  
   
   # merge 
   df_result <- merge(sum_heights, sum_head_final, by = "doc_id")

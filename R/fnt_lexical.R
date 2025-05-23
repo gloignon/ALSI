@@ -100,6 +100,129 @@ fuzzy_match_lexical_db <- function(dt_corpus, dt_lexical,
   return(dt_merged)
 }
 
+
+
+# Good-Turing frequency estimation ----
+
+# This function will accept a lexical db (dt_lexical) and
+# either a column name for the raw frequency or a column name for the frequency
+# per million.
+# It will return a named vector with N and N1
+lexical_db_stats <- function(dt_lexical, freq = "freq", freq_u = "freq_u") {
+  # Check if the provided column names exist in the data
+  freq_col_exists <- freq %in% names(dt_lexical)
+  freq_u_col_exists <- freq_u %in% names(dt_lexical)
+  
+  if (!freq_col_exists && !freq_u_col_exists) {
+    stop("Neither the 'freq' nor the 'freq_u' column was found in dt_lexical.")
+  }
+  
+  # Determine which column to use
+  if (freq_col_exists) {
+    v_freq <- dt_lexical[[freq]]
+  } else {
+    v_freq <- dt_lexical[[freq_u]] * 1e6  # Convert freq per million to raw counts
+  }
+  
+  # Calculate total tokens (N) and hapax legomena (N1)
+  N_token <- sum(v_freq, na.rm = TRUE)
+  min_freq <- min(v_freq, na.rm = TRUE)
+  N1_token <- sum(v_freq == min_freq, na.rm = TRUE)
+  
+  # Return a named numeric vector
+  return(data.frame(N = N_token, N1 = N1_token))
+}
+
+# Putting it all together: will merge lexical frequencies of the specified
+# database, and then apply Good-Turing smoothing to the result.
+# Number of tokens (N_token) and hapax legomena (N1_token) can be fed explicitely
+# to the function, otherwise will be computed from the lexical database.
+add_lexical_freq_with_imputation <- function(parsed_corpus,
+                                             lexical_db,
+                                             prefix = "",
+                                             freq_col = "freq",
+                                             mode = "raw",  # or "u"
+                                             N_token = NULL,
+                                             N1_token = NULL) {
+  stopifnot("doc_id" %in% names(parsed_corpus))
+  stopifnot("token" %in% names(parsed_corpus))
+  stopifnot(freq_col %in% names(lexical_db))
+  stopifnot(mode %in% c("raw", "u"))
+  
+  # Step 1: Merge lexical database using our "fuzzy" algorithm
+  matched <- fuzzy_match_lexical_db(parsed_corpus, lexical_db, prefix = prefix)
+  
+  # Step 2: Compute N and N1 if not provided
+  if (is.null(N_token) || is.null(N1_token)) {
+    # Get vector of usable frequencies
+    freq_vec <- lexical_db[[freq_col]]
+    if (mode == "u") {
+      freq_vec <- freq_vec * 1e6
+    }
+    
+    # Clean and calculate stats
+    N_token <- if (is.null(N_token)) sum(freq_vec, na.rm = TRUE) else N_token
+    min_freq <- min(freq_vec, na.rm = TRUE)
+    N1_token <- if (is.null(N1_token)) sum(freq_vec == min_freq, na.rm = TRUE) else N1_token
+  }
+  
+  # Step 3: Apply Good-Turing smoothing
+  count_col <- paste0(prefix, "_", freq_col)
+  matched <- good_turing_smoothing(
+    dt = matched,
+    count_col = count_col,
+    N_token = N_token,
+    N1_token = N1_token,
+    output_name = paste0(prefix, "_", freq_col, "_imputed")
+  )
+  
+  return(matched)
+}
+
+
+# This is used to impute missing frequencies from lexical databases.
+# N_token is number of tokens that were parsed to create the frequency database.
+# N1_token is the number of hapax legomena (tokens that occur only once).
+# mode indicates if we are sending raw counts ("raw") or frequencies per million ("u").
+good_turing_smoothing <- function(dt, count_col, mode = "raw", N_token, N1_token, output_name = NULL) {
+  stopifnot("doc_id" %in% names(dt))
+  stopifnot(count_col %in% names(dt))
+  stopifnot(mode %in% c("raw", "u"))  # "u" = freq per million
+  
+  dt <- copy(dt)  # work on a copy
+  
+  # Step 1: Normalize user-provided frequency if needed
+  dt[, freq_impute := if (mode == "u") .SD[[1]] * N_token / 1e6 else .SD[[1]], .SDcols = count_col]
+  
+  # Step 2: Count missing values per document
+  doc_info <- dt[is.na(freq_impute), .N, by = doc_id]
+  setnames(doc_info, "N", "n_missing")
+  
+  # Step 3: Compute imputed value
+  doc_info[, imputed_value := ifelse(n_missing > 0, N1_token / n_missing, 0)]
+  
+  # Step 4: Merge and impute
+  dt <- merge(dt, doc_info[, .(doc_id, imputed_value)], by = "doc_id", all.x = TRUE, sort = FALSE)
+  dt[is.na(freq_impute), freq_impute := imputed_value]
+  
+  # Step 5: Convert back to user scale if needed
+  if (mode == "u") {
+    dt[, freq_impute := freq_impute * 1e6 / N_token]
+  }
+  
+  # Step 6: Rename result column
+  if (!is.null(output_name)) {
+    setnames(dt, "freq_impute", output_name)
+  }
+  
+  # Clean up helper
+  dt[, imputed_value := NULL]
+  
+  return(dt)
+}
+
+
+
 # Lexical diversity -----
 # TTR function can accept a different vector for types,
 # adding some flexibility, e.g. for using lemmas as types
@@ -136,7 +259,6 @@ calculate_moving_TTR <- function(tokens, window_size = 50) {
   return(mean_ttr)
 }
 
-
 # will calculate maas index from provided vectors of tokens and types 
 calculate_maas <- function(tokens, types) {
   n_token <- length(tokens)
@@ -160,7 +282,6 @@ D_measure_from_tokens <- function(tokens) {
   
   return(D)
 }
-
 
 # General function for lexical diversity indexes, will call the specific functions
 lexical_diversity_general <- function(df,

@@ -1,66 +1,80 @@
-constituerCorpus <- function (dossier, verbose = FALSE) {
-  #TODO: explorer une solution (avec quanteda?) qui permettrait aussi de prendre un corpus en .zip
-  #dossier = "./textes/textes_items_peloquin" 
-  if (dir.exists(dossier)) {  # dossier existe
-    chemins <- list.files(path=dossier, full.names = TRUE) #liste des fichiers avec le "path"
-    message("constituerCorpus | C'est un dossier!")
-    n <- length(chemins) #le nombre de textes dans le dossier 
+# This script contains functions for processing and analyzing text data.
+library(data.table)
+library(tidyverse)
+library(utf8)
+library(udpipe)
+
+constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
+  if (dir.exists(dossier)) {
+    chemins <- list.files(path = dossier, full.names = TRUE)
+    if (verbose) message("constituerCorpus | C'est un dossier!")
+  } else if (file_test("-f", dossier)) {
+    chemins <- normalizePath(dossier)
   } else {
-    if (file_test("-f", dossier)) {  # si c'est finalement un fichier
-      chemins <- paste(getwd(), dossier, sep="/")
-      n <- 1
-    } else {
-      message("constituerCorpus | dossier ou fichier inexistant \n")
-      return()
-    }
+    stop("constituerCorpus | dossier ou fichier inexistant")
   }
   
-  dt_corpus <- data.table ( #initialisation
-    doc_id = basename(chemins),
-    text = ""
-  )
-  
-  for (i in (1:n)) {
-    if (verbose == TRUE) {message("working on ", chemins[i])}
-    contenu <- read_file(chemins[i])
+  nettoyerTexte <- function(chemin) {
+    if (verbose) message("working on ", chemin)
+    contenu <- read_file(chemin)
     contenu <- utf8_normalize(contenu, map_quote = TRUE)
     
-    contenu <- gsub("\\\\", "", contenu) # correction pour les slash (SATO)
+    # Remove backslashes
+    contenu <- gsub("\\\\", "", contenu)
     
-    contenu <- gsub("\r?\n(?!\r?\n)", " ", contenu, perl = T)  # remove unwanted line breaks (we replace by a space)
-    contenu <- gsub("(\\r?\\n)\\s+", "\\1", contenu) # remove leading spaces at the beginning new lines
+    # Preserve true paragraph breaks (double line breaks), only remove single ones
+    contenu <- gsub("\r?\n(?=[^\r\n])", " ", contenu, perl = TRUE)  # single line breaks → space
+    contenu <- gsub("(\\r?\\n)\\s+", "\\1", contenu)                # remove space at beginning of line
+    contenu <- str_replace_all(contenu, "\r", "")                   # normalize returns
+    contenu <- str_replace_all(contenu, "\n{3,}", "\n\n")           # max two line breaks
     
-    contenu <- str_replace_all(contenu, "’", "'") # correction pour le type d'apostrophes
-    contenu <- str_replace_all(contenu, "''", "'") # fix double apostrophe
-    contenu <- str_replace_all(contenu, "«", " « ") # UDpipe est fussy pour les guillemets il aime un espace
-    contenu <- str_replace_all(contenu, "»", " » ") # UDpipe est fussy pour les guillemets il aime un espace
-    contenu <- str_replace_all(contenu, "!", "! ") #      
-    contenu <- str_replace_all(contenu, ";", " ; ") #
-    contenu <- str_replace_all(contenu, ":", " : ") #
+    # Clean punctuation
+    contenu <- str_replace_all(contenu, "’", "'")
+    contenu <- str_replace_all(contenu, "''", "'")
+    contenu <- str_replace_all(contenu, "«", " « ")
+    contenu <- str_replace_all(contenu, "»", " » ")
+    contenu <- str_replace_all(contenu, "!", "! ")
+    contenu <- str_replace_all(contenu, ";", " ; ")
+    contenu <- str_replace_all(contenu, ":", " : ")
+    contenu <- gsub("\\.(?=[A-Za-zÀÉÈÙ0-9])", ". ", contenu, perl = TRUE)
+    contenu <- gsub("\\,(?=[A-Za-zÀÉÈÙ0-9])", ", ", contenu, perl = TRUE)
+    contenu <- gsub("\\)(?=[A-Za-zÀÉÈÙ0-9])", ") ", contenu, perl = TRUE)
     
-    contenu <- gsub("\\.(?=[A-Za-z1-9ÀÉÇ-])", ". ", contenu, perl = TRUE)   # fix point sans espace
-    contenu <- gsub("\\,(?=[A-Za-z1-9])", ", ", contenu, perl = TRUE)  # fix virgule sans espace
-    contenu <- gsub("\\)(?=[A-Za-z1-9])", ") ", contenu, perl = TRUE)  # fix par fermante suivi d'une lettre ou chiffre
+    # Clean extra spaces
+    contenu <- str_replace_all(contenu, " {3,}", "  ")
+    contenu <- str_replace_all(contenu, " {2}", " ")
     
-    # contenu <- str_replace_all(contenu, "   ", " ") # triple espace
-    # contenu <- str_replace_all(contenu, "  ", " ") # double espace
-    contenu <- str_remove_all(contenu, fixed("**")) # retrait des marques ** dans les documents SATO
-    contenu <- str_remove_all(contenu, fixed("**")) # retrait des marques ** dans les documents SATO
-    
-    contenu <- str_replace_all(contenu, "   ", " ") # retrait triple espace
-    contenu <- str_replace_all(contenu, "  ", " ") # retrait double espace
-    
-    
-    #gsub("/’", "/'", contenu, ignore.case = TRUE)
-    dt_corpus[i, "text"] <- contenu
+    return(contenu)
   }
-  return (dt_corpus)
+  
+  # Create corpus
+  dt_corpus <- data.table(
+    doc_id = basename(chemins),
+    text = if (clean) unlist(lapply(chemins, nettoyerTexte)) else unlist(lapply(chemins, function(p) {
+      utf8_normalize(read_file(p), map_quote = TRUE)
+    }))
+  )
+  
+  return(dt_corpus)
 }
 
-parserTexte <- function(txt, nCores = 1) {
-  #txt <- str_replace_all(txt, "’", "'") #correction pour les apostrophes
-  #note : on fait maintenant ce remplacement dans une autre fonction, ConstituerCorpus
-  parsed <- udpipe(x = txt, object = udmodel_french, trace = TRUE, parallel.cores = nCores)
+
+
+parserTexte <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", nCores = 1) {
+  
+  # Check if the model file exists
+  if (!file.exists(ud_model)) {
+    stop(paste("UDPipe model not found at:", ud_model))
+  }
+  
+  # Try to load the model safely
+  model <- tryCatch({
+    udpipe::udpipe_load_model(file = ud_model)
+  }, error = function(e) {
+    stop("Failed to load UDPipe model: ", e$message)
+  })
+  
+  parsed <- udpipe(x = txt, object = model, trace = TRUE, parallel.cores = nCores)
   parsed <- as.data.table(parsed)
   return(parsed)
 }
@@ -136,3 +150,4 @@ postTraitementLexique <- function(dt) {
   
   return(parsed.post)
 }
+

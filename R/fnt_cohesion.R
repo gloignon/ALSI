@@ -20,19 +20,82 @@ compute_next_sentence_match <- function(dt) {
 }
 
 compute_document_match <- function(dt) {
-
   # Order by document, sentence, and token position
   setorder(dt, doc_id, sentence_id, token_id)
   
-  # Self-join to find matches in a different sentence within the same document
-  dt[, match_in_doc := FALSE]
+  # Compute total tokens and token frequency in the document
+  dt[, total_tokens := .N, by = .(doc_id)]
+  dt[, token_freq := .N, by = .(doc_id, token)]
   
-  dt[dt, on = .(doc_id, token), 
-       match_in_doc := sentence_id != i.sentence_id]
+  # Compute token count and token proportion *outside* the current sentence
+  dt[, tokens_in_sentence := .N, by = .(doc_id, sentence_id)]
+  dt[, token_in_sentence := .N, by = .(doc_id, sentence_id, token)]
+  
+  dt[, token_outside_sentence := token_freq - token_in_sentence]
+  dt[, tokens_outside_sentence := total_tokens - tokens_in_sentence]
+  
+  # Proportion of target token in the rest of the document
+  dt[, normalized_match := token_outside_sentence / tokens_outside_sentence]
+  
+  # Handle edge cases (division by zero)
+  dt[is.nan(normalized_match) | is.infinite(normalized_match), normalized_match := 0]
+
   
   return(dt)
 }
 
+compute_similarity <- function(vec1, vec2, method = "cosine") {
+  # Create binary presence/absence vectors
+  unique_tokens <- unique(c(vec1, vec2))
+  binary_vec1 <- as.integer(unique_tokens %in% vec1)
+  binary_vec2 <- as.integer(unique_tokens %in% vec2)
+  
+  if (method == "cosine") {
+    # Cosine similarity
+    similarity <- sum(binary_vec1 * binary_vec2) /
+      (sqrt(sum(binary_vec1^2)) * sqrt(sum(binary_vec2^2)))
+  } else if (method == "jaccard") {
+    # Jaccard similarity
+    intersection <- sum(binary_vec1 * binary_vec2)
+    union <- sum(binary_vec1 | binary_vec2)
+    similarity <- intersection / union
+  } else {
+    stop("Invalid method. Use 'cosine' or 'jaccard'.")
+  }
+  
+  return(similarity)
+}
+
+compute_sentence_similarity <- function(dt, method = "cosine") {
+  # Ensure data.table is ordered by document and sentence position
+  setorder(dt, doc_id, sentence_id, token_id)
+  
+  # Group tokens by sentence (collapse tokens into a single string)
+  sentence_tokens <- dt[, .(tokens = paste(token, collapse = " ")), by = .(doc_id, sentence_id)]
+  
+  # Use shift on the collapsed token strings
+  sentence_tokens[, tokens_next := shift(tokens, type = "lead"), by = doc_id]
+  
+  # Drop last row of each document (since it won't have a next pair)
+  sentence_tokens <- sentence_tokens[!is.na(tokens_next)]
+  
+  # Split strings back into token vectors
+  sentence_tokens[, tokens := strsplit(tokens, " ")]
+  sentence_tokens[, tokens_next := strsplit(tokens_next, " ")]
+  
+  # Compute similarity for each pair of adjacent sentences
+  sentence_tokens[, similarity := mapply(
+    compute_similarity,
+    tokens,
+    tokens_next,
+    MoreArgs = list(method = method)
+  )]
+  
+  # Return as a clean data table
+  result <- sentence_tokens[, .(doc_id, sentence_id, similarity)]
+  
+  return(result)
+}
 
 # Aggregate the new features by doc_id
 simple_lexical_cohesion <- function(dt_corpus) {
@@ -51,24 +114,43 @@ simple_lexical_cohesion <- function(dt_corpus) {
   dt_content <- compute_next_sentence_match(dt_content)
   dt_content <- compute_document_match(dt_content)
   
+  # Cosine similarity
+  dt_cosine <- compute_sentence_similarity(dt, method = "cosine")
+  dt_cosine_content <- compute_sentence_similarity(dt_content, method = "cosine")
+  # rename similarity column to avoid duplicate names
+  setnames(dt_cosine_content, "similarity", "similarity_content")
+  # combine dt_cosine with dt_cosine_content
+  dt_cosine <- merge(dt_cosine, dt_cosine_content, by = c("doc_id", "sentence_id"), all = TRUE)
+  
   # Aggregate by document
   dt_result <- dt[, .(
     token_sent_overlap = sum(match_next_sentence) / .N,
-    token_doc_overlap = sum(match_in_doc) / .N
+    token_doc_overlap = mean(normalized_match, na.rm = T)
   ), by = doc_id]
   dt_result_content <-  dt_content[, .(
     content_sent_overlap = sum(match_next_sentence) / .N,
-    content_doc_overlap = sum(match_in_doc) / .N
+    content_doc_overlap = mean(normalized_match, na.rm = T)
+  ), by = doc_id]
+  dt_result_cosine <- dt_cosine[, .(
+    cosine_sent = mean(similarity, na.rm = T),
+    cosine_content = mean(similarity_content, na.rm = T)
   ), by = doc_id]
   
   # Merge the results
   dt_result <- merge(dt_result, dt_result_content, by = "doc_id", all = TRUE)
-  
+  #   # add cosine stuff too
+  dt_result <- merge(dt_result, dt_result_cosine, by = "doc_id", all = TRUE)
+  # 
   return(dt_result)
 }
 
 # Example use
 # t <- features$parsed_corpus[doc_id %in% c("g01_pri_fs1", "g01_pri_ol01")]
-# result <- compute_next_sentence_match(t)
-# result <- compute_document_match(t)
-# result <- simple_token_overlap(t)
+# # result <- compute_next_sentence_match(t)
+# #result <- compute_document_match(t)
+# compute_similarity(vec1 = t[sentence_id == 1, token],
+#                   vec2 = t[sentence_id == 2, token],
+#                   method = "cosine")
+# compute_sentence_similarity(t, method = "cosine")
+# result <- simple_lexical_cohesion(t)
+# result

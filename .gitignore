@@ -4,3 +4,6 @@
 .Ruserdata
 /corpus/test/
 /corpus/
+classification.R
+aggregation.R
+/utils/strip_epub.R
