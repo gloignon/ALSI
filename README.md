@@ -18,7 +18,7 @@ Included lexical frequency databases:
 
 Please cite the relevant papers if you use the lexical frequencies included in the ALSI/ILSA tool.
 
-Parser/tagger: ALSI uses a Universal Dependency based model of the French language. The model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be the proposer tagging for sentences such as Le (DET) chat (NOUN) est (VERB) gris (ADJ), instead of tagging the copula verb as AUX, which can be problematic for languages that have auxiliary verbs.
+Parser/tagger: ALSI uses a Universal Dependency based model of the French language. The model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be the sensible tagging for sentences such as "Le (DET) chat (NOUN) est (VERB) gris (ADJ)", instead of tagging the copula verb as AUX, which can be problematic for languages that have auxiliary verbs.
 
 # Bibliography
 
