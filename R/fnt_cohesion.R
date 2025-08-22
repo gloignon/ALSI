@@ -20,29 +20,26 @@ compute_next_sentence_match <- function(dt) {
 }
 
 compute_document_match <- function(dt) {
-  # Order by document, sentence, and token position
-  setorder(dt, doc_id, sentence_id, token_id)
+  # counts at doc and sentence granularity
+  dt[, total_tokens_doc   := .N, by = .(doc_id)]
+  dt[, total_tokens_sent  := .N, by = .(doc_id, sentence_id)]
+  dt[, token_count_doc    := .N, by = .(doc_id, token)]
+  dt[, token_count_sent   := .N, by = .(doc_id, sentence_id, token)]
   
-  # Compute total tokens and token frequency in the document
-  dt[, total_tokens := .N, by = .(doc_id)]
-  dt[, token_freq := .N, by = .(doc_id, token)]
+  # counts excluding the current sentence
+  dt[, other_tokens_doc   := pmax(total_tokens_doc - total_tokens_sent, 0L)]
+  dt[, other_token_count  := pmax(token_count_doc - token_count_sent, 0L)]
   
-  # Compute token count and token proportion *outside* the current sentence
-  dt[, tokens_in_sentence := .N, by = .(doc_id, sentence_id)]
-  dt[, token_in_sentence := .N, by = .(doc_id, sentence_id, token)]
-  
-  dt[, token_outside_sentence := token_freq - token_in_sentence]
-  dt[, tokens_outside_sentence := total_tokens - tokens_in_sentence]
-  
-  # Proportion of target token in the rest of the document
-  dt[, normalized_match := token_outside_sentence / tokens_outside_sentence]
-  
-  # Handle edge cases (division by zero)
-  dt[is.nan(normalized_match) | is.infinite(normalized_match), normalized_match := 0]
-
+  # normalized proportion of this token in the rest of the doc
+  dt[, normalized_match := fifelse(
+    other_tokens_doc > 0L,
+    other_token_count / other_tokens_doc,
+    NA_real_
+  )]
   
   return(dt)
 }
+
 
 compute_similarity <- function(vec1, vec2, method = "cosine") {
   # Create binary presence/absence vectors
