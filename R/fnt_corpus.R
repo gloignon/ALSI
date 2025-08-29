@@ -4,6 +4,7 @@ library(tidyverse)
 library(utf8)
 library(udpipe)
 
+
 constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
   if (dir.exists(dossier)) {
     chemins <- list.files(path = dossier, full.names = TRUE)
@@ -29,6 +30,10 @@ constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
     contenu <- str_replace_all(contenu, "\n{3,}", "\n\n")           # max two line breaks
     
     # Clean punctuation
+    # << should be replaced with the right French guillemet
+    contenu <- str_replace_all(contenu, "<<", "«")
+      # and >> will also become a guillemet
+    contenu <- str_replace_all(contenu, ">>", "»")
     contenu <- str_replace_all(contenu, "’", "'")
     contenu <- str_replace_all(contenu, "''", "'")
     contenu <- str_replace_all(contenu, "«", " « ")
@@ -36,7 +41,17 @@ constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
     contenu <- str_replace_all(contenu, "!", "! ")
     contenu <- str_replace_all(contenu, ";", " ; ")
     contenu <- str_replace_all(contenu, ":", " : ")
-    contenu <- gsub("\\.(?=[A-Za-zÀÉÈÙ0-9])", ". ", contenu, perl = TRUE)
+    # Protect dot(s) between lowercase letters (covers étudiant.e and étudiant.e.s)
+    contenu <- gsub("([a-zà-öù-ÿ])\\.([a-zà-öù-ÿ])", "\\1§DOT§\\2", contenu, perl = TRUE)
+    # Repeat to catch cases like e.s (two successive substitutions)
+    while (grepl("([a-zà-öù-ÿ])\\.([a-zà-öù-ÿ])", contenu, perl = TRUE)) {
+      contenu <- gsub("([a-zà-öù-ÿ])\\.([a-zà-öù-ÿ])", "\\1§DOT§\\2", contenu, perl = TRUE)
+    }
+    # Add a space after true sentence-ending dots (before uppercase/digit)
+    contenu <- gsub("\\.(?=\\s*[A-Z0-9ÀÉÈÙ])", ". ", contenu, perl = TRUE)
+    # Restore protected dots
+    contenu <- gsub("§DOT§", ".", contenu, fixed = TRUE)
+    
     contenu <- gsub("\\,(?=[A-Za-zÀÉÈÙ0-9])", ", ", contenu, perl = TRUE)
     contenu <- gsub("\\)(?=[A-Za-zÀÉÈÙ0-9])", ") ", contenu, perl = TRUE)
     
@@ -57,7 +72,6 @@ constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
   
   return(dt_corpus)
 }
-
 
 
 parserTexte <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", nCores = 1) {
