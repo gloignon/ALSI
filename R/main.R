@@ -14,13 +14,16 @@
 # 3. Lexical database merging
 # 4. More feature extraction
 #
-# Last update: 2025-04-08
+# Last update: 2026-01-29
 #
 
-library("data.table") #together forever...
+library("data.table") 
 library(udpipe)
 library(tidyverse)
 library(utf8)
+library(igraph) # for node distances in fnt_heights.R
+library(zoo)    # for rolling functions in fnt_lexical.R
+
 
 source('R/fnt_corpus.R', encoding = 'UTF-8')
 source('R/fnt_lexical.R', encoding = 'UTF-8')
@@ -30,15 +33,11 @@ source('R/fnt_pos_surprisal.R', encoding = 'UTF-8')
 source('R/fnt_extra_syntax.R', encoding = 'UTF-8')
 source('R/fnt_cohesion.R', encoding = 'UTF-8')
 
-corpus_dir <- "corpus/french_corpus_20240403/"  # this folder should contain your text files in .txt format
+corpus_dir <- "demo_corpus/"  # this folder should contain your text files in .txt format
 
 udmodel_french <-
-  udpipe_load_model(file = "models/french_gsd-remix_2.udpipe") #chargement du modèle linguistique
-
-dt_eqol <- readRDS("lexical_dbs/dt_eqol.Rds")
-dt_franqus <- readRDS("lexical_dbs/dt_franqus.Rds")
-dt_manulex <- readRDS("lexical_dbs/dt_manulex_token.Rds")
-dt_flelex <- readRDS("lexical_dbs/dt_corpus_flelex.Rds")
+  udpipe_load_model(file = "models/french_gsd-remix_2.udpipe") # this is the linguistic model, by default we are using
+                                                               # a custom UD model for French
 
 # Create a corpus ----
 
@@ -46,14 +45,23 @@ dt_flelex <- readRDS("lexical_dbs/dt_corpus_flelex.Rds")
 dt_txt <- constituerCorpus(corpus_dir)
 
 # Parse the files using udpipe
-dt_parsed_raw <- parserTexte(dt_txt, nCores = 10)  # analyse lexicale avec udpipe, pourrait prendre quelques minutes...
+dt_parsed_raw <- parse_text(dt_txt, n_cores = 12)  # analyse lexicale avec udpipe, pourrait prendre quelques minutes...
 
 # # Edit the resulting dt
-features <- list(parsed_corpus = postTraitementLexique(dt_parsed_raw))  # post-traitement du corpus
+dt_parsed_edit <- postTraitementLexique(dt_parsed_raw)
+
+saveRDS(dt_parsed_edit, "out/demo_corpus_parsed.Rds")
+
+features <- list(parsed_corpus = dt_parsed_edit)  # post-traitement du corpus
 
 #save the parsed corpus, in case you need to restart
-saveRDS(features, "corpus/french_corpus_parsed_raw.Rds")
 # features <- readRDS("corpus/french_corpus_parsed_raw.Rds")
+
+# The following will load lexical frequency databases
+dt_eqol <- readRDS("lexical_dbs/dt_eqol.Rds")
+dt_franqus <- readRDS("lexical_dbs/dt_franqus.Rds")
+dt_manulex <- readRDS("lexical_dbs/dt_manulex_token.Rds")
+dt_flelex <- readRDS("lexical_dbs/dt_corpus_flelex.Rds")
 
 # Simple counts
 features$simple_counts <- simple_count_features(features$parsed_corpus)
@@ -104,7 +112,7 @@ features$heights <- docwise_graph_stats(features$parsed_corpus)
 # More dependency tree related features
 features$syntactic <- extra_syntactic_features(features$parsed_corpus)
 
-# POS surprisal
+# Simple POS surprisal from ngram model
 features$pos_surprisal <- pos_surprisal(features$parsed_corpus)
 
 # Lexical cohesion 
@@ -112,8 +120,20 @@ features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
 
 # If you've got classes (e.g. school grades), now would be the time to add them to 
 # the features list.
-features$parsed_corpus[, class := as.numeric(str_extract(doc_id, "(?<=g)\\d+"))]
+# For the demo corpus, we will add a column to tag viki as 1 and wiki as 2, based on 
+# the file names.
+dt_doc_classes <- data.table(
+  doc_id = features$simple_counts$doc_level_counts$doc_id,
+  class = ifelse(grepl("viki", features$simple_counts$doc_level_counts$doc_id), 1L, 2L)
+)
 
-# Save the features ----
-saveRDS(features, "corpus/french_corpus_20250430_features.Rds")
+features$doc_classes <- dt_doc_classes
 
+# Save the corpus with features ----
+saveRDS(features, "out/demo_corpus_with_features.Rds")
+
+# If you want just the features,
+features_without_corpus <- features
+features_without_corpus$parsed_corpus <- NULL
+
+saveRDS(features_without_corpus, "out/demo_corpus_features_only.Rds")
