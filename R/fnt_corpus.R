@@ -4,7 +4,6 @@ library(tidyverse)
 library(utf8)
 library(udpipe)
 
-
 constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
   if (dir.exists(dossier)) {
     chemins <- list.files(path = dossier, full.names = TRUE)
@@ -32,7 +31,7 @@ constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
     # Clean punctuation
     # << should be replaced with the right French guillemet
     contenu <- str_replace_all(contenu, "<<", "«")
-      # and >> will also become a guillemet
+    # and >> will also become a guillemet
     contenu <- str_replace_all(contenu, ">>", "»")
     contenu <- str_replace_all(contenu, "’", "'")
     contenu <- str_replace_all(contenu, "''", "'")
@@ -73,31 +72,109 @@ constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
   return(dt_corpus)
 }
 
-
 parserTexte <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", nCores = 1) {
+  parse_text(txt, ud_model = ud_model, n_cores = nCores, show_progress = TRUE)
+}
+
+# This functionn will parse text using the udpipe package.
+# It can handle parallel processing.
+parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE) {
   
   # Check if the model file exists
   if (!file.exists(ud_model)) {
     stop(paste("UDPipe model not found at:", ud_model))
   }
   
-  # Try to load the model safely
-  model <- tryCatch({
-    udpipe::udpipe_load_model(file = ud_model)
-  }, error = function(e) {
-    stop("Failed to load UDPipe model: ", e$message)
-  })
+  normalize_input <- function(x) {
+    if (is.data.frame(x)) {
+      if (!all(c("doc_id", "text") %in% names(x))) {
+        stop("parserTexte | data.frame must contain columns: doc_id, text")
+      }
+      return(as.data.table(x[, c("doc_id", "text")]))
+    }
+    if (is.character(x)) {
+      return(data.table(doc_id = paste0("doc_", seq_along(x)), text = x))
+    }
+    stop("parserTexte | txt must be a data.frame with doc_id/text or a character vector")
+  }
   
-  parsed <- udpipe(x = txt, object = model, trace = TRUE, parallel.cores = nCores)
-  parsed <- as.data.table(parsed)
-  return(parsed)
+  txt_dt <- normalize_input(txt)
+  n_docs <- nrow(txt_dt)
+  if (show_progress) {
+    message("parse_text | ", n_docs, " text(s) to process")
+  }
+  if (n_docs == 0) {
+    return(data.table())
+  }
+  
+  chunk_size <- max(1, as.integer(chunk_size))
+  idx <- split(seq_len(n_docs), ceiling(seq_len(n_docs) / chunk_size))
+  chunks <- lapply(idx, function(i) txt_dt[i, , drop = FALSE])
+  
+  worker_parse <- function(chunk, model_path) {
+    if (!exists(".udpipe_model", envir = .GlobalEnv)) {
+      assign(".udpipe_model", udpipe::udpipe_load_model(file = model_path), envir = .GlobalEnv)
+    }
+    parsed <- udpipe::udpipe(x = chunk, object = get(".udpipe_model", envir = .GlobalEnv), trace = FALSE)
+    data.table::as.data.table(parsed)
+  }
+  
+  parse_sequential <- function() {
+    if (show_progress) {
+      pb <- utils::txtProgressBar(min = 0, max = length(chunks), style = 3)
+      on.exit(close(pb), add = TRUE)
+    }
+    res <- vector("list", length(chunks))
+    for (i in seq_along(chunks)) {
+      res[[i]] <- worker_parse(chunks[[i]], ud_model)
+      if (show_progress) utils::setTxtProgressBar(pb, i)
+    }
+    data.table::rbindlist(res, use.names = TRUE, fill = TRUE)
+  }
+  
+  if (n_cores <= 1 || length(chunks) == 1) {
+    return(parse_sequential())
+  }
+  
+  n_cores <- min(n_cores, length(chunks))
+  cl <- parallel::makeCluster(n_cores)
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+  parallel::clusterEvalQ(cl, { library(udpipe); library(data.table) })
+  
+  if (show_progress) {
+    pb <- utils::txtProgressBar(min = 0, max = length(chunks), style = 3)
+    on.exit(close(pb), add = TRUE)
+  }
+  
+  n_tasks <- length(chunks)
+  res <- vector("list", n_tasks)
+  next_task <- 1
+  n_workers <- length(cl)
+  
+  for (w in seq_len(min(n_workers, n_tasks))) {
+    parallel:::sendCall(cl[[w]], worker_parse, list(chunks[[next_task]], ud_model), tag = next_task)
+    next_task <- next_task + 1
+  }
+  
+  completed <- 0
+  while (completed < n_tasks) {
+    ans <- parallel:::recvOneResult(cl)
+    res[[ans$tag]] <- ans$value
+    completed <- completed + 1
+    if (show_progress) utils::setTxtProgressBar(pb, completed)
+    if (next_task <= n_tasks) {
+      parallel:::sendCall(cl[[ans$node]], worker_parse, list(chunks[[next_task]], ud_model), tag = next_task)
+      next_task <- next_task + 1
+    }
+  }
+  
+  data.table::rbindlist(res, use.names = TRUE, fill = TRUE)
 }
-
 
 #' Post treatment on the output of a udpipe parsing
 #'
 #' @param dt A data.table containing the output of a udpipe parsing.
-
+#
 #' @return A data.table containing the edited output of the udpipe parsing.
 #' @import data.table
 postTraitementLexique <- function(dt) {
@@ -164,4 +241,3 @@ postTraitementLexique <- function(dt) {
   
   return(parsed.post)
 }
-
