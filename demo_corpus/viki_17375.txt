@@ -1,0 +1,1 @@
+IBM Cloud Video (anciennement Ustream) est un service de streaming créé aux Etats-Unis et appartenant à IBM. Il est principalement utilisé pour streamer des événements, concerts, réunions, etc. Il est intégré à son service d'intelligence artificielle, IBM Watson.

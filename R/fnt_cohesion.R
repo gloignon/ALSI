@@ -40,6 +40,72 @@ compute_document_match <- function(dt) {
   return(dt)
 }
 
+compute_previous_sentence_match <- function(dt, value_col = "token", n_prev = 1, new_col = NULL) {
+  if (!value_col %in% names(dt)) {
+    stop(paste0("compute_previous_sentence_match | column not found: ", value_col))
+  }
+  if (!all(c("doc_id", "sentence_id") %in% names(dt))) {
+    stop("compute_previous_sentence_match | dt must contain columns: doc_id, sentence_id")
+  }
+  if (is.null(new_col)) {
+    new_col <- paste0(value_col, "_prev", n_prev, "_prop")
+  }
+  
+  order_cols <- c("doc_id", "sentence_id")
+  if ("token_id" %in% names(dt)) {
+    order_cols <- c(order_cols, "token_id")
+  }
+  setorderv(dt, order_cols)
+  n_prev <- max(1L, as.integer(n_prev))
+  
+  # Unique values per sentence
+  sentence_values <- unique(dt[, .(doc_id, sentence_id, value = get(value_col))])
+  
+  # Build previous sentence map for each sentence/value
+  prev_map <- sentence_values[
+    ,
+    .(sentence_id_prev = (sentence_id - n_prev):(sentence_id - 1L)),
+    by = .(doc_id, sentence_id, value)
+  ]
+  prev_map <- prev_map[sentence_id_prev >= 1]
+  
+  # Keep only previous sentences that contain the same value
+  prev_hits <- sentence_values[
+    prev_map,
+    on = .(doc_id, sentence_id = sentence_id_prev, value),
+    nomatch = 0L,
+    .(doc_id, sentence_id = i.sentence_id, value, sentence_id_prev)
+  ]
+  
+  # Count matches per sentence/value
+  matches <- prev_hits[
+    ,
+    .(n_prev_match = uniqueN(sentence_id_prev)),
+    by = .(doc_id, sentence_id, value)
+  ]
+  
+  # How many previous sentences are available for this sentence
+  prev_counts <- sentence_values[
+    ,
+    .(n_prev_available = pmin(n_prev, sentence_id - 1L)),
+    by = .(doc_id, sentence_id)
+  ]
+  
+  # Combine and compute proportions
+  proportions <- merge(sentence_values, prev_counts, by = c("doc_id", "sentence_id"), all.x = TRUE)
+  proportions <- merge(proportions, matches, by = c("doc_id", "sentence_id", "value"), all.x = TRUE)
+  proportions[is.na(n_prev_match), n_prev_match := 0L]
+  proportions[, (new_col) := fifelse(n_prev_available > 0, n_prev_match / n_prev_available, 0)]
+  proportions <- proportions[, c("doc_id", "sentence_id", "value", new_col), with = FALSE]
+  
+  # TODO: Consider computing multiple n_prev windows in one pass to avoid repeated work.
+  # Join back to original table
+  dt[, value := get(value_col)]
+  dt <- proportions[dt, on = .(doc_id, sentence_id, value)]
+  dt[, value := NULL]
+  
+  return(dt)
+}
 
 compute_similarity <- function(vec1, vec2, method = "cosine") {
   # Create binary presence/absence vectors
@@ -95,20 +161,48 @@ compute_sentence_similarity <- function(dt, method = "cosine") {
 }
 
 # Aggregate the new features by doc_id
-simple_lexical_cohesion <- function(dt_corpus) {
+simple_lexical_cohesion <- function(dt_corpus, n_sent_context = c(1,5)) {
 
   dt <- copy(dt_corpus)
   dt <- dt[compte == TRUE]
   
-  # get the next sentence overlap results
-  dt <- compute_next_sentence_match(dt)
+  n_sent_context <- unique(as.integer(n_sent_context))
+  n_sent_context <- n_sent_context[!is.na(n_sent_context) & n_sent_context >= 1L]
+  if (length(n_sent_context) == 0) {
+    stop("simple_lexical_cohesion | n_sent_context must contain integers >= 1")
+  }
+  
+  # previous sentence overlap (token + lemma) for each context size
+  for (n_prev in n_sent_context) {
+    dt <- compute_previous_sentence_match(dt,
+      value_col = "token",
+      n_prev = n_prev,
+      new_col = paste0("token_prev", n_prev, "_prop")
+    )
+    dt <- compute_previous_sentence_match(dt,
+      value_col = "lemma",
+      n_prev = n_prev,
+      new_col = paste0("lemma_prev", n_prev, "_prop")
+    )
+  }
   
   # add the document match results
   dt <- compute_document_match(dt)
   
   # Now only content words, their lemmatized form
   dt_content <- dt[upos %in% c("NOUN", "VERB", "ADJ", "ADV")]
-  dt_content <- compute_next_sentence_match(dt_content)
+  for (n_prev in n_sent_context) {
+    dt_content <- compute_previous_sentence_match(dt_content,
+      value_col = "token",
+      n_prev = n_prev,
+      new_col = paste0("token_prev", n_prev, "_prop")
+    )
+    dt_content <- compute_previous_sentence_match(dt_content,
+      value_col = "lemma",
+      n_prev = n_prev,
+      new_col = paste0("lemma_prev", n_prev, "_prop")
+    )
+  }
   dt_content <- compute_document_match(dt_content)
   
   # Cosine similarity
@@ -120,13 +214,24 @@ simple_lexical_cohesion <- function(dt_corpus) {
   dt_cosine <- merge(dt_cosine, dt_cosine_content, by = c("doc_id", "sentence_id"), all = TRUE)
   
   # Aggregate by document
-  dt_result <- dt[, .(
-    token_sent_overlap = sum(match_next_sentence) / .N,
-    token_doc_overlap = mean(normalized_match, na.rm = T)
+  token_cols <- paste0("token_prev", n_sent_context, "_prop")
+  lemma_cols <- paste0("lemma_prev", n_sent_context, "_prop")
+  token_out_cols <- paste0("token_sent_overlap_prev", n_sent_context)
+  lemma_out_cols <- paste0("lemma_sent_overlap_prev", n_sent_context)
+  
+  dt_result <- dt[, c(
+    setNames(lapply(token_cols, function(col) mean(get(col), na.rm = TRUE)), token_out_cols),
+    setNames(lapply(lemma_cols, function(col) mean(get(col), na.rm = TRUE)), lemma_out_cols),
+    list(token_doc_overlap = mean(normalized_match, na.rm = TRUE))
   ), by = doc_id]
-  dt_result_content <-  dt_content[, .(
-    content_sent_overlap = sum(match_next_sentence) / .N,
-    content_doc_overlap = mean(normalized_match, na.rm = T)
+  
+  content_token_out_cols <- paste0("content_sent_overlap_prev", n_sent_context)
+  content_lemma_out_cols <- paste0("content_lemma_sent_overlap_prev", n_sent_context)
+  
+  dt_result_content <- dt_content[, c(
+    setNames(lapply(token_cols, function(col) mean(get(col), na.rm = TRUE)), content_token_out_cols),
+    setNames(lapply(lemma_cols, function(col) mean(get(col), na.rm = TRUE)), content_lemma_out_cols),
+    list(content_doc_overlap = mean(normalized_match, na.rm = TRUE))
   ), by = doc_id]
   dt_result_cosine <- dt_cosine[, .(
     cosine_sent = mean(similarity, na.rm = T),
