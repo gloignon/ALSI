@@ -32,6 +32,7 @@ source('R/fnt_counters.R', encoding = 'UTF-8')
 source('R/fnt_pos_surprisal.R', encoding = 'UTF-8')
 source('R/fnt_extra_syntax.R', encoding = 'UTF-8')
 source('R/fnt_cohesion.R', encoding = 'UTF-8')
+source('R/fnt_embeddings.R', encoding = 'UTF-8')
 
 corpus_dir <- "demo_corpus/"  # this folder should contain your text files in .txt format
 
@@ -117,6 +118,15 @@ features$pos_surprisal <- pos_surprisal(features$parsed_corpus)
 
 # Lexical cohesion 
 features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
+
+# Embeddings  ----
+library(reticulate)
+source('R/fnt_embeddings.R', encoding = 'UTF-8')
+start_python_backend(venv_name = "textenv-gpu", use_gpu = TRUE)
+
+features$embeddings <- corpus_embeddings(
+  dt_corpus = features$parsed_corpus
+)
 
 # If you've got classes (e.g. school grades), now would be the time to add them to 
 # the features list.
