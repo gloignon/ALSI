@@ -1,22 +1,38 @@
 # embed_sentences.py
 from sentence_transformers import SentenceTransformer
 import numpy as np
+import os
 import torch
 
 # Global model variable
 model = None
 
+# Pick best available device across platforms
+def _best_device():
+    if os.environ.get("ALSIO_FORCE_CPU") in ("1", "true", "TRUE", "yes", "YES"):
+        return "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
 # Load a model
 def load_embedding_model(model_name="Lajavaness/bilingual-embedding-large"):
     global model
-    model = SentenceTransformer(model_name, 
-      device="cuda" if torch.cuda.is_available() else "cpu",
-      trust_remote_code=True)
+    device = _best_device()
+    model = SentenceTransformer(
+        model_name,
+        device=device,
+        trust_remote_code=True
+    )
     print(f"Loaded model: {model_name}")
     print(f"Device: {model.device}")
         # print the parameters that this model can take when doing model.encode:
     print(f"Model parameters: {model.encode.__code__.co_varnames}")
     print("CUDA available:", torch.cuda.is_available())
+    if hasattr(torch.backends, "mps"):
+        print("MPS available:", torch.backends.mps.is_available())
 
 # Embed the sentences with optional instruction prefix
 def embed_sentences(sentences, normalize=False, mode = "basic", instruction=None, bs=32):

@@ -1,13 +1,39 @@
-library(reticulate)
-use_virtualenv("textenv_gpu", required = TRUE)  
-## note: I am using a python environment with CUDA acceleration, this will not create 
-## the environment for you.
-## You can run this code to create one:
-# virtualenv_create("textenv")
-# virtualenv_install("textenv", packages = c("torch", "transformers", "sentence-transformers", "scipy", "numpy", "nltk"))
-# use_virtualenv("textenv")  
 
-library(data.table)
+# Start and configure Python backend for embeddings
+start_python_backend <- function(venv_name = "textenv",
+                                 use_gpu = TRUE,
+                                 force_recreate = FALSE,
+                                 packages = c("torch", "transformers", "sentence-transformers",
+                                              "scipy", "numpy", "nltk"),
+                                 python = NULL) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
+  }
+  
+  if (!is.null(python)) {
+    reticulate::use_python(python, required = TRUE)
+  }
+  
+  if (isTRUE(force_recreate) && reticulate::virtualenv_exists(venv_name)) {
+    reticulate::virtualenv_remove(venv_name)
+  }
+  
+  if (!reticulate::virtualenv_exists(venv_name)) {
+    reticulate::virtualenv_create(venv_name)
+    reticulate::virtualenv_install(venv_name, packages = packages)
+  }
+  
+  reticulate::use_virtualenv(venv_name, required = TRUE)
+  
+  if (isTRUE(use_gpu)) {
+    Sys.unsetenv("ALSIO_FORCE_CPU")
+  } else {
+    Sys.setenv(ALSIO_FORCE_CPU = "1")
+  }
+  
+  invisible(reticulate::py_config())
+}
+
 
 # This will embed the sentences.
 # mode can be "basic", "prompt", or "query"
@@ -120,11 +146,14 @@ corpus_embeddings <- function(dt_corpus,
   
   dt_embeddings <- encode_embeddings(
     dt_sentences,
-    model_name = "dangvantuan/french-document-embedding"
+    model_name = model_name,
+    mode = mode,
+    batch_size = batch_size,
+    instruction = instruction
   )
   
   # now we can do mean per doc
-  dim_cols <- grep("^dim", names(my_embeddings), value = TRUE)
+  dim_cols <- grep("^dim", names(dt_embeddings), value = TRUE)
   dt_doc_mean <- dt_embeddings[, lapply(.SD, mean, na.rm = TRUE), by = doc_id, .SDcols = dim_cols]
   
   result <- list(
