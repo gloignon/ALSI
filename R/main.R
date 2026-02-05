@@ -119,10 +119,29 @@ features$pos_surprisal <- pos_surprisal(features$parsed_corpus)
 # Lexical cohesion 
 features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
 
-# Embeddings  ----
+# Surprisal and Embeddings  ----
 library(reticulate)
 source('R/fnt_embeddings.R', encoding = 'UTF-8')
 start_python_backend(venv_name = "textenv-gpu", use_gpu = TRUE)
+
+# LLM surprisal + entropy (token-level) ----
+load_llm_scorer(model_name = "almanach/moderncamembert-base", mode = "mlm")
+features$llm_surprisal_mlm <- llm_surprisal_entropy(
+  features$parsed_corpus,
+  model_name = "almanach/moderncamembert-base",
+  mode = "mlm",
+  context = "The following is a French sentence from vikipedia or wikidia."
+)
+
+load_llm_scorer(model_name = "lightonai/pagnol-small", mode = "ar")
+features$llm_surprisal_ar <- llm_surprisal_entropy(
+  features$parsed_corpus,
+  model_name = "lightonai/pagnol-small",
+  mode = "ar", 
+  trust_remote_code = TRUE,
+  add_prefix_space = TRUE,
+  context = "The following is a French sentence from vikipedia or wikidia."
+)
 
 features$embeddings <- corpus_embeddings(
   dt_corpus = features$parsed_corpus
