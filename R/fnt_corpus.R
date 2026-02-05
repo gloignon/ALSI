@@ -78,7 +78,7 @@ parserTexte <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", nCor
 
 # This functionn will parse text using the udpipe package.
 # It can handle parallel processing.
-parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE) {
+parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL) {
   
   # Check if the model file exists
   if (!file.exists(ud_model)) {
@@ -137,35 +137,72 @@ parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cor
   }
   
   n_cores <- min(n_cores, length(chunks))
-  cl <- parallel::makeCluster(n_cores)
-  on.exit(parallel::stopCluster(cl), add = TRUE)
-  parallel::clusterEvalQ(cl, { library(udpipe); library(data.table) })
   
-  if (show_progress) {
-    pb <- utils::txtProgressBar(min = 0, max = length(chunks), style = 3)
-    on.exit(close(pb), add = TRUE)
-  }
-  
-  n_tasks <- length(chunks)
-  res <- vector("list", n_tasks)
-  next_task <- 1
-  n_workers <- length(cl)
-  
-  for (w in seq_len(min(n_workers, n_tasks))) {
-    parallel:::sendCall(cl[[w]], worker_parse, list(chunks[[next_task]], ud_model), tag = next_task)
-    next_task <- next_task + 1
-  }
-  
-  completed <- 0
-  while (completed < n_tasks) {
-    ans <- parallel:::recvOneResult(cl)
-    res[[ans$tag]] <- ans$value
-    completed <- completed + 1
-    if (show_progress) utils::setTxtProgressBar(pb, completed)
-    if (next_task <= n_tasks) {
-      parallel:::sendCall(cl[[ans$node]], worker_parse, list(chunks[[next_task]], ud_model), tag = next_task)
-      next_task <- next_task + 1
+  if (!requireNamespace("future", quietly = TRUE) ||
+      !requireNamespace("future.apply", quietly = TRUE)) {
+    if (show_progress) {
+      message("parse_text | future/future.apply not available, falling back to sequential")
     }
+    return(parse_sequential())
+  }
+  
+  safe_worker <- function(chunk, model_path) {
+    tryCatch(
+      worker_parse(chunk, model_path),
+      error = function(e) {
+        structure(list(error = conditionMessage(e)), class = "parse_text_error")
+      }
+    )
+  }
+  
+  old_plan <- future::plan()
+  on.exit(future::plan(old_plan), add = TRUE)
+  
+  if (!is.null(future_plan)) {
+    if (is.function(future_plan)) {
+      future::plan(future_plan, workers = n_cores)
+    } else {
+      future::plan(future_plan)
+    }
+  } else {
+    if (inherits(old_plan, "sequential") || inherits(old_plan, "SequentialFuture")) {
+      return(parse_sequential())
+    }
+    if (future::supportsMulticore()) {
+      future::plan(future::multicore, workers = n_cores)
+    } else {
+      future::plan(future::multisession, workers = n_cores)
+    }
+  }
+  
+  run_future <- function() {
+    if (show_progress) {
+      message("parse_text | running in parallel with future.apply")
+    }
+    future.apply::future_lapply(
+      chunks,
+      function(chunk) safe_worker(chunk, ud_model),
+      future.seed = TRUE
+    )
+  }
+  
+  res <- tryCatch(
+    run_future(),
+    error = function(e) {
+      if (inherits(e, "FutureInterruptError") || inherits(e, "FutureError")) {
+        if (show_progress) {
+          message("parse_text | parallel interrupted, falling back to sequential")
+        }
+        return(parse_sequential())
+      }
+      stop(e)
+    }
+  )
+  
+  err_idx <- vapply(res, inherits, logical(1), "parse_text_error")
+  if (any(err_idx)) {
+    msg <- paste(vapply(res[err_idx], `[[`, "", "error"), collapse = "\n- ")
+    stop(paste0("parse_text | worker error(s):\n- ", msg))
   }
   
   data.table::rbindlist(res, use.names = TRUE, fill = TRUE)
