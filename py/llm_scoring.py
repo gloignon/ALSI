@@ -149,7 +149,8 @@ def score_masked_lm_tokens(
 
     # Prepare batches
     total = len(positions)
-    chunk = batch_size if batch_size and batch_size > 0 else total
+    # reticulate passes R numerics as Python float; coerce to int for range()
+    chunk = int(batch_size) if batch_size and batch_size > 0 else total
 
     subword_surprisals = [float("nan")] * seq_len
     subword_entropies = [float("nan")] * seq_len
