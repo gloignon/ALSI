@@ -1,5 +1,6 @@
 
-# Start and configure Python backend for embeddings
+# Start and configure Python backend for embeddings, currently not used
+# TODO: remove venv stuff, use only py_require()
 start_python_backend <- function(venv_name = "textenv",
                                  use_gpu = TRUE,
                                  force_recreate = FALSE,
@@ -34,9 +35,6 @@ start_python_backend <- function(venv_name = "textenv",
   invisible(reticulate::py_config())
 }
 
-.llm_scorer_env <- new.env(parent = emptyenv())
-.llm_scorer_env$loaded_model <- NULL
-.llm_scorer_env$loaded_mode <- NULL
 
 
 # This will embed the sentences.
@@ -186,8 +184,6 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
     trust_remote_code = trust_remote_code,
     add_prefix_space = add_prefix_space
   )
-  .llm_scorer_env$loaded_model <- model_name
-  .llm_scorer_env$loaded_mode <- mode
   invisible(TRUE)
 }
 
@@ -246,8 +242,6 @@ llm_surprisal_entropy <- function(dt_corpus,
       trust_remote_code = trust_remote_code,
       add_prefix_space = add_prefix_space
     )
-    .llm_scorer_env$loaded_model <- model_name
-    .llm_scorer_env$loaded_mode <- mode
   }
 
   dt_sentences <- dt[, .(tokens = list(token)), by = .(doc_id, sentence_id)]

@@ -17,6 +17,7 @@ library(utf8)
 library(igraph) # for node distances in fnt_heights.R
 library(zoo)    # for rolling functions in fnt_lexical.R
 library(future)  # parallelization of corpus parsing & tagging
+library(future.apply)
 
 source('R/fnt_corpus.R', encoding = 'UTF-8')
 source('R/fnt_lexical.R', encoding = 'UTF-8')
@@ -117,30 +118,30 @@ features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
 # 13) Surprisal and embeddings ----
 library(reticulate)
 source('R/fnt_embeddings.R', encoding = 'UTF-8')
-start_python_backend(venv_name = "textenv-gpu", use_gpu = TRUE)
+# Embeddings
+features$embeddings <- corpus_embeddings(
+  dt_corpus = features$parsed_corpus,
+  batch_size = 8
+)
 
-# 14) LLM surprisal + entropy (token-level) ----
-load_llm_scorer(model_name = "almanach/moderncamembert-base", mode = "mlm")
-features$llm_surprisal_mlm <- llm_surprisal_entropy(
+# 14) LLM surprisal and entropy ----
+features$surprisal$mlm <- llm_surprisal_entropy(
   features$parsed_corpus,
   model_name = "almanach/moderncamembert-base",
   mode = "mlm",
-  context = "The following is a French sentence from vikipedia or wikidia."
+  # context = "The following is a French sentence from vikipedia or wikidia.", 
+  batch_size = 8
 )
 
-load_llm_scorer(model_name = "lightonai/pagnol-small", mode = "ar")
-features$llm_surprisal_ar <- llm_surprisal_entropy(
+features$surprisal$ar <- llm_surprisal_entropy(
   features$parsed_corpus,
   model_name = "lightonai/pagnol-small",
   mode = "ar", 
-  trust_remote_code = TRUE,
-  add_prefix_space = TRUE,
-  context = "The following is a French sentence from vikipedia or wikidia."
+  # context = "The following is a French sentence from vikipedia or wikidia.",
+  batch_size = 8,
+  add_prefix_space=TRUE
 )
 
-features$embeddings <- corpus_embeddings(
-  dt_corpus = features$parsed_corpus
-)
 
 # 15) Optional: add labels/classes to the features list for demo evaluation.
 # For the demo corpus, we tag viki as 1 and wiki as 2 based on filenames.

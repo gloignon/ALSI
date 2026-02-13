@@ -1,0 +1,1 @@
+Une unité militaire est une composante d'armée. L'énumération exhaustive des unités militaires composant une armée en campagne est nommée ordre de bataille. Il permet notamment une comparaison des forces en présence sur le plan stratégique avant leur engagement tactique. Ce terme est extensible à la description complète d'une armée nationale.

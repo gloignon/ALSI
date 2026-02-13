@@ -22,9 +22,7 @@ n_cores <- max(1, parallel::detectCores() - 1)
 dt_txt <- constituerCorpus(corpus_dir)
 
 # 2) Parse and tag the corpus using UDPipe
-future::plan(future::sequential)
-
-dt_parsed_raw <- parse_text(dt_txt, n_cores = 8)
+dt_parsed_raw <- parse_text(dt_txt, n_cores = n_cores)
 
 # 3) Post-process the parsed output
 
