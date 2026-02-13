@@ -38,6 +38,8 @@ dt_embeddings <- list_embeddings$dt_doc_embeddings
 # optionnal: flatten embeddings to 2D and plot by class
 # this is for demonstration purposes, you do not need if you don't want to visualize the embeddings
 # For the demo data, there should not be any clear pattern as we are comparing pairs of texts aligned by theme
+library(Rtsne)
+library(ggplot2)
 tsne_result <- Rtsne(dt_embeddings, dims = 2, perplexity = 30, verbose = TRUE, max_iter = 500)
 dt_embeddings[, tsne_x := tsne_result$Y[,1]]
 dt_embeddings[, tsne_y := tsne_result$Y[,2]]
@@ -68,13 +70,15 @@ dt_surprisal_ar <- llm_surprisal_entropy(
 
 # Optional - boxplots of surprisal and entropy by class
 dt_surprisal_mlm <- merge(dt_surprisal_mlm, dt_doc_classes, by = "doc_id")
-dt_surprisal_ar <- merge(dt_surprisal_ar, dt_doc_classes, by = "doc_id")
-ggplot(dt_surprisal_mlm, aes(x = factor(class), y = llm_surprisal)) +
+
+dt_surprisal_mlm_docs <- dt_surprisal_mlm[, .(llm_surprisal = mean(llm_surprisal), llm_entropy = mean(llm_entropy)), by = .(doc_id, class)]
+
+ggplot(dt_surprisal_mlm_docs, aes(x = factor(class), y = llm_surprisal)) +
   geom_boxplot() +
   labs(title = "Surprisal by Class (MLM)", x = "Class", y = "Surprisal") +
   theme_minimal()
 
-ggplot(dt_surprisal_mlm, aes(x = factor(class), y = llm_entropy)) +
+ggplot(dt_surprisal_mlm_docs, aes(x = factor(class), y = llm_entropy)) +
   geom_boxplot() +
   labs(title = "Entropy by Class (MLM)", x = "Class", y = "Surprisal") +
   theme_minimal()
