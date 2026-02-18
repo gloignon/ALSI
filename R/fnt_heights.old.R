@@ -4,11 +4,11 @@
 #
 
 library(data.table)
-library(igraph)
+# library(igraph)
 
 # nouvelle méthode, printemps 2022
 # beaucoup plus rapide
-sentenceHeight <- function(dt, verbose = TRUE) {
+sentenceHeight_igraph <- function(dt, verbose = TRUE) {
   
   # if dt is not data.table, make it so
   if (!is.data.table(dt)) {
@@ -238,3 +238,4 @@ docwise_graph_stats <- function(df_corpus) {
   
   return(df_result)
 }
+
