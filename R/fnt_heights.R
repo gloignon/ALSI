@@ -3,79 +3,97 @@
 # loignon.guillaume@uqam.ca
 #
 
-library(data.table)
-library(igraph)
 
-# new code using igraph
+
+# 
+# New versions 2026-02 without igraph ------
+# 
+
 sentence_graph_stats <- function(dt_sentence, verbose = FALSE) {
-  
-  # if there is a doc_id column, check there is a single value
-  if ("doc_id" %in% names(dt_sentence)) {
-    if (length(unique(dt_sentence$doc_id)) > 1) {
-      stop("The data.table must contain a single doc_id.")
-    }
+
+  dt_sentence <- as.data.table(copy(dt_sentence))
+  dt_sentence <- dt_sentence[!is.na(head_token_id) & !is.na(token_id) & upos != "PUNCT"]
+
+  if (nrow(dt_sentence) == 0L) {
+    return(list(
+      max_path = 0,
+      avg_path = 0,
+      count_path = 0,
+      sentence_length = 0,
+      adj_max_path = 0
+    ))
   }
-  
-  # if there is a sentence_id column, check there is a single value
-  if ("sentence_id" %in% names(dt_sentence)) {
-    if (length(unique(dt_sentence$sentence_id)) > 1) {
-      stop("The data.table must contain a single sentence_id.")
-    }
+
+  dt_sentence[, `:=`(
+    token_id = as.integer(token_id),
+    head_token_id = as.integer(head_token_id)
+  )]
+  dt_sentence <- dt_sentence[!is.na(token_id) & !is.na(head_token_id)]
+
+  dt_sentence[, depth := fifelse(head_token_id == 0L, 0L, NA_integer_)]
+  dt_sentence[, row_id := .I]
+
+  for (i in seq_len(200L)) {
+    missing_rows <- dt_sentence[is.na(depth), row_id]
+    if (length(missing_rows) == 0L) break
+
+    parents <- dt_sentence[!is.na(depth), .(token_id, parent_depth = depth)]
+    children <- dt_sentence[is.na(depth), .(row_id, head_token_id)]
+
+    joined <- parents[children, on = .(token_id = head_token_id)]
+    new_depth <- joined$parent_depth + 1L
+    fill <- children$row_id[!is.na(new_depth)]
+
+    if (length(fill) == 0L) break
+
+    dt_sentence[fill, depth := new_depth[!is.na(new_depth)]]
   }
-  
-  # keep what we need only
-  dt_sentence <- dt_sentence[, .(token_id, head_token_id)]
-  
-  # Remove head_token_id = 0 (root indicator)
-  edges <- subset(dt_sentence, head_token_id != 0)
-  
-  # Create the dependency graph
-  g <- graph_from_data_frame(edges, directed = TRUE)
-  
-  # Max path length (diameter)
-  max_path <- diameter(g) 
-  
-  # Average path length
-  avg_path <- mean_distance(g, directed = TRUE)
-  
-  # Total number of paths
-  count_path <- vcount(g) * avg_path
-  
-  # Number of nodes (i.e., sentence length)
-  sentence_length <- vcount(g)
-  
-  # Log adjusted max path length
-  adj_max_path <- log(max_path) / log(sentence_length)
-  
+
+  valid_depth <- dt_sentence[!is.na(depth), depth]
+
+  if (length(valid_depth) == 0L) {
+    return(list(
+      max_path = 0,
+      avg_path = 0,
+      count_path = 0,
+      sentence_length = 0,
+      adj_max_path = 0
+    ))
+  }
+
+  n <- length(valid_depth)
+  max_path <- max(valid_depth)
+  avg_path <- mean(valid_depth)
+  count_path <- sum(valid_depth)
+  adj_max_path <- if (n > 1L && max_path > 0L) log(max_path) / log(n) else 0
+
   if (verbose) {
     cat("Max path:", max_path, "\n")
     cat("Average path:", avg_path, "\n")
-    cat("Sentence length:", sentence_length, "\n")
-    cat("Adjusted max path": adj_max_path)
+    cat("Sentence length:", n, "\n")
+    cat("Adjusted max path:", adj_max_path, "\n")
   }
-  
-  return(list(
+
+  list(
     max_path = max_path,
     avg_path = avg_path,
     count_path = count_path,
-    sentence_length = sentence_length,
+    sentence_length = n,
     adj_max_path = adj_max_path
-  ))
+  )
 }
 
-
 head_final_initial <- function(df) {
-  
+
   df <- as.data.table(df)
-  df[, temp_global_id := .I]  # Preserve original row order
-  
+  df[, temp_global_id := .I]
+
   df_copy <- copy(df)
-  
-  # Filter valid rows and compute booleans
+
   df_valid <- df[!is.na(token_id) & !is.na(head_token_id) & upos != "PUNCT", {
     token_id_num <- as.numeric(token_id)
     head_token_id_num <- as.numeric(head_token_id)
-    
+
     list(
       doc_id = doc_id,
       paragraph_id = paragraph_id,
@@ -86,78 +104,107 @@ head_final_initial <- function(df) {
       temp_global_id = temp_global_id
     )
   }]
-  
-  # Rows that were excluded in filtering
-  df_lost <- df_copy[!temp_global_id %in% df_valid$temp_global_id, 
+
+  df_lost <- df_copy[!temp_global_id %in% df_valid$temp_global_id,
                      .(doc_id, paragraph_id, sentence_id, token_id, head_final = NA, head_initial = NA, temp_global_id)]
-  
-  # Combine and restore original order
+
   df_result <- rbindlist(list(df_valid, df_lost), use.names = TRUE, fill = TRUE)
   setorder(df_result, temp_global_id)
-  
-  # Return selected columns
+
   df_result[, .(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial)]
 }
 
-
-# This function will batch process sentence height/depth calculations
-# Uses data.table for efficient processing.
-# Note: in current version, we let data.table print progress messages even
-# if verbose = FALSE
 batch_graph_stats <- function(dt_corpus, verbose = FALSE) {
-  
-  dt <- as.data.table(copy(dt_corpus))  # ensure dt is a data.table and safely copied
-  
-  # Filter and create sentence ID
+
+  dt <- as.data.table(copy(dt_corpus))
   dt <- dt[!is.na(head_token_id) & !is.na(token_id) & upos != "PUNCT"]
-  dt[, unique_sentence_id := paste(doc_id, paragraph_id, sentence_id, sep = "___")]
-  
-  # Apply sentence_graph_stats by sentence using data.table's grouping
-  results <- dt[, {
-    stats <- sentence_graph_stats(.SD, verbose = verbose)
-    .(max_path = stats$max_path,
-      avg_path = stats$avg_path,
-      count_path = stats$count_path,
-      sentence_length = stats$sentence_length,
-      adj_max_path = stats$adj_max_path)
+
+  if (nrow(dt) == 0L) {
+    return(dt[, .(
+      max_path = integer(),
+      avg_path = numeric(),
+      count_path = integer(),
+      sentence_length = integer(),
+      adj_max_path = numeric()
+    ), by = .(doc_id, paragraph_id, sentence_id)])
+  }
+
+  dt[, `:=`(
+    token_id = as.integer(token_id),
+    head_token_id = as.integer(head_token_id)
+  )]
+  dt <- dt[!is.na(head_token_id) & !is.na(token_id)]
+
+  dt[, sent_key := .GRP, by = .(doc_id, paragraph_id, sentence_id)]
+  dt[, depth := fifelse(head_token_id == 0L, 0L, NA_integer_)]
+  dt[, row_id := .I]
+
+  for (i in seq_len(200L)) {
+    missing_rows <- dt[is.na(depth), row_id]
+    if (length(missing_rows) == 0L) break
+
+    parents <- dt[!is.na(depth), .(sent_key, token_id, parent_depth = depth)]
+    children <- dt[is.na(depth), .(row_id, sent_key, head_token_id)]
+
+    joined <- parents[children, on = .(sent_key, token_id = head_token_id)]
+    new_depth <- joined$parent_depth + 1L
+    fill <- children$row_id[!is.na(new_depth)]
+
+    if (length(fill) == 0L) break
+
+    dt[fill, depth := new_depth[!is.na(new_depth)]]
+  }
+
+  if (verbose && any(is.na(dt$depth))) {
+    warning(
+      "batch_graph_stats: some tokens could not be assigned a depth; ",
+      "check for disconnected or cyclic dependency structures."
+    )
+  }
+
+  dt[!is.na(depth), {
+    n <- .N
+    mp <- max(depth)
+    ap <- mean(depth)
+
+    .(
+      max_path = mp,
+      avg_path = ap,
+      count_path = sum(depth),
+      sentence_length = n,
+      adj_max_path = if (n > 1L && mp > 0L) log(mp) / log(n) else 0
+    )
   }, by = .(doc_id, paragraph_id, sentence_id)]
-  
-  return(results)
 }
 
-# Will accept a whole corpus and batch process the sentences
-# computing height & height final stats
 docwise_graph_stats <- function(df_corpus) {
-  
+
   df_corpus <- copy(df_corpus)
-  
+
   message("Head final/initial...")
   df_head_final <- head_final_initial(df_corpus)
-  sum_head_final <- df_head_final %>% 
-    group_by(doc_id) %>% 
+  sum_head_final <- df_head_final %>%
+    group_by(doc_id) %>%
     summarise(
-      prop_hf = sum(head_final, na.rm = T) / n(),
-      prop_hi = sum(head_initial, na.rm = T) / n()
-    )  
-  
+      prop_hf = sum(head_final, na.rm = TRUE) / n(),
+      prop_hi = sum(head_initial, na.rm = TRUE) / n()
+    )
+
   message("Heights...")
   df_heights <- batch_graph_stats(df_corpus, verbose = FALSE)
-  
-  sum_heights <- df_heights %>% 
-    group_by(doc_id) %>% 
+
+  sum_heights <- df_heights %>%
+    group_by(doc_id) %>%
     summarise(
-      avg_sent_height = mean(max_path, na.rm = T),
-      norm_sent_height = mean(adj_max_path, na.rm = T),
+      avg_sent_height = mean(max_path, na.rm = TRUE),
+      norm_sent_height = mean(adj_max_path, na.rm = TRUE),
       n = sum(sentence_length),
       s = n(),
-      total_paths = sum(count_path, na.rm = T)
-    ) %>% 
+      total_paths = sum(count_path, na.rm = TRUE)
+    ) %>%
     mutate(
       avg_path = (1 / (n - s)) * total_paths
     )
-  
-  # merge 
-  df_result <- merge(sum_heights, sum_head_final, by = "doc_id")
-  
-  return(df_result)
+
+  merge(sum_heights, sum_head_final, by = "doc_id")
 }

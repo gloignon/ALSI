@@ -29,7 +29,7 @@ dt_parsed_corpus <- dt_parsed_corpus[doc_id %in% sampled_docs]
 
 # Embeddings
 list_embeddings <- corpus_embeddings(
-  dt_corpus = dt_parsed_corpus,
+  dt_corpus = dt_parsed_corpus, 
   batch_size = 8
 )
 setDT(list_embeddings$dt_sent_embeddings)
