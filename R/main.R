@@ -14,7 +14,6 @@ library(data.table)
 library(udpipe)
 library(tidyverse)
 library(utf8)
-library(igraph) # for node distances in fnt_heights.R
 library(zoo)    # for rolling functions in fnt_lexical.R
 library(future)  # parallelization of corpus parsing & tagging
 library(future.apply)
