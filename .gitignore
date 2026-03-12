@@ -8,6 +8,10 @@ classification.R
 aggregation.R
 /utils/strip_epub.R
 /private/
-/out/
+/out/*
+/.venv/
+__pycache__/
+
+
 
 
