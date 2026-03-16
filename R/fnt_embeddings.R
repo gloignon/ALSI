@@ -16,16 +16,13 @@ encode_embeddings <- function(dt_corpus,
                               batch_size = 32,
                               instruction = "Identifiez le thème principal et les thèmes secondaires dans ce texte.") {
   
-  dt <- copy(dt_corpus)
   source_python("py/embed_sentences_instruct.py")
-  
-  # Load the model (may download on first use — this can take a while)
-  cat(sprintf("Loading model '%s' (downloading if not cached)...\n", model_name))
+
+  cat(sprintf("Loading model '%s'...\n", model_name))
   flush.console()
   load_embedding_model(model_name)
-  
-  # Prepare input: unique sentences by doc and sentence_id
-  dt_sentences <- as.data.table(dt)[
+
+  dt_sentences <- as.data.table(dt_corpus)[
     , .(sentence = first(sentence)), by = .(doc_id, sentence_id)
   ][order(doc_id, sentence_id)]
   
@@ -56,9 +53,7 @@ encode_embeddings <- function(dt_corpus,
       emb_matrix <- embed_sentences(doc_dt$sentence, mode = mode,
                                     instruction = instruction, bs = batch_size)
 
-      # Ensure we always have a proper R matrix (reticulate can
-      # return 1D vectors for single sentences or numpy arrays
-      # that R sees as arrays rather than matrices)
+      # reticulate can return 1D for single sentences
       if (is.null(dim(emb_matrix))) {
         emb_matrix <- matrix(emb_matrix, nrow = 1)
       } else {
@@ -82,22 +77,18 @@ encode_embeddings <- function(dt_corpus,
     }
   }
   
-  cat("\nDone!\n")
-  
   dt_embed <- rbindlist(results, use.names = TRUE, fill = TRUE)
-  
-  # Rename embedding columns
+
   n_dim <- ncol(dt_embed) - 3
   emb_cols <- names(dt_embed)[(ncol(dt_embed) - n_dim + 1):ncol(dt_embed)]
   setnames(dt_embed, emb_cols, paste0("dim", seq_len(n_dim)))
   
-  # Optional: message if anything failed
   if (length(failed_docs)) {
-    message(sprintf("⚠️ Embedding failed for %d document(s): %s", length(failed_docs), 
+    message(sprintf("Embedding failed for %d document(s): %s", length(failed_docs),
                     paste(failed_docs, collapse = ", ")))
   }
   
-  return(dt_embed)
+  dt_embed
 }
 
 
@@ -110,49 +101,42 @@ corpus_embeddings <- function(dt_corpus,
                                 instruction = "Identifiez le thème principal et secondaire dans le texte."
                               ) {
 
-  dt_sentences <- as.data.table(dt_corpus)[
-    , .(sentence = first(sentence)), by = .(doc_id, sentence_id)
-  ][order(doc_id, sentence_id)]
-  
   dt_embeddings <- encode_embeddings(
-    dt_sentences,
+    dt_corpus,
     model_name = model_name,
     mode = mode,
     batch_size = batch_size,
     instruction = instruction
   )
   
-  # now we can do mean per doc
   dim_cols <- grep("^dim", names(dt_embeddings), value = TRUE)
   dt_doc_mean <- dt_embeddings[, lapply(.SD, mean, na.rm = TRUE), by = doc_id, .SDcols = dim_cols]
-  
-  result <- list(
-    dt_sent_embeddings = dt_embeddings,
-    dt_doc_embeddings = dt_doc_mean  
-    )
-  
-  return(result)
+
+  list(dt_sent_embeddings = dt_embeddings,
+       dt_doc_embeddings  = dt_doc_mean)
 }
 
 
-# Compute document-level coherence features from sentence embeddings.
-# All metrics are O(n) per document.
-# Input: dt_sent_embeddings from corpus_embeddings() (with doc_id, sentence_id, dim1..dimN)
-# Returns a data.table with one row per doc_id:
-#   - emb_thematic_dispersion: mean cosine distance from each sentence to the document centroid
-#   - emb_centroid_distance_sd: SD of cosine distances to centroid
-#   - emb_sequential_similarity: mean cosine similarity between consecutive sentences
-#   - emb_mean_semantic_gap: mean cosine distance between consecutive sentences
-#   - emb_max_semantic_gap: largest cosine distance between consecutive sentences
-#   - emb_topic_drift: mean cosine distance between consecutive 3-sentence block centroids
-#   - emb_mean_novelty: mean cosine distance of each sentence to the running centroid of all previous sentences
-#   - emb_n_topics: optimal number of sentence clusters (silhouette on L2-normalized embeddings, k=1..5)
-#   - emb_convexity: conceptual convexity (Gärdenfors) — mean NN cosine similarity of points
-#     interpolated along all sentence-pair segments (at lambda 0.25/0.5/0.75).
-#     1 = perfectly convex, lower = holes in the semantic space.
-#     Uses all pairs for n<=30, random sample of 500 pairs above.
-#   - emb_local_convexity: same as convexity but only on consecutive sentence pairs;
-#     measures local semantic continuity rather than global convexity.
+# Mean NN cosine similarity of interpolated points along sentence-pair segments.
+# Used by embedding_coherence for convexity features.
+.interpolation_convexity <- function(mat_norm, idx_a, idx_b,
+                                     lambdas = c(0.25, 0.5, 0.75)) {
+  nn_sims <- numeric(0)
+  for (lam in lambdas) {
+    interp <- (1 - lam) * mat_norm[idx_a, , drop = FALSE] +
+                   lam  * mat_norm[idx_b, , drop = FALSE]
+    i_norms <- sqrt(rowSums(interp^2))
+    i_norms[i_norms == 0] <- 1
+    interp <- interp / i_norms
+    sim_interp <- interp %*% t(mat_norm)
+    nn_sims <- c(nn_sims, apply(sim_interp, 1, max))
+  }
+  mean(nn_sims)
+}
+
+# Document-level coherence features from sentence embeddings.
+# Input:  dt_sent_embeddings from corpus_embeddings() (doc_id, sentence_id, dim1..dimN)
+# Output: data.table with one row per doc_id and emb_* columns (see FEATURES.md §15).
 embedding_coherence <- function(dt_sent_embeddings) {
 
   dt <- as.data.table(dt_sent_embeddings)
@@ -192,32 +176,26 @@ embedding_coherence <- function(dt_sent_embeddings) {
       next
     }
 
-    # L2-normalize rows for cosine similarity via dot product
+    # L2-normalize for cosine similarity via dot product
     norms <- sqrt(rowSums(mat^2))
     norms[norms == 0] <- 1
     mat_norm <- mat / norms
 
-    # Centroid and per-sentence cosine distances
     centroid <- colMeans(mat_norm)
     centroid_norm <- centroid / sqrt(sum(centroid^2))
     dist_to_centroid <- 1 - as.numeric(mat_norm %*% centroid_norm)
 
-    # 1) Thematic dispersion: mean cosine distance to centroid
     mean_centroid_distance <- mean(dist_to_centroid)
-
-    # 2) Centroid distance SD
     centroid_dist_sd <- sd(dist_to_centroid)
 
-    # 3) Sequential similarity: mean cosine sim between consecutive sentences
     consecutive_sims <- rowSums(mat_norm[-n, , drop = FALSE] * mat_norm[-1, , drop = FALSE])
     mean_sequential_sim <- mean(consecutive_sims)
 
-    # 4) Semantic gaps: mean and max cosine distance between consecutive sentences
     gaps <- 1 - consecutive_sims
     mean_gap <- mean(gaps)
     max_gap <- max(gaps)
 
-    # 5) Topic drift: mean cosine distance between consecutive blocks of 3 sentences
+    # Topic drift: consecutive blocks of 3 sentences
     block_size <- 3L
     if (n >= 2 * block_size) {
       n_blocks <- n %/% block_size
@@ -235,8 +213,7 @@ embedding_coherence <- function(dt_sent_embeddings) {
       topic_drift <- NA_real_
     }
 
-    # 6) Mean novelty: mean cosine distance to running centroid of previous sentences
-    # cumulative sum for running centroid, O(n)
+    # Novelty: cosine distance to running centroid
     cum_mat <- apply(mat_norm, 2, cumsum)
     novelty_scores <- numeric(n - 1)
     for (j in 2:n) {
@@ -250,9 +227,7 @@ embedding_coherence <- function(dt_sent_embeddings) {
     }
     mean_novelty <- mean(novelty_scores, na.rm = TRUE)
 
-    # 7) Number of topics: optimal k via silhouette on L2-normalized embeddings
-    #    (euclidean distance on unit vectors ~ cosine distance)
-    #    Need at least 3 sentences per cluster for stability
+    # n_topics: optimal k via silhouette (min 3 sentences per cluster)
     k_max <- min(5L, n %/% 3L)
     if (k_max >= 2) {
       d_mat <- dist(mat_norm)
@@ -269,65 +244,29 @@ embedding_coherence <- function(dt_sent_embeddings) {
       n_topics <- 1L
     }
 
-    # 8) Conceptual convexity (Gärdenfors): for sentence pairs,
-    #    interpolate at lambda = 0.25, 0.5, 0.75 along the segment and
-    #    measure cosine similarity to the nearest actual sentence.
-    #    Mean NN similarity across all interpolated points: 1 = perfectly
-    #    convex, lower = holes in the semantic space.
-    #    Uses all pairs when n <= 30 (up to 435 pairs); above that,
-    #    randomly samples 500 pairs to keep computation manageable.
+    # Convexity (Gärdenfors): interpolate between sentence pairs,
+    # measure NN similarity to actual sentences. 1 = perfectly convex.
+    # All pairs for n <= 30, sample 500 above.
     if (n >= 3) {
       n_all_pairs <- n * (n - 1) / 2
       if (n <= 30) {
-        # exact: all unique pairs
         pair_idx <- which(upper.tri(matrix(0, n, n)), arr.ind = TRUE)
       } else {
-        # sample 500 random pairs
         n_sample <- min(500L, n_all_pairs)
         idx_a_samp <- sample.int(n, n_sample, replace = TRUE)
         idx_b_samp <- sample.int(n, n_sample, replace = TRUE)
-        # ensure a != b
         same <- idx_a_samp == idx_b_samp
         idx_b_samp[same] <- (idx_b_samp[same] %% n) + 1L
         pair_idx <- cbind(idx_a_samp, idx_b_samp)
       }
-      idx_a <- pair_idx[, 1]
-      idx_b <- pair_idx[, 2]
-
-      lambdas <- c(0.25, 0.5, 0.75)
-      nn_sims <- numeric(0)
-      for (lam in lambdas) {
-        interp <- (1 - lam) * mat_norm[idx_a, , drop = FALSE] +
-                       lam  * mat_norm[idx_b, , drop = FALSE]
-        i_norms <- sqrt(rowSums(interp^2))
-        i_norms[i_norms == 0] <- 1
-        interp <- interp / i_norms
-        sim_interp <- interp %*% t(mat_norm)
-        nn_sims <- c(nn_sims, apply(sim_interp, 1, max))
-      }
-      convexity <- mean(nn_sims)
+      convexity <- .interpolation_convexity(mat_norm, pair_idx[, 1], pair_idx[, 2])
     } else {
       convexity <- NA_real_
     }
 
-    # 9) Local convexity: same as above but only on consecutive sentence pairs.
-    #    Tests whether the text maintains smooth local semantic transitions.
+    # Local convexity: same but consecutive pairs only
     if (n >= 3) {
-      idx_a_loc <- seq_len(n - 1)
-      idx_b_loc <- seq(2L, n)
-
-      lambdas <- c(0.25, 0.5, 0.75)
-      nn_sims_loc <- numeric(0)
-      for (lam in lambdas) {
-        interp <- (1 - lam) * mat_norm[idx_a_loc, , drop = FALSE] +
-                       lam  * mat_norm[idx_b_loc, , drop = FALSE]
-        i_norms <- sqrt(rowSums(interp^2))
-        i_norms[i_norms == 0] <- 1
-        interp <- interp / i_norms
-        sim_interp <- interp %*% t(mat_norm)
-        nn_sims_loc <- c(nn_sims_loc, apply(sim_interp, 1, max))
-      }
-      local_convexity <- mean(nn_sims_loc)
+      local_convexity <- .interpolation_convexity(mat_norm, seq_len(n - 1), seq(2L, n))
     } else {
       local_convexity <- NA_real_
     }
