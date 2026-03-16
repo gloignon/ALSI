@@ -11,6 +11,8 @@ aggregation.R
 /out/*
 /.venv/
 __pycache__/
+/.claude/
+/experiments/
 
 
 
