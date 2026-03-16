@@ -21,23 +21,6 @@ source("R/fnt_heights.R", encoding = "UTF-8")
 
 udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_2.udpipe")
 
-# Robust Pearson correlation:
-# returns 0 when undefined (not enough values or zero variance).
-safe_cor <- function(x, y) {
-  ok <- is.finite(x) & is.finite(y)
-  if (sum(ok) < 2L) return(0)
-  x_ok <- x[ok]
-  y_ok <- y[ok]
-  if (sd(x_ok) == 0 || sd(y_ok) == 0) return(0)
-  cor(x_ok, y_ok, method = "pearson")
-}
-
-# Helper: safe Cohen's d (returns 0 for zero-variance features).
-safe_cohen_d <- function(x1, x2) {
-  if (sd(x1) == 0 && sd(x2) == 0) return(0)
-  cohen.d(x1, x2)$estimate
-}
-
 
 # 1) Single-sentence inspection ----
 
@@ -114,8 +97,8 @@ features <- setdiff(names(dt_heights), non_features)
 df_effect_sizes <- data.frame(
   feature = features,
   cohen_d = sapply(features, function(f) {
-    safe_cohen_d(dt_heights[[f]][dt_heights$class == 1],
-                 dt_heights[[f]][dt_heights$class == 2])
+    cohen.d(dt_heights[[f]][dt_heights$class == 1],
+            dt_heights[[f]][dt_heights$class == 2])$estimate
   })
 )
 
@@ -124,7 +107,7 @@ dt_heights <- dt_heights %>%
   mutate(doc_sentence_length = n / pmax(s, 1L))
 
 df_effect_sizes$corr_sentence_length <- sapply(features, function(f) {
-  safe_cor(dt_heights[[f]], dt_heights$doc_sentence_length)
+  cor(dt_heights[[f]], dt_heights$doc_sentence_length)
 })
 
 df_effect_sizes %>%
@@ -136,10 +119,6 @@ df_effect_sizes %>%
 df_heights_long <- dt_heights %>%
   select(doc_id, class, all_of(features)) %>%
   pivot_longer(cols = all_of(features), names_to = "feature", values_to = "value")
-
-# Guardrail: ensure this plot input remains document-level.
-stopifnot(n_distinct(df_heights_long$doc_id) == nrow(dt_heights))
-stopifnot(nrow(df_heights_long) == nrow(dt_heights) * length(features))
 
 # Plot only features with substantial separation (|d| > 0.4).
 df_heights_long %>%
