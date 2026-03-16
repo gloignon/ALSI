@@ -130,7 +130,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       sd_depth = 0,
       branching_factor = 0,
       count_path = 0,
-      sentence_length = 0
+      sentence_length = 0,
+      max_incomplete_deps = 0L,
+      avg_incomplete_deps = 0,
+      max_incomplete_deps_adj = 0
     ))
   }
 
@@ -174,7 +177,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       sd_depth = 0,
       branching_factor = 0,
       count_path = 0,
-      sentence_length = 0
+      sentence_length = 0,
+      max_incomplete_deps = 0L,
+      avg_incomplete_deps = 0,
+      max_incomplete_deps_adj = 0
     ))
   }
 
@@ -195,6 +201,25 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     branching_factor <- 0
   }
 
+  # Gibson DLT incomplete dependency count
+  m_tok <- metric_tokens$token_id
+  m_head <- metric_tokens$head_token_id
+  tok_sorted <- sort(m_tok)
+  head_for_tok <- m_head[order(m_tok)]
+  hf_idx <- which(head_for_tok > tok_sorted)
+  if (length(hf_idx) > 0L) {
+    open_at <- tok_sorted[hf_idx]
+    close_at <- head_for_tok[hf_idx]
+    inc_counts <- vapply(tok_sorted, function(pos) {
+      sum(open_at <= pos & close_at > pos)
+    }, integer(1L))
+    max_incomplete_deps <- max(inc_counts)
+    avg_incomplete_deps <- mean(inc_counts)
+  } else {
+    max_incomplete_deps <- 0L
+    avg_incomplete_deps <- 0
+  }
+
   if (verbose) {
     cat("Max path:", max_path, "\n")
     cat("Average dependency depth:", avg_dependency_depth, "\n")
@@ -202,6 +227,9 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     cat("Depth variance (sd):", sd_depth, "\n")
     cat("Branching factor:", branching_factor, "\n")
     cat("Sentence length:", n, "\n")
+    cat("Max incomplete dependencies (Gibson DLT):", max_incomplete_deps, "\n")
+    cat("Max incomplete deps (adjusted):", round(max_incomplete_deps / pmax(n, 1L), 3), "\n")
+    cat("Avg incomplete dependencies:", round(avg_incomplete_deps, 2), "\n")
   }
 
   list(
@@ -211,7 +239,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     sd_depth = sd_depth,
     branching_factor = branching_factor,
     count_path = count_path,
-    sentence_length = n
+    sentence_length = n,
+    max_incomplete_deps = max_incomplete_deps,
+    avg_incomplete_deps = avg_incomplete_deps,
+    max_incomplete_deps_adj = max_incomplete_deps / pmax(n, 1L)
   )
 }
 
@@ -324,7 +355,10 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       sd_depth = numeric(),
       branching_factor = numeric(),
       count_path = integer(),
-      sentence_length = integer()
+      sentence_length = integer(),
+      max_incomplete_deps = integer(),
+      avg_incomplete_deps = numeric(),
+      max_incomplete_deps_adj = numeric()
     ), by = .(doc_id, paragraph_id, sentence_id)])
   }
 
@@ -381,7 +415,10 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         sd_depth = 0,
         branching_factor = 0,
         count_path = 0L,
-        sentence_length = 0L
+        sentence_length = 0L,
+        max_incomplete_deps = 0L,
+        avg_incomplete_deps = 0,
+        max_incomplete_deps_adj = 0
       )
     } else {
       mp <- max(metric_depth)
@@ -406,6 +443,27 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         bf <- 0
       }
 
+      # Gibson DLT incomplete dependency count:
+      # sweep left-to-right; at each position count how many dependencies
+      # are still unresolved (dependent seen but head not yet reached).
+      tok_sorted <- sort(m_tok)
+      head_for_tok <- m_head[order(m_tok)]
+      # head-final arcs (head comes later) create incomplete deps
+      hf_idx <- which(head_for_tok > tok_sorted)
+      if (length(hf_idx) > 0L) {
+        open_at <- tok_sorted[hf_idx]   # dep opens at this position
+        close_at <- head_for_tok[hf_idx] # dep resolves at this position
+        # count open deps at each token position
+        inc_counts <- vapply(tok_sorted, function(pos) {
+          sum(open_at <= pos & close_at > pos)
+        }, integer(1L))
+        max_inc <- max(inc_counts)
+        avg_inc <- mean(inc_counts)
+      } else {
+        max_inc <- 0L
+        avg_inc <- 0
+      }
+
       .(
         max_path = mp,
         avg_dependency_depth = ap,
@@ -413,7 +471,10 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         sd_depth = if (n > 1L) sd(metric_depth) else 0,
         branching_factor = bf,
         count_path = cp,
-        sentence_length = n
+        sentence_length = n,
+        max_incomplete_deps = max_inc,
+        avg_incomplete_deps = avg_inc,
+        max_incomplete_deps_adj = max_inc / pmax(n, 1L)
       )
     }
   }, by = .(doc_id, paragraph_id, sentence_id)]
@@ -465,6 +526,9 @@ docwise_graph_stats <- function(df_corpus) {
       avg_dependency_depth_adj = mean(avg_dependency_depth_adj, na.rm = TRUE),
       avg_sd_depth = mean(sd_depth, na.rm = TRUE),
       avg_branching_factor = mean(branching_factor, na.rm = TRUE),
+      avg_max_incomplete_deps = mean(max_incomplete_deps, na.rm = TRUE),
+      avg_max_incomplete_deps_adj = mean(max_incomplete_deps_adj, na.rm = TRUE),
+      avg_incomplete_deps = mean(avg_incomplete_deps, na.rm = TRUE),
       n = sum(sentence_length),
       s = n(),
       total_paths = sum(count_path, na.rm = TRUE)

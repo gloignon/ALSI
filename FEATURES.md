@@ -198,6 +198,9 @@ Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 | `avg_dependency_depth_adj` | `R/fnt_heights.R` | Mean adjusted dependency depth over sentences. | document |
 | `avg_sd_depth` | `R/fnt_heights.R` | Mean within-sentence SD of dependency depth. | document |
 | `avg_branching_factor` | `R/fnt_heights.R` | Mean branching factor (dependents per internal node). | document |
+| `avg_max_incomplete_deps` | `R/fnt_heights.R` | Mean peak count of unresolved dependencies per sentence (Gibson DLT). | document |
+| `avg_max_incomplete_deps_adj` | `R/fnt_heights.R` | Mean peak unresolved dependencies normalized by sentence length. | document |
+| `avg_incomplete_deps` | `R/fnt_heights.R` | Mean count of unresolved dependencies across all positions (Gibson DLT). | document |
 | `n` | `R/fnt_heights.R` | Total counted sentence tokens (aggregation helper, retained). | document |
 | `s` | `R/fnt_heights.R` | Number of sentences (aggregation helper, retained). | document |
 | `total_paths` | `R/fnt_heights.R` | Sum of dependency path lengths (aggregation helper, retained). | document |
@@ -210,8 +213,6 @@ Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 | `max_head_distance_adj` | `R/fnt_heights.R` | Maximum normalized dependency distance (`head_distance / (sentence_length - 1)`), bounded in `[0, 1]`. | document |
 | `dependency_direction_index` | `R/fnt_heights.R` | Mean signed direction of dependencies (left vs right). | document |
 
-Notes:
-- `crossing_deps` (sentence level) and `avg_crossing_deps` (document level) were removed from `R/fnt_heights.R`.
 
 ## 8) `features$syntactic`
 Produced in: `R/fnt_extra_syntax.R` (`extra_syntactic_features`)
