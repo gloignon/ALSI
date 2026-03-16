@@ -292,8 +292,26 @@ Produced in: `R/fnt_embeddings.R` (`corpus_embeddings`)
 |---|---|---|---|
 | `dim1` ... `dimN` | `R/fnt_embeddings.R` | Document-level mean of sentence embedding dimensions. | document |
 
-## 15) `features$surprisal$mlm` and `features$surprisal$ar`
-Produced in: `R/fnt_embeddings.R` (`llm_surprisal_entropy`)
+## 15) `features$embedding_coherence`
+Produced in: `R/fnt_embeddings.R` (`embedding_coherence`)
+
+Input: sentence embeddings from `corpus_embeddings()`. Returns one row per document.
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `emb_thematic_dispersion` | `R/fnt_embeddings.R` | Mean cosine distance from each sentence to the document centroid. | document |
+| `emb_centroid_distance_sd` | `R/fnt_embeddings.R` | SD of cosine distances to centroid. | document |
+| `emb_sequential_similarity` | `R/fnt_embeddings.R` | Mean cosine similarity between consecutive sentences. | document |
+| `emb_mean_semantic_gap` | `R/fnt_embeddings.R` | Mean cosine distance between consecutive sentences. | document |
+| `emb_max_semantic_gap` | `R/fnt_embeddings.R` | Largest cosine distance between consecutive sentences. | document |
+| `emb_topic_drift` | `R/fnt_embeddings.R` | Mean cosine distance between consecutive 3-sentence block centroids. | document |
+| `emb_mean_novelty` | `R/fnt_embeddings.R` | Mean cosine distance of each sentence to the running centroid of all previous sentences. | document |
+| `emb_n_topics` | `R/fnt_embeddings.R` | Optimal number of sentence clusters via silhouette method (k = 1..min(5, n/3)). | document |
+| `emb_convexity` | `R/fnt_embeddings.R` | Conceptual convexity (Gärdenfors): mean NN cosine similarity of points interpolated along all sentence-pair segments (λ = 0.25/0.5/0.75). 1 = perfectly convex. All pairs for n ≤ 30, random sample of 500 pairs above. | document |
+| `emb_local_convexity` | `R/fnt_embeddings.R` | Same as convexity but only on consecutive sentence pairs; measures local semantic continuity. | document |
+
+## 16) `features$surprisal$mlm` and `features$surprisal$ar`
+Produced in: `R/fnt_surprisal.R` (`llm_surprisal_entropy`)
 
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
@@ -301,7 +319,7 @@ Produced in: `R/fnt_embeddings.R` (`llm_surprisal_entropy`)
 | `llm_entropy` | `R/fnt_embeddings.R` | Token-level predictive entropy from language model. | word |
 | `llm_subword_n` | `R/fnt_embeddings.R` | Number of subword pieces used for the token. | word |
 
-## 16) Optional label currently added in demo pipeline
+## 17) Optional label currently added in demo pipeline
 Produced in: `R/main.R`
 
 | Feature name | Script | Short description | Level |
