@@ -47,7 +47,7 @@ dt_sentence <- as.data.table(udpipe(x = sentence_simple, object = udmodel_french
 # Token-level parsed output
 dt_sentence
 
-# Sentence-level tree metrics
+# Sentence-level tree metrics (includes Gibson DLT incomplete dependency count)
 sentence_graph_stats(dt_sentence, verbose = TRUE)
 
 # Token-level head direction/distance
@@ -63,6 +63,15 @@ docwise_graph_stats(dt_sentence)
 sentence_long <- "Durant la guerre froide, il désignait les nations qui n'appartenaient ni au bloc soviétique, ni au monde occidental."
 dt_sentence_long <- as.data.table(udpipe(x = sentence_long, object = udmodel_french))
 dt_sentence_long[, .(token, token_id, head_token_id, upos, dep_rel)]
+
+# Incomplete dependency count (Gibson DLT) on a more complex sentence:
+# At each word position (left to right), counts how many dependencies are
+# still unresolved (dependent seen, head not yet reached). The max gives
+# the peak "memory load" during incremental parsing.
+sentence_complex <- "Le livre que l'auteur dont tout le monde parle a écrit est fascinant."
+dt_complex <- as.data.table(udpipe(x = sentence_complex, object = udmodel_french))
+sentence_graph_stats(dt_complex, verbose = TRUE)
+batch_graph_stats(dt_complex)
 
 
 # 2) Punctuation sensitivity (sentence level) ----
