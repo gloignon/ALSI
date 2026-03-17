@@ -10,6 +10,7 @@ Scripts covered:
 - `R/fnt_pos_surprisal.R`
 - `R/fnt_cohesion.R`
 - `R/fnt_embeddings.R`
+- `R/fnt_ollama.R`
 - `R/main.R`
 
 ## 1) `features$simple_counts$doc_level_counts`
@@ -316,9 +317,9 @@ Produced in: `R/fnt_surprisal.R` (`llm_surprisal_entropy`)
 
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
-| `llm_surprisal` | `R/fnt_embeddings.R` | Token-level language-model surprisal (MLM or AR, depending on call). | word |
-| `llm_entropy` | `R/fnt_embeddings.R` | Token-level predictive entropy from language model. | word |
-| `llm_subword_n` | `R/fnt_embeddings.R` | Number of subword pieces used for the token. | word |
+| `llm_surprisal` | `R/fnt_surprisal.R` | Token-level language-model surprisal (MLM or AR, depending on call). | word |
+| `llm_entropy` | `R/fnt_surprisal.R` | Token-level predictive entropy from language model. | word |
+| `llm_subword_n` | `R/fnt_surprisal.R` | Number of subword pieces used for the token. | word |
 
 ## 17) Optional label currently added in demo pipeline
 Produced in: `R/main.R`
@@ -326,6 +327,20 @@ Produced in: `R/main.R`
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
 | `class` | `R/main.R` | Demo label: `1` for `viki*` docs, `2` otherwise. | document |
+
+## 18) Ollama LLM querying
+Provided by: `R/fnt_ollama.R` (`ollama_generate`)
+
+Not a fixed feature set — this is a general-purpose utility for querying a local LLM
+(via [Ollama](https://ollama.com)) row-by-row from a data frame. Each row becomes one
+stateless API call with a templated prompt; the response is stored in an
+`ollama_response` column.
+
+Typical uses: generating annotations, classifications, paraphrases, or verification
+labels that can then be parsed into whatever columns are needed downstream.
+
+Requires Ollama running locally (or on the network). See `demos/demo_ollama.R` for a
+worked example that generates statements about texts and then verifies them.
 
 ## Maintenance notes
 - If `n_sent_context` changes in `simple_lexical_cohesion`, overlap feature names change accordingly (`...prevK`).
