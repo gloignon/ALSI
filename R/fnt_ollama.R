@@ -1,0 +1,166 @@
+# fnt_ollama.R
+# Query a local Ollama API row-by-row from a data frame.
+# Uses /api/chat with system prompt per request (stateless, no conversation memory).
+
+# Fill a prompt template using column values from one row.
+# Tags are of the form {column_name}.
+.fill_template <- function(template, row) {
+  out <- template
+  for (col in names(row)) {
+    tag <- paste0("{", col, "}")
+    if (grepl(tag, out, fixed = TRUE)) {
+      out <- gsub(tag, as.character(row[[col]]), out, fixed = TRUE)
+    }
+  }
+  out
+}
+
+# Send a single stateless chat request to Ollama.
+.ollama_chat <- function(model, system_prompt, user_prompt, options, endpoint) {
+  body <- list(
+    model    = model,
+    messages = list(
+      list(role = "system",  content = system_prompt),
+      list(role = "user",    content = user_prompt)
+    ),
+    stream  = FALSE,
+    options = options
+  )
+  res <- httr::POST(
+    paste0(endpoint, "/api/chat"),
+    body = jsonlite::toJSON(body, auto_unbox = TRUE),
+    encode = "raw",
+    httr::content_type_json(),
+    httr::timeout(600)
+  )
+  if (httr::status_code(res) != 200) {
+    stop(sprintf("HTTP %d: %s", httr::status_code(res),
+                 httr::content(res, as = "text", encoding = "UTF-8")))
+  }
+  parsed <- jsonlite::fromJSON(httr::content(res, as = "text", encoding = "UTF-8"),
+                               simplifyVector = FALSE)
+  parsed$message$content
+}
+
+
+#' Query Ollama row-by-row from a data frame.
+#'
+#' @param data               Data frame whose columns fill the prompt template.
+#' @param user_prompt_template  String with \code{{column_name}} placeholders.
+#' @param system_prompt       System prompt sent with every request.
+#' @param model               Ollama model name (e.g. "gemma3:4b").
+#' @param temperature         Sampling temperature (default 0.7).
+#' @param top_p               Nucleus-sampling cutoff (default 0.9).
+#' @param num_ctx             Context window in tokens (default 4096).
+#' @param output_file         Path for incremental CSV output (also used for resuming).
+#' @param force_restart       If TRUE, ignore existing output file and start from row 1.
+#' @param endpoint            Ollama API base URL.
+#' @return A data.table: all original columns plus \code{ollama_response}.
+ollama_generate <- function(data,
+                            user_prompt_template,
+                            system_prompt,
+                            model = "llama3",
+                            temperature = 0.7,
+                            top_p = 0.9,
+                            num_ctx = 4096,
+                            output_file = NULL,
+                            force_restart = FALSE,
+                            endpoint = "http://localhost:11434") {
+
+  dt <- as.data.table(data)
+  n <- nrow(dt)
+
+  # Validate template tags
+  tags_found <- regmatches(user_prompt_template,
+                           gregexpr("\\{([^}]+)\\}", user_prompt_template))[[1]]
+  tag_names <- gsub("[{}]", "", tags_found)
+  missing_cols <- setdiff(tag_names, names(dt))
+  if (length(missing_cols)) {
+    stop(sprintf("[ollama] Template tags not found in data columns: %s",
+                 paste(missing_cols, collapse = ", ")))
+  }
+
+  # Resume from previous run if output_file exists
+  start_row <- 1L
+  if (!is.null(output_file) && file.exists(output_file) && !force_restart) {
+    dt_prev <- fread(output_file, encoding = "UTF-8")
+    completed <- which(!is.na(dt_prev$ollama_response))
+    if (length(completed) > 0) {
+      start_row <- max(completed) + 1L
+      dt[, ollama_response := NA_character_]
+      dt$ollama_response[seq_len(nrow(dt_prev))] <- dt_prev$ollama_response
+      message(sprintf("[ollama] Resuming from row %d/%d.", start_row, n))
+    }
+  }
+
+  if (!"ollama_response" %in% names(dt)) {
+    dt[, ollama_response := NA_character_]
+  }
+
+  if (start_row > n) {
+    message("[ollama] All rows already completed.")
+    return(dt)
+  }
+
+  options <- list(temperature = temperature, top_p = top_p, num_ctx = num_ctx)
+
+  # Check connectivity
+  ping <- tryCatch(httr::GET(paste0(endpoint, "/api/version"), httr::timeout(5)),
+                   error = function(e) NULL)
+  if (is.null(ping) || httr::status_code(ping) != 200) {
+    stop(sprintf("[ollama] Cannot reach Ollama at %s. Is it running?", endpoint))
+  }
+
+  message(sprintf("[ollama] Querying model '%s' on %d row(s)...", model, n - start_row + 1L))
+
+  start_time <- Sys.time()
+  n_todo <- n - start_row + 1L
+  n_done <- 0L
+  errors <- list()
+
+  for (i in start_row:n) {
+    prompt_i <- .fill_template(user_prompt_template, dt[i])
+
+    result <- tryCatch(
+      .ollama_chat(model, system_prompt, prompt_i, options, endpoint),
+      error = function(e) e
+    )
+
+    if (inherits(result, "error")) {
+      msg <- conditionMessage(result)
+      errors[[length(errors) + 1]] <- list(row = i, message = msg)
+      warning(sprintf("[ollama] Row %d FAILED: %s", i, msg), immediate. = TRUE)
+    } else if (is.null(result) || !nzchar(result)) {
+      errors[[length(errors) + 1]] <- list(row = i, message = "empty response")
+      warning(sprintf("[ollama] Row %d returned empty response", i), immediate. = TRUE)
+    } else {
+      set(dt, i, "ollama_response", result)
+    }
+
+    n_done <- n_done + 1L
+    elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+    if (elapsed > 0) {
+      speed <- n_done / elapsed
+      remaining <- (n_todo - n_done) / speed
+      cat(sprintf("\r[ollama] [%d/%d] %.1f rows/min — ~%.1f min left     ",
+                  i, n, speed * 60, remaining / 60))
+    } else {
+      cat(sprintf("\r[ollama] [%d/%d] ...     ", i, n))
+    }
+    flush.console()
+
+    if (!is.null(output_file)) fwrite(dt, output_file)
+  }
+
+  cat("\n")
+
+  if (length(errors)) {
+    message(sprintf("[ollama] %d row(s) failed:", length(errors)))
+    for (e in errors) message(sprintf("  row %d: %s", e$row, e$message))
+  }
+
+  elapsed_total <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
+  message(sprintf("[ollama] Done. %d/%d rows completed in %.1f min.", n - length(errors), n, elapsed_total))
+
+  dt
+}
