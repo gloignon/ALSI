@@ -264,7 +264,8 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
       head_initial = logical(),
       head_distance = integer(),
       head_direction = integer(),
-      head_distance_adj = numeric()
+      head_distance_adj = numeric(),
+      integration_cost = integer()
     ))
   }
 
@@ -275,7 +276,8 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
     head_initial = as.logical(NA),
     head_distance = as.integer(NA),
     head_direction = as.integer(NA),
-    head_distance_adj = as.numeric(NA)
+    head_distance_adj = as.numeric(NA),
+    integration_cost = as.integer(NA)
   )]
 
   dt[, sent_len := if (isTRUE(include_punct_in_metrics)) {
@@ -306,7 +308,21 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
 
   dt[valid_dependency, head_distance_adj := head_distance / pmax(sent_len - 1L, 1L)]
 
-  dt[, .(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial, head_distance, head_direction, head_distance_adj)]
+  # Gibson DLT integration cost: count of new discourse referents (NOUN, PROPN, VERB)
+  # intervening between dependent and head (excluding endpoints)
+  discourse_upos <- c("NOUN", "PROPN", "VERB")
+  dt[valid_dependency, integration_cost := {
+    lo <- pmin(token_id_num, head_token_id_num) + 1L
+    hi <- pmax(token_id_num, head_token_id_num) - 1L
+    mapply(function(l, h, pid, sid) {
+      if (l > h) return(0L)
+      sent_dt <- dt[paragraph_id == pid & sentence_id == sid &
+                     token_id_num >= l & token_id_num <= h]
+      sum(sent_dt$upos %in% discourse_upos, na.rm = TRUE)
+    }, lo, hi, paragraph_id, sentence_id, SIMPLIFY = TRUE)
+  }]
+
+  dt[, .(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial, head_distance, head_direction, head_distance_adj, integration_cost)]
 }
 
 # safer wrapper: process one document at a time
@@ -324,7 +340,8 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
       head_initial = logical(),
       head_distance = integer(),
       head_direction = integer(),
-      head_distance_adj = numeric()
+      head_distance_adj = numeric(),
+      integration_cost = integer()
     ))
   }
 
@@ -512,7 +529,8 @@ docwise_graph_stats <- function(df_corpus) {
       dependency_direction_index = {
         n_dep <- sum(!is.na(head_direction))
         if (n_dep > 0L) sum(head_direction, na.rm = TRUE) / n_dep else NA_real_
-      }
+      },
+      avg_integration_cost = mean(integration_cost, na.rm = TRUE)
     )
 
   # Tree height/depth: include punctuation (meaningful tree structure)
