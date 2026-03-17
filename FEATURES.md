@@ -202,6 +202,7 @@ Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 | `avg_max_incomplete_deps` | `R/fnt_heights.R` | Mean peak count of unresolved dependencies per sentence (Gibson DLT). | document |
 | `avg_max_incomplete_deps_adj` | `R/fnt_heights.R` | Mean peak unresolved dependencies normalized by sentence length. | document |
 | `avg_incomplete_deps` | `R/fnt_heights.R` | Mean count of unresolved dependencies across all positions (Gibson DLT). | document |
+| `avg_incomplete_deps_adj` | `R/fnt_heights.R` | Mean unresolved dependencies normalized by sentence length. | document |
 | `n` | `R/fnt_heights.R` | Total counted sentence tokens (aggregation helper, retained). | document |
 | `s` | `R/fnt_heights.R` | Number of sentences (aggregation helper, retained). | document |
 | `total_paths` | `R/fnt_heights.R` | Sum of dependency path lengths (aggregation helper, retained). | document |

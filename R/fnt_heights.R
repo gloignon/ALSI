@@ -133,7 +133,8 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       sentence_length = 0,
       max_incomplete_deps = 0L,
       avg_incomplete_deps = 0,
-      max_incomplete_deps_adj = 0
+      max_incomplete_deps_adj = 0,
+      avg_incomplete_deps_adj = 0
     ))
   }
 
@@ -180,7 +181,8 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       sentence_length = 0,
       max_incomplete_deps = 0L,
       avg_incomplete_deps = 0,
-      max_incomplete_deps_adj = 0
+      max_incomplete_deps_adj = 0,
+      avg_incomplete_deps_adj = 0
     ))
   }
 
@@ -242,7 +244,8 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     sentence_length = n,
     max_incomplete_deps = max_incomplete_deps,
     avg_incomplete_deps = avg_incomplete_deps,
-    max_incomplete_deps_adj = max_incomplete_deps / pmax(n, 1L)
+    max_incomplete_deps_adj = max_incomplete_deps / pmax(n, 1L),
+    avg_incomplete_deps_adj = avg_incomplete_deps / pmax(n, 1L)
   )
 }
 
@@ -358,7 +361,8 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       sentence_length = integer(),
       max_incomplete_deps = integer(),
       avg_incomplete_deps = numeric(),
-      max_incomplete_deps_adj = numeric()
+      max_incomplete_deps_adj = numeric(),
+      avg_incomplete_deps_adj = numeric()
     ), by = .(doc_id, paragraph_id, sentence_id)])
   }
 
@@ -418,7 +422,8 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         sentence_length = 0L,
         max_incomplete_deps = 0L,
         avg_incomplete_deps = 0,
-        max_incomplete_deps_adj = 0
+        max_incomplete_deps_adj = 0,
+        avg_incomplete_deps_adj = 0
       )
     } else {
       mp <- max(metric_depth)
@@ -474,7 +479,8 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         sentence_length = n,
         max_incomplete_deps = max_inc,
         avg_incomplete_deps = avg_inc,
-        max_incomplete_deps_adj = max_inc / pmax(n, 1L)
+        max_incomplete_deps_adj = max_inc / pmax(n, 1L),
+        avg_incomplete_deps_adj = avg_inc / pmax(n, 1L)
       )
     }
   }, by = .(doc_id, paragraph_id, sentence_id)]
@@ -529,6 +535,7 @@ docwise_graph_stats <- function(df_corpus) {
       avg_max_incomplete_deps = mean(max_incomplete_deps, na.rm = TRUE),
       avg_max_incomplete_deps_adj = mean(max_incomplete_deps_adj, na.rm = TRUE),
       avg_incomplete_deps = mean(avg_incomplete_deps, na.rm = TRUE),
+      avg_incomplete_deps_adj = mean(avg_incomplete_deps_adj, na.rm = TRUE),
       n = sum(sentence_length),
       s = n(),
       total_paths = sum(count_path, na.rm = TRUE)
