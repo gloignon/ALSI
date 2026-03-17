@@ -214,6 +214,7 @@ Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 | `max_head_distance` | `R/fnt_heights.R` | Maximum dependency distance. | document |
 | `max_head_distance_adj` | `R/fnt_heights.R` | Maximum normalized dependency distance (`head_distance / (sentence_length - 1)`), bounded in `[0, 1]`. | document |
 | `dependency_direction_index` | `R/fnt_heights.R` | Mean signed direction of dependencies (left vs right). | document |
+| `avg_integration_cost` | `R/fnt_heights.R` | Mean Gibson DLT integration cost: intervening discourse referents (NOUN, PROPN, VERB) per dependency arc. | document |
 
 
 ## 8) `features$syntactic`
