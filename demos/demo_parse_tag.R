@@ -3,7 +3,7 @@
 # This demo only builds a corpus, parses it with UDPipe, and applies
 # the standard post-processing on the token-level output.
 #
-# Last update: 2026-02-05
+# Last update: 2026-03-24
 #
 
 library(data.table)
@@ -17,6 +17,25 @@ udmodel_french <- udpipe_load_model(file = 'models/french_gsd-remix_2.udpipe')
 
 n_cores <- max(1, parallel::detectCores() - 1)
 
+# Quick demos -----
+# Parse a single example sentence to demo
+
+example_sentence <- "Je crois que 80% des statistiques sont inventées."
+
+dt_example_raw <- udpipe_annotate(udmodel_french, x = example_sentence) |>
+  as.data.frame() |> as.data.table()
+
+print(dt_example_raw[, .(token, lemma, upos, dep_rel, head_token_id)])
+
+# Parse a single text file
+
+txt_single <- fread('demo_corpus/viki_20729.txt', header = FALSE, sep = NULL, col.names = 'text')
+dt_single_raw <- udpipe_annotate(udmodel_french, x = txt_single$text) |>
+  as.data.frame() |> as.data.table()
+
+print(dt_single_raw[, .(sentence_id, token, lemma, upos, dep_rel, head_token_id)])
+
+# Full corpus parse & tag demo -----
 # 1) Read the files into a corpus data.table
 
 dt_txt <- constituerCorpus(corpus_dir)
