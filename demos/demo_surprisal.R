@@ -68,7 +68,7 @@ if (file.exists(cache_alector_parsed)) {
 
   n_cores <- max(1, parallel::detectCores() - 1)
   dt_alector_raw <- parse_text(dt_alector_txt, n_cores = n_cores)
-  dt_alector <- postTraitementLexique(dt_alector_raw)
+  dt_alector <- post_process_lexicon(dt_alector_raw)
   saveRDS(dt_alector, cache_alector_parsed)
 }
 
@@ -86,7 +86,7 @@ if (file.exists(cache_al_mlm)) {
     dt_alector,
     model_name = "almanach/moderncamembert-base",
     mode = "mlm",
-    batch_size = 8
+    batch_size = 8  # auto-reduced to 1 on MPS (Apple Silicon) due to PyTorch bug
   )
   saveRDS(dt_alector_mlm, cache_al_mlm)
 }
