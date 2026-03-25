@@ -1,24 +1,6 @@
 # Lexical cohesion
 library(data.table)
 
-compute_next_sentence_match <- function(dt) {
-
-  # Order by document, sentence, and token position
-  setorder(dt, doc_id, sentence_id, token_id)
-  
-  # Self-join to match tokens in next sentence
-  dt <- dt[
-    dt[, .(next_sentence_id = sentence_id + 1, token, doc_id)],
-    on = c("doc_id", "sentence_id" = "next_sentence_id", "token"),
-    match_next_sentence := TRUE
-  ]
-  
-  # Replace NA with FALSE for unmatched cases
-  dt[is.na(match_next_sentence), match_next_sentence := FALSE]
-  
-  return(dt)
-}
-
 compute_document_match <- function(dt) {
   # counts at doc and sentence granularity
   dt[, total_tokens_doc   := .N, by = .(doc_id)]
@@ -133,18 +115,15 @@ compute_sentence_similarity <- function(dt, method = "cosine") {
   # Ensure data.table is ordered by document and sentence position
   setorder(dt, doc_id, sentence_id, token_id)
   
-  # Group tokens by sentence (collapse tokens into a single string)
-  sentence_tokens <- dt[, .(tokens = paste(token, collapse = " ")), by = .(doc_id, sentence_id)]
-  
-  # Use shift on the collapsed token strings
-  sentence_tokens[, tokens_next := shift(tokens, type = "lead"), by = doc_id]
-  
-  # Drop last row of each document (since it won't have a next pair)
-  sentence_tokens <- sentence_tokens[!is.na(tokens_next)]
-  
-  # Split strings back into token vectors
-  sentence_tokens[, tokens := strsplit(tokens, " ")]
-  sentence_tokens[, tokens_next := strsplit(tokens_next, " ")]
+  # Group tokens by sentence as lists (avoids paste/split roundtrip that breaks on spaces)
+  sentence_tokens <- dt[, .(tokens = list(token)), by = .(doc_id, sentence_id)]
+
+  # Self-join to pair each sentence with its next (GForce doesn't support shift on list columns)
+  setorder(sentence_tokens, doc_id, sentence_id)
+  next_tokens <- copy(sentence_tokens)
+  setnames(next_tokens, "tokens", "tokens_next")
+  next_tokens[, sentence_id := sentence_id - 1L]
+  sentence_tokens <- next_tokens[sentence_tokens, on = .(doc_id, sentence_id), nomatch = 0L]
   
   # Compute similarity for each pair of adjacent sentences
   sentence_tokens[, similarity := mapply(
@@ -240,19 +219,7 @@ simple_lexical_cohesion <- function(dt_corpus, n_sent_context = c(1,5)) {
   
   # Merge the results
   dt_result <- merge(dt_result, dt_result_content, by = "doc_id", all = TRUE)
-  #   # add cosine stuff too
   dt_result <- merge(dt_result, dt_result_cosine, by = "doc_id", all = TRUE)
-  # 
+
   return(dt_result)
 }
-
-# Example use
-# t <- features$parsed_corpus[doc_id %in% c("g01_pri_fs1", "g01_pri_ol01")]
-# # result <- compute_next_sentence_match(t)
-# #result <- compute_document_match(t)
-# compute_similarity(vec1 = t[sentence_id == 1, token],
-#                   vec2 = t[sentence_id == 2, token],
-#                   method = "cosine")
-# compute_sentence_similarity(t, method = "cosine")
-# result <- simple_lexical_cohesion(t)
-# result
