@@ -10,7 +10,6 @@ library(data.table)
 library(udpipe)
 
 source('R/fnt_corpus.R', encoding = 'UTF-8')
-# source('R/fnt_lexical.R', encoding = 'UTF-8')
 
 corpus_dir <- 'demo_corpus/'  # folder with .txt files
 udmodel_french <- udpipe_load_model(file = 'models/french_gsd-remix_2.udpipe')
@@ -27,25 +26,26 @@ dt_example_raw <- udpipe_annotate(udmodel_french, x = example_sentence) |>
 
 print(dt_example_raw[, .(token, lemma, upos, dep_rel, head_token_id)])
 
-# Parse a single text file
+# Parse a single text file (full pipeline: read → parse → post-process)
 
-txt_single <- fread('demo_corpus/viki_20729.txt', header = FALSE, sep = NULL, col.names = 'text')
-dt_single_raw <- udpipe_annotate(udmodel_french, x = txt_single$text) |>
-  as.data.frame() |> as.data.table()
+dt_single_txt <- build_corpus('demo_corpus/viki_20729.txt')
+dt_single_raw <- parse_text(dt_single_txt, n_cores = 1)
+dt_single <- post_process_lexicon(dt_single_raw)
 
-print(dt_single_raw[, .(sentence_id, token, lemma, upos, dep_rel, head_token_id)])
+print(dt_single[, .(sentence_id, token, lemma, upos, dep_rel, head_token_id)])
 
 # Full corpus parse & tag demo -----
-# 1) Read the files into a corpus data.table
+# For encoding demos (Latin-1, Windows-1252, auto-detection),
+# see demos/demo_corpus_read.R
 
-dt_txt <- constituerCorpus(corpus_dir)
+# 1) Read all files into a corpus data.table
+dt_txt <- build_corpus(corpus_dir)
 
 # 2) Parse and tag the corpus using UDPipe
 dt_parsed_raw <- parse_text(dt_txt, n_cores = n_cores)
 
 # 3) Post-process the parsed output
-
-dt_parsed_edit <- postTraitementLexique(dt_parsed_raw)
+dt_parsed_edit <- post_process_lexicon(dt_parsed_raw)
 
 # Optional: save the parsed corpus for inspection
 

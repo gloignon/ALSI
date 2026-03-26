@@ -4,20 +4,115 @@ library(tidyverse)
 library(utf8)
 library(udpipe)
 
-constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
-  if (dir.exists(dossier)) {
-    chemins <- list.files(path = dossier, full.names = TRUE)
-    if (verbose) message("constituerCorpus | C'est un dossier!")
-  } else if (file_test("-f", dossier)) {
-    chemins <- normalizePath(dossier)
+#' Build a Corpus from Text Files
+#'
+#' Reads text files from a directory or a single file path and returns a
+#' two-column data.table. Optionally cleans French text (normalises
+#' punctuation, guillemets, line breaks, inclusive writing dots, etc.).
+#'
+#' @param path Path to a directory of text files or to a single file.
+#' @param verbose Logical; if TRUE, prints progress messages.
+#' @param clean Logical; if TRUE (default), applies French-specific text
+#'   cleaning via an internal \code{clean_text} helper.
+#' @param encoding Character; file encoding passed to \code{readr::read_file}.
+#'   Defaults to \code{"UTF-8"}. Use \code{"latin1"} or \code{"windows-1252"}
+#'   for legacy French text files. Use \code{"auto"} to auto-detect encoding
+#'   from the first file (all files in a directory are assumed to share the
+#'   same encoding).
+#' @returns A \code{data.table} with columns \code{doc_id} (file basename) and
+#'   \code{text}.
+build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8") {
+  if (dir.exists(path)) {
+    file_paths <- list.files(path = path, full.names = TRUE)
+    if (verbose) message("build_corpus | directory detected")
+  } else if (file_test("-f", path)) {
+    file_paths <- normalizePath(path)
   } else {
-    stop("constituerCorpus | dossier ou fichier inexistant")
+    stop("build_corpus | path does not exist")
   }
-  
-  nettoyerTexte <- function(chemin) {
-    if (verbose) message("working on ", chemin)
-    contenu <- read_file(chemin)
-    contenu <- utf8_normalize(contenu, map_quote = TRUE)
+
+  # Auto-detect encoding (per-file when processing a directory)
+  per_file_encoding <- NULL
+  if (tolower(encoding) == "auto") {
+    per_file_encoding <- vapply(file_paths, function(fp) {
+      guess <- readr::guess_encoding(fp)
+      if (nrow(guess) == 0 || guess$confidence[1] < 0.2) {
+        stop("build_corpus | could not detect encoding for '", basename(fp),
+             "'. Please specify encoding manually (e.g. encoding = 'latin1').")
+      }
+      guess$encoding[1]
+    }, character(1), USE.NAMES = FALSE)
+
+    # Treat ASCII as UTF-8 (ASCII is a strict subset)
+    per_file_encoding[per_file_encoding == "ASCII"] <- "UTF-8"
+
+    unique_enc <- unique(per_file_encoding)
+    if (length(unique_enc) == 1) {
+      message("build_corpus | auto-detected encoding: ", unique_enc)
+    } else {
+      enc_table <- table(per_file_encoding)
+      enc_summary <- paste0(names(enc_table), " (", enc_table, " file",
+                            ifelse(enc_table > 1, "s", ""), ")",
+                            collapse = ", ")
+      warning("build_corpus | mixed encodings detected: ", enc_summary,
+              ". Each file will be read with its detected encoding.",
+              call. = FALSE)
+    }
+    # Set encoding to the first file's for fallback/reporting
+    encoding <- per_file_encoding[1]
+  }
+
+  get_locale <- function(file_path) {
+    if (!is.null(per_file_encoding)) {
+      idx <- match(file_path, file_paths)
+      locale(encoding = per_file_encoding[idx])
+    } else {
+      locale(encoding = encoding)
+    }
+  }
+
+  read_file_safe <- function(file_path) {
+    file_locale <- get_locale(file_path)
+    tryCatch(
+      read_file(file_path, locale = file_locale),
+      error = function(e) {
+        # Try to guess the correct encoding for a helpful message
+        guess <- readr::guess_encoding(file_path)
+        suggestion <- if (nrow(guess) > 0) {
+          paste0("Detected encoding may be '", guess$encoding[1],
+                 "' (confidence: ", round(guess$confidence[1], 2),
+                 "). Try: build_corpus(..., encoding = '", guess$encoding[1], "')")
+        } else {
+          "Try: encoding = 'latin1' or encoding = 'windows-1252'"
+        }
+        stop("build_corpus | failed to read '", basename(file_path),
+             "' as ", encoding, ".\n", suggestion, call. = FALSE)
+      }
+    )
+  }
+
+  normalize_safe <- function(contenu, file_path) {
+    tryCatch(
+      utf8_normalize(contenu, map_quote = TRUE),
+      error = function(e) {
+        guess <- readr::guess_encoding(file_path)
+        suggestion <- if (nrow(guess) > 0) {
+          paste0("Detected encoding may be '", guess$encoding[1],
+                 "' (confidence: ", round(guess$confidence[1], 2),
+                 "). Try: build_corpus(..., encoding = '", guess$encoding[1], "')")
+        } else {
+          "Try: encoding = 'latin1' or encoding = 'windows-1252'"
+        }
+        stop("build_corpus | '", basename(file_path),
+             "' is not valid UTF-8.\n", suggestion, call. = FALSE)
+      }
+    )
+  }
+
+  clean_text <- function(file_path) {
+    if (verbose) message("working on ", file_path)
+    contenu <- read_file_safe(file_path)
+    contenu <- normalize_safe(contenu, file_path)
     
     # Remove backslashes
     contenu <- gsub("\\\\", "", contenu)
@@ -63,21 +158,41 @@ constituerCorpus <- function(dossier, verbose = FALSE, clean = TRUE) {
   
   # Create corpus
   dt_corpus <- data.table(
-    doc_id = basename(chemins),
-    text = if (clean) unlist(lapply(chemins, nettoyerTexte)) else unlist(lapply(chemins, function(p) {
-      utf8_normalize(read_file(p), map_quote = TRUE)
+    doc_id = basename(file_paths),
+    text = if (clean) unlist(lapply(file_paths, clean_text)) else unlist(lapply(file_paths, function(p) {
+      normalize_safe(read_file_safe(p), p)
     }))
   )
-  
+
+  # Warn if replacement characters appear (sign of encoding mismatch)
+  has_replacement <- grepl("\uFFFD", dt_corpus$text)
+  if (any(has_replacement)) {
+    bad_files <- dt_corpus$doc_id[has_replacement]
+    warning(
+      "build_corpus | replacement characters (\uFFFD) detected in: ",
+      paste(bad_files, collapse = ", "),
+      ". Check the 'encoding' parameter (current: '", encoding, "').",
+      call. = FALSE
+    )
+  }
+
   return(dt_corpus)
 }
 
-parserTexte <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", nCores = 1) {
-  parse_text(txt, ud_model = ud_model, n_cores = nCores, show_progress = TRUE)
-}
-
-# This functionn will parse text using the udpipe package.
-# It can handle parallel processing.
+#' Parse Text with UDPipe
+#'
+#' Tokenises, tags, and dependency-parses text using a UDPipe model. Supports
+#' parallel processing via the \pkg{future} / \pkg{future.apply} framework.
+#'
+#' @param txt Either a data.frame with columns \code{doc_id} and \code{text},
+#'   or a character vector of texts.
+#' @param ud_model Path to a UDPipe \code{.udpipe} model file.
+#' @param n_cores Number of parallel workers (1 = sequential).
+#' @param chunk_size Number of documents per chunk when parallelising.
+#' @param show_progress Logical; if TRUE, shows a progress bar or messages.
+#' @param future_plan Optional \pkg{future} plan. If NULL, uses the current
+#'   plan or falls back to sequential.
+#' @returns A \code{data.table} in CoNLL-U format (one row per token).
 parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL) {
   
   # Check if the model file exists
@@ -88,14 +203,14 @@ parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cor
   normalize_input <- function(x) {
     if (is.data.frame(x)) {
       if (!all(c("doc_id", "text") %in% names(x))) {
-        stop("parserTexte | data.frame must contain columns: doc_id, text")
+        stop("parse_text | data.frame must contain columns: doc_id, text")
       }
       return(as.data.table(x[, c("doc_id", "text")]))
     }
     if (is.character(x)) {
       return(data.table(doc_id = paste0("doc_", seq_along(x)), text = x))
     }
-    stop("parserTexte | txt must be a data.frame with doc_id/text or a character vector")
+    stop("parse_text | txt must be a data.frame with doc_id/text or a character vector")
   }
   
   txt_dt <- normalize_input(txt)
@@ -208,73 +323,74 @@ parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cor
   data.table::rbindlist(res, use.names = TRUE, fill = TRUE)
 }
 
-#' Post treatment on the output of a udpipe parsing
+#' Post-Process UDPipe Output
 #'
-#' @param dt A data.table containing the output of a udpipe parsing.
-#
-#' @return A data.table containing the edited output of the udpipe parsing.
-#' @import data.table
-postTraitementLexique <- function(dt) {
-  cat("Dans PostTraitement lexique\n")
-  
-  parsed.post <- setDT(copy(dt))
-  
-  cat("Class of parsed.post: ", class(parsed.post), "\n")
+#' Cleans and enriches raw UDPipe output: adds unique token IDs, strips file
+#' extensions from doc IDs, handles double tokens introduced by the parser,
+#' removes punctuation/particles from countable tokens, reclassifies copulas
+#' as VERB, normalises case and ligatures, and sorts for consistent ordering.
+#'
+#' @param dt A data.table or data.frame of raw UDPipe output.
+#' @returns A cleaned \code{data.table} with additional columns
+#'   \code{vrai_token_id}, \code{compte} (logical flag for countable tokens),
+#'   and \code{lower_token}.
+post_process_lexicon <- function(dt) {
+  dt_out <- setDT(copy(dt))
 
   
   # Add a unique token ID
-  parsed.post[, vrai_token_id := 1:.N]
+  dt_out[, vrai_token_id := 1:.N]
   
   # Clean document IDs
-  parsed.post[, doc_id := str_remove_all(doc_id, "\\.txt$")]
+  dt_out[, doc_id := str_remove_all(doc_id, "\\.txt$")]
   
   # Remove rows with missing tokens
-  parsed.post <- parsed.post[!is.na(token)]
+  dt_out <- dt_out[!is.na(token)]
   
   # Handle double tokens introduced by parsing
-  parsed.post[, estDoubleMot := is.na(head_token_id) & is.na(upos)]
-  dt.intrus <- parsed.post[estDoubleMot == TRUE, .(
+  dt_out[, is_double_token := is.na(head_token_id) & is.na(upos)]
+  dt_intrus <- dt_out[is_double_token == TRUE, .(
     doc_id, term_id = c(term_id + 1, term_id + 2)
-  )][, estIntrus := TRUE]
-  
-  parsed.post$compte <- TRUE
-  parsed.post <- merge(parsed.post, dt.intrus, all = TRUE)
-  parsed.post[estIntrus == TRUE, compte := FALSE]
-  parsed.post[, c("estIntrus", "estDoubleMot") := NULL]
+  )][, is_intruder := TRUE]
+
+  dt_out$compte <- TRUE
+  dt_out <- merge(dt_out, dt_intrus, all = TRUE)
+  dt_out[is_intruder == TRUE, compte := FALSE]
+  dt_out[, c("is_intruder", "is_double_token") := NULL]
   
   # Remove punctuation and particles from counts
-  parsed.post[upos %in% c("PUNCT", "PART"), compte := FALSE]
+  dt_out[upos %in% c("PUNCT", "PART"), compte := FALSE]
   
   # Correct copula to VERB
-  parsed.post[dep_rel == "cop", upos := "VERB"]
+  dt_out[dep_rel == "cop", upos := "VERB"]
   
   # Remove duplicates
-  parsed.post <- parsed.post[!duplicated(parsed.post[, .(doc_id, term_id)])]
+  dt_out <- dt_out[!duplicated(dt_out[, .(doc_id, term_id)])]
   
   # Clean columns
   cols_to_remove <- c("start", "end", "xpos", "deps")
-  parsed.post <- parsed.post[, .SD, .SDcols = setdiff(names(parsed.post), cols_to_remove)]
+  dt_out <- dt_out[, .SD, .SDcols = setdiff(names(dt_out), cols_to_remove)]
   
   # Reclassify relative pronouns as PRON
-  parsed.post[upos == "ADV" & feats == "PronType=Rel", upos := "PRON"]
+  dt_out[upos == "ADV" & feats == "PronType=Rel", upos := "PRON"]
   
   # Normalize tokens and lemmas
-  parsed.post[upos != "PROPN", `:=`(
+  dt_out[upos != "PROPN", `:=`(
     token = str_to_lower(token),
     lemma = str_to_lower(lemma)
   )]
-  parsed.post[, `:=`(
+  dt_out[, `:=`(
     token = str_replace_all(token, "œ", "oe"),
     lemma = str_replace_all(lemma, "œ", "oe")
   )]
-  parsed.post[!is.na(token) & str_starts(token, "['-]"), 
+  dt_out[!is.na(token) & str_starts(token, "['-]"), 
               token := str_sub(token, 2)]
   
   # Sort for consistent ordering
-  parsed.post <- parsed.post[order(doc_id, paragraph_id, sentence_id, term_id)]
+  dt_out <- dt_out[order(doc_id, paragraph_id, sentence_id, term_id)]
   
   # Add lowercase token column
-  parsed.post[, lower_token := tolower(token)]
+  dt_out[, lower_token := tolower(token)]
   
-  return(parsed.post)
+  return(dt_out)
 }
