@@ -25,6 +25,7 @@ source('R/fnt_counters.R', encoding = 'UTF-8')
 source('R/fnt_pos_surprisal.R', encoding = 'UTF-8')
 source('R/fnt_extra_syntax.R', encoding = 'UTF-8')
 source('R/fnt_cohesion.R', encoding = 'UTF-8')
+source('R/fnt_utility.R', encoding = 'UTF-8')
 source('R/fnt_embeddings.R', encoding = 'UTF-8')
 
 corpus_dir <- "demo_corpus/"  # this folder should contain your text files in .txt format
@@ -55,6 +56,7 @@ dt_eqol <- readRDS("lexical_dbs/dt_eqol.Rds")
 dt_franqus <- readRDS("lexical_dbs/dt_franqus.Rds")
 dt_manulex <- readRDS("lexical_dbs/dt_manulex_token.Rds")
 dt_flelex <- readRDS("lexical_dbs/dt_corpus_flelex.Rds")
+dt_lexconn <- readRDS("lexical_dbs/dt_lexconn.Rds")
 
 # 5) Simple counts
 features$simple_counts <- simple_count_features(features$parsed_corpus)
@@ -81,11 +83,50 @@ features$syntactic <- extra_syntactic_features(features$parsed_corpus)
 # 11) Simple POS surprisal from ngram model
 features$pos_surprisal <- pos_surprisal(features$parsed_corpus)
 
-# 12) Lexical cohesion 
+# 12) Lexical cohesion
 features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
 
-# 13) Surprisal and embeddings ----
+# 13) Discourse connectives (LEXCONN)
+# Match multi-word connective expressions with POS filtering to reduce false positives
+features$connectives$matches <- match_multiword_sequences(
+  features$parsed_corpus, dt_lexconn, pos_filter = TRUE
+)
+
+# Connective density per document (total + by relation group + by category)
+dt_wc <- features$parsed_corpus[compte == TRUE, .(word_count = .N), by = doc_id]
+dt_conn <- features$connectives$matches[,
+  .(n_connectives = uniqueN(paste(sentence_id, token_id_start))), by = doc_id]
+dt_conn_group <- dcast(
+  features$connectives$matches[,
+    .(n = uniqueN(paste(sentence_id, token_id_start))),
+    by = .(doc_id, relation_group)],
+  doc_id ~ relation_group, value.var = "n", fill = 0L
+)
+
+features$connectives$density <- merge(dt_wc, dt_conn, by = "doc_id", all.x = TRUE)
+features$connectives$density <- merge(features$connectives$density, dt_conn_group,
+                                       by = "doc_id", all.x = TRUE)
+# Replace NAs (docs with no matches) with 0
+conn_cols <- setdiff(names(features$connectives$density), c("doc_id", "word_count"))
+for (col in conn_cols) {
+  set(features$connectives$density, which(is.na(features$connectives$density[[col]])), col, 0L)
+}
+# Add per-100-words density columns
+density_cols <- paste0(conn_cols, "_per100w")
+features$connectives$density[,
+  (density_cols) := lapply(.SD, function(x) x / word_count * 100),
+  .SDcols = conn_cols]
+
+# 14) Surprisal and embeddings ----
 library(reticulate)
+py_require(c(
+  "transformers>=4.41,<5",
+  "torch",
+  "tokenizers",
+  "sentence-transformers",
+  "numpy",
+  "scipy"
+))
 source('R/fnt_embeddings.R', encoding = 'UTF-8')
 # Embeddings
 features$embeddings <- corpus_embeddings(
@@ -94,7 +135,7 @@ features$embeddings <- corpus_embeddings(
 )
 
 source('R/fnt_surprisal.R', encoding = 'UTF-8')
-# 14) LLM surprisal and entropy ----
+# 15) LLM surprisal and entropy ----
 features$surprisal$mlm <- llm_surprisal_entropy(
   features$parsed_corpus,
   model_name = "almanach/moderncamembert-base",
@@ -111,7 +152,7 @@ features$surprisal$ar <- llm_surprisal_entropy(
 )
 
 
-# 15) Optional: add labels/classes to the features list for demo evaluation.
+# 16) Optional: add labels/classes to the features list for demo evaluation.
 # For the demo corpus, we tag viki as 1 and wiki as 2 based on filenames.
 dt_doc_classes <- data.table(
   doc_id = features$simple_counts$doc_level_counts$doc_id,
@@ -120,7 +161,7 @@ dt_doc_classes <- data.table(
 
 features$doc_classes <- dt_doc_classes
 
-# 16) Save the corpus with features ----
+# 17) Save the corpus with features ----
 saveRDS(features, "out/demo_corpus_with_features.Rds")
 
 # If you want just the features (no parsed corpus),
