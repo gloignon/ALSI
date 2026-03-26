@@ -1,6 +1,16 @@
 # Lexical cohesion
 library(data.table)
 
+#' Compute document-level token match proportions
+#'
+#' For each token in each sentence, computes its normalised frequency in the
+#' rest of the document (excluding the current sentence). Adds helper columns
+#' directly to \code{dt} by reference.
+#'
+#' @param dt A \code{data.table} with columns \code{doc_id},
+#'   \code{sentence_id}, and \code{token}.
+#' @returns The input \code{data.table} augmented with columns
+#'   \code{normalized_match}, \code{other_tokens_doc}, etc.
 compute_document_match <- function(dt) {
   # counts at doc and sentence granularity
   dt[, total_tokens_doc   := .N, by = .(doc_id)]
@@ -18,10 +28,21 @@ compute_document_match <- function(dt) {
     other_token_count / other_tokens_doc,
     NA_real_
   )]
-  
+
   return(dt)
 }
 
+#' Compute proportion of values shared with previous sentences
+#'
+#' For each token, computes the proportion of the \code{n_prev} preceding
+#' sentences that contain the same value (token or lemma).
+#'
+#' @param dt A \code{data.table} with \code{doc_id}, \code{sentence_id}, and
+#'   the column named by \code{value_col}.
+#' @param value_col Column to match on (default \code{"token"}).
+#' @param n_prev Number of preceding sentences to consider (default 1).
+#' @param new_col Name for the result column; auto-generated if NULL.
+#' @returns The input \code{data.table} with the new proportion column added.
 compute_previous_sentence_match <- function(dt, value_col = "token", n_prev = 1, new_col = NULL) {
   if (!value_col %in% names(dt)) {
     stop(paste0("compute_previous_sentence_match | column not found: ", value_col))
@@ -89,6 +110,46 @@ compute_previous_sentence_match <- function(dt, value_col = "token", n_prev = 1,
   return(dt)
 }
 
+#' Compute Coh-Metrix style argument overlap
+#'
+#' For each pair of adjacent sentences, checks whether any noun or pronoun
+#' lemma appears in both. Returns a binary overlap flag per pair.
+#'
+#' @param dt A \code{data.table} with \code{doc_id}, \code{sentence_id},
+#'   \code{upos}, and \code{lemma}.
+#' @returns A \code{data.table} with columns \code{doc_id},
+#'   \code{sentence_id}, and \code{arg_overlap} (0 or 1).
+compute_argument_overlap <- function(dt) {
+  # Coh-Metrix style: for each adjacent sentence pair, does any noun/pronoun
+  # lemma appear in both? Returns one row per pair with a binary flag.
+  dt_np <- dt[upos %in% c("NOUN", "PRON")]
+  # unique lemmas per sentence
+  sent_lemmas <- dt_np[, .(lemmas = list(unique(lemma))), by = .(doc_id, sentence_id)]
+  setorder(sent_lemmas, doc_id, sentence_id)
+
+  # pair with next sentence
+  next_lemmas <- copy(sent_lemmas)
+  setnames(next_lemmas, "lemmas", "lemmas_next")
+  next_lemmas[, sentence_id := sentence_id - 1L]
+  pairs <- next_lemmas[sent_lemmas, on = .(doc_id, sentence_id), nomatch = 0L]
+
+  if (nrow(pairs) == 0L) {
+    return(data.table(doc_id = character(), sentence_id = integer(), arg_overlap = integer()))
+  }
+  pairs[, arg_overlap := as.integer(mapply(function(a, b) length(intersect(a, b)) > 0L,
+                                           lemmas, lemmas_next))]
+  pairs[, .(doc_id, sentence_id, arg_overlap)]
+}
+
+#' Compute similarity between two token vectors
+#'
+#' Builds binary presence/absence vectors from two token sets and computes
+#' cosine or Jaccard similarity.
+#'
+#' @param vec1 Character vector of tokens from the first set.
+#' @param vec2 Character vector of tokens from the second set.
+#' @param method Either \code{"cosine"} or \code{"jaccard"}.
+#' @returns A numeric scalar: the similarity score.
 compute_similarity <- function(vec1, vec2, method = "cosine") {
   # Create binary presence/absence vectors
   unique_tokens <- unique(c(vec1, vec2))
@@ -111,6 +172,16 @@ compute_similarity <- function(vec1, vec2, method = "cosine") {
   return(similarity)
 }
 
+#' Compute adjacent-sentence similarity
+#'
+#' Pairs each sentence with its successor and computes token-level similarity
+#' (cosine or Jaccard) between them.
+#'
+#' @param dt A \code{data.table} with \code{doc_id}, \code{sentence_id},
+#'   \code{token_id}, and \code{token}.
+#' @param method Either \code{"cosine"} or \code{"jaccard"}.
+#' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id}, and
+#'   \code{similarity}.
 compute_sentence_similarity <- function(dt, method = "cosine") {
   # Ensure data.table is ordered by document and sentence position
   setorder(dt, doc_id, sentence_id, token_id)
@@ -139,7 +210,21 @@ compute_sentence_similarity <- function(dt, method = "cosine") {
   return(result)
 }
 
-# Aggregate the new features by doc_id
+#' Compute document-level lexical cohesion features
+#'
+#' Aggregates multiple cohesion measures per document: token/lemma overlap
+#' with previous sentences (at multiple context windows), document-level
+#' overlap, cosine similarity, and Coh-Metrix argument overlap. Computes
+#' both all-token and content-word-only variants.
+#'
+#' @param dt_corpus A parsed \code{data.table} with columns \code{doc_id},
+#'   \code{sentence_id}, \code{token_id}, \code{token}, \code{lemma},
+#'   \code{upos}, and \code{compte}.
+#' @param n_sent_context Integer vector of context window sizes for
+#'   previous-sentence overlap (default \code{c(1, 5)}).
+#' @returns A \code{data.table} with one row per document and columns for
+#'   each cohesion feature (overlap proportions, cosine similarities,
+#'   argument overlap, global-local gap).
 simple_lexical_cohesion <- function(dt_corpus, n_sent_context = c(1,5)) {
 
   dt <- copy(dt_corpus)
@@ -217,9 +302,28 @@ simple_lexical_cohesion <- function(dt_corpus, n_sent_context = c(1,5)) {
     cosine_content = mean(similarity_content, na.rm = T)
   ), by = doc_id]
   
+  # Argument overlap (Coh-Metrix style): binary noun/pronoun overlap per adjacent pair
+  dt_arg <- compute_argument_overlap(dt)
+  dt_result_arg <- dt_arg[, .(arg_overlap = mean(arg_overlap, na.rm = TRUE)), by = doc_id]
+
+  # Also on content words only
+  dt_arg_content <- compute_argument_overlap(dt_content)
+  dt_result_arg_content <- dt_arg_content[, .(arg_overlap_content = mean(arg_overlap, na.rm = TRUE)), by = doc_id]
+
   # Merge the results
   dt_result <- merge(dt_result, dt_result_content, by = "doc_id", all = TRUE)
   dt_result <- merge(dt_result, dt_result_cosine, by = "doc_id", all = TRUE)
+  dt_result <- merge(dt_result, dt_result_arg, by = "doc_id", all = TRUE)
+  dt_result <- merge(dt_result, dt_result_arg_content, by = "doc_id", all = TRUE)
+
+  # Global-local cohesion gap: difference between document-level and adjacent-sentence overlap.
+  # Positive = more global than local cohesion (topic coherence without local repetition).
+  if ("token_sent_overlap_prev1" %in% names(dt_result)) {
+    dt_result[, global_local_gap := token_doc_overlap - token_sent_overlap_prev1]
+  }
+  if ("content_sent_overlap_prev1" %in% names(dt_result)) {
+    dt_result[, content_global_local_gap := content_doc_overlap - content_sent_overlap_prev1]
+  }
 
   return(dt_result)
 }
