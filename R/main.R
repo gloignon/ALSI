@@ -38,20 +38,17 @@ udmodel_french <-
 # embeddings, and outputs), with saved artifacts in `out/` folder.
 
 # 1) Read the files
-dt_txt <- constituerCorpus(corpus_dir)
+dt_txt <- build_corpus(corpus_dir)
 
 # 2) Parse the files using udpipe
-dt_parsed_raw <- parse_text(dt_txt, n_cores = 12)  # analyse lexicale avec udpipe, pourrait prendre quelques minutes...
+dt_parsed_raw <- parse_text(dt_txt, n_cores = 12)
 
 # 3) Post-process the parsed corpus (token-level cleaning and normalization)
-dt_parsed_edit <- postTraitementLexique(dt_parsed_raw)
+dt_parsed_edit <- post_process_lexicon(dt_parsed_raw)
 
 saveRDS(dt_parsed_edit, "out/demo_corpus_parsed.Rds")
 
-features <- list(parsed_corpus = dt_parsed_edit)  # post-traitement du corpus
-
-# Optional: reload a previously parsed corpus to skip parsing in subsequent demos
-# features <- readRDS("corpus/french_corpus_parsed_raw.Rds")
+features <- list(parsed_corpus = dt_parsed_edit)
 
 # 4) Load lexical frequency databases used in the demo
 dt_eqol <- readRDS("lexical_dbs/dt_eqol.Rds")
@@ -65,35 +62,8 @@ features$simple_counts <- simple_count_features(features$parsed_corpus)
 # 6) Verb tense counts
 features$verb_tenses <- verb_tense_features(features$parsed_corpus, features$simple_counts$doc_level_counts)
 
-# 7) Add lexical information (imputed + fuzzy-matched)
-features$lexical_db$eqol_imp <- add_lexical_freq_with_imputation(
-  parsed_corpus = features$parsed_corpus,
-  lexical_db = dt_eqol,
-  prefix = "eqol",
-  freq_col = "freq_u",
-  mode = "u"
-)
-features$lexical_db$manulex_imp <- add_lexical_freq_with_imputation(
-  parsed_corpus = features$parsed_corpus,
-  lexical_db = dt_manulex,
-  prefix = "manulex",
-  freq_col = "freq_u",
-  mode = "u"
-)
-features$lexical_db$flelex_imp <- add_lexical_freq_with_imputation(
-  parsed_corpus = features$parsed_corpus,
-  lexical_db = dt_flelex,
-  prefix = "flelex",
-  freq_col = "freq_u",
-  mode = "u"
-)
-features$lexical_db$franqus_imp <- add_lexical_freq_with_imputation(
-  parsed_corpus = features$parsed_corpus,
-  lexical_db = dt_franqus,
-  prefix = "franqus",
-  freq_col = "freq_u",
-  mode = "u"
-)
+# 7) Add lexical information (fuzzy-matched)
+
 features$lexical_db$eqol <- fuzzy_match_lexical_db(features$parsed_corpus, dt_eqol, prefix = "eqol")
 features$lexical_db$franqus <- fuzzy_match_lexical_db(features$parsed_corpus, dt_franqus, prefix = "franqus")
 features$lexical_db$manulex <- fuzzy_match_lexical_db(features$parsed_corpus, dt_manulex, prefix = "manulex")
@@ -123,20 +93,19 @@ features$embeddings <- corpus_embeddings(
   batch_size = 8
 )
 
+source('R/fnt_surprisal.R', encoding = 'UTF-8')
 # 14) LLM surprisal and entropy ----
 features$surprisal$mlm <- llm_surprisal_entropy(
   features$parsed_corpus,
   model_name = "almanach/moderncamembert-base",
   mode = "mlm",
-  # context = "The following is a French sentence from vikipedia or wikidia.", 
   batch_size = 8
 )
 
 features$surprisal$ar <- llm_surprisal_entropy(
   features$parsed_corpus,
   model_name = "lightonai/pagnol-small",
-  mode = "ar", 
-  # context = "The following is a French sentence from vikipedia or wikidia.",
+  mode = "ar",
   batch_size = 8,
   add_prefix_space=TRUE
 )
