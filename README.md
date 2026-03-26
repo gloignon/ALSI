@@ -16,9 +16,17 @@ Included lexical frequency databases:
 
 -   Quebec's Ministry of education vocabulary list. We also include the yet unpublished frequencies, scraped from the Franqus (USITO) website: <https://franqus.ca/liste_orthographique/outil_de_recherche/>
 
-Please cite the relevant papers if you use the lexical frequencies included in the ALSI/ILSA tool.
+-   LexConn (Roze, Danlos & Muller, 2012) — a lexicon of French discourse connectives used for multi-word expression matching.
 
-Parser/tagger: ALSI uses a Universal Dependency based model of the French language. The model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
+Please cite the relevant papers if you use the lexical databases included in the ALSI/ILSA tool.
+
+## Encoding support
+
+`build_corpus()` reads UTF-8 by default, but also supports Latin-1 (`encoding = "latin1"`) and Windows-1252 (`encoding = "windows-1252"`), which are common in older French corpora. Use `encoding = "auto"` to let the function detect each file's encoding automatically — if a directory contains files with different encodings, they will all be read correctly and you will get a warning listing what was found. See `demos/demo_corpus_read.R` for examples.
+
+## Parser/tagger
+
+ALSI uses a Universal Dependency based model of the French language. The model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
 -    ALSI/ISLA custom model: "Le (DET) chat (NOUN) est (VERB) gris (ADJ). Il (PRON) est (AUX) parti (VERB)." The copula "est" is tagged as VERB. The auxiliary "est" in the second sentence is also correctly tagged as AUX.
 -    UDPipe model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
   
@@ -29,6 +37,8 @@ Duran, M., Pagano, A., Rassi, A., & Pardo, T. (2021). On auxiliary verb in Unive
 François, T., Gala, N., Watrin, P., & Fairon, C. (2014, May). FLELex: a graded lexical resource for French foreign learners. In International conference on Language Resources and Evaluation (LREC 2014).
 
 Loignon, G. (2021). ILSA: an automated language complexity analysis tool for French. Mesure et évaluation en éducation, 44, 61-88. <https://doi.org/10.7202/1095682ar>
+
+Roze, C., Danlos, L., & Muller, P. (2012). LEXCONN: A French lexicon of discourse connectives. Discours, 10. <https://doi.org/10.4000/discours.8645>
 
 Lété, B., Sprenger-Charolles, L., & Colé, P. (2004). MANULEX: A grade-level lexical database from French elementary school readers. Behavior Research Methods, Instruments, & Computers, 36(1), 156-166.
 

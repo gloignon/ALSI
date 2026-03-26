@@ -1,6 +1,6 @@
 # ALSI Feature Inventory
 
-Scope: features produced by the current pipeline in `R/main.R`, based on non-`.old` scripts only.
+Scope: features produced by the current pipeline in `R/main.R`.
 
 Scripts covered:
 - `R/fnt_counters.R`
@@ -281,6 +281,10 @@ Default current context windows in `main.R`: `n_sent_context = c(1, 5)`.
 | `content_doc_overlap` | `R/fnt_cohesion.R` | Mean normalized content-token recurrence in remainder of document. | document |
 | `cosine_sent` | `R/fnt_cohesion.R` | Mean cosine similarity between adjacent sentences. | document |
 | `cosine_content` | `R/fnt_cohesion.R` | Mean cosine similarity between adjacent content-word sentence vectors. | document |
+| `arg_overlap` | `R/fnt_cohesion.R` | Proportion of adjacent sentence pairs sharing ≥1 noun/pronoun lemma (Coh-Metrix style). | document |
+| `arg_overlap_content` | `R/fnt_cohesion.R` | Same as `arg_overlap` but computed on content-word-only subset. | document |
+| `global_local_gap` | `R/fnt_cohesion.R` | Document-level minus adjacent-sentence token overlap (positive = global coherence without local repetition). | document |
+| `content_global_local_gap` | `R/fnt_cohesion.R` | Same as `global_local_gap` for content words only. | document |
 
 ## 13) `features$embeddings$dt_sent_embeddings`
 Produced in: `R/fnt_embeddings.R` (`encode_embeddings`, `corpus_embeddings`)
