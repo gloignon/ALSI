@@ -9,10 +9,17 @@
 # New versions 2026-02 without igraph ------
 #
 
-# Plot dependency arcs for a parsed sentence.
-# Input: a data.frame/data.table from udpipe (one sentence).
-# Draws words along the x-axis and arcs above them connecting each token to its head.
-# Crossing arcs are highlighted in red.
+#' Plot dependency arcs for a parsed sentence
+#'
+#' Draws words along the x-axis and semicircular arcs connecting each token
+#' to its head. Crossing arcs are highlighted in red.
+#'
+#' @param dt_sentence A data.table/data.frame from UDPipe (one sentence).
+#' @param title Optional plot title.
+#' @param show_deprel Logical; if TRUE, labels arcs with dependency relations.
+#' @param highlight_crossings Logical; if TRUE, crossing arcs are drawn in red.
+#' @param cex_text Text size multiplier.
+#' @returns Invisible NULL; called for its side effect (plot).
 plot_dependency_arcs <- function(dt_sentence, title = NULL, show_deprel = TRUE,
                                 highlight_crossings = TRUE, cex_text = 0.8) {
 
@@ -106,6 +113,14 @@ plot_dependency_arcs <- function(dt_sentence, title = NULL, show_deprel = TRUE,
   invisible(NULL)
 }
 
+#' Quietly convert to integer
+#'
+#' Converts character to integer, returning NA for non-integer strings
+#' (e.g., multi-word token ranges like "30-31"). Avoids coercion warnings.
+#'
+#' @param x A character or numeric vector.
+#' @returns An integer vector.
+#' @keywords internal
 to_integer_quiet <- function(x) {
   x_chr <- as.character(x)
   out <- rep.int(NA_integer_, length(x_chr))
@@ -114,9 +129,17 @@ to_integer_quiet <- function(x) {
   out
 }
 
-# computes the height of a single sentence using a data.table approach.
-# include_punct_in_metrics = TRUE by default: punctuation tokens participate
-# in the dependency tree and contribute meaningful depth information.
+#' Compute dependency tree statistics for a single sentence
+#'
+#' Calculates max path depth, mean/adjusted dependency depth, depth SD,
+#' branching factor, and Gibson DLT incomplete dependency counts.
+#'
+#' @param dt_sentence A data.table for one sentence with \code{token_id},
+#'   \code{head_token_id}, and optionally \code{upos}.
+#' @param verbose Logical; if TRUE, prints stats to console.
+#' @param include_punct_in_metrics Logical; if TRUE (default), punctuation
+#'   tokens participate in metrics.
+#' @returns A named list of sentence-level statistics.
 sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_metrics = TRUE) {
 
   dt_sentence <- as.data.table(copy(dt_sentence))
@@ -249,7 +272,20 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   )
 }
 
-# proportion of head final/initial tokens for one document
+#' Compute head-final/initial stats for one document
+#'
+#' For each token, determines whether its head is to the right (head-final)
+#' or left (head-initial), computes head distance, direction, and Gibson DLT
+#' integration cost.
+#'
+#' @param df_doc A data.table for one document with \code{doc_id},
+#'   \code{paragraph_id}, \code{sentence_id}, \code{token_id},
+#'   \code{head_token_id}, and \code{upos}.
+#' @param include_punct_in_metrics Logical; if FALSE (default), punctuation
+#'   is excluded.
+#' @returns A token-level \code{data.table} with \code{head_final},
+#'   \code{head_initial}, \code{head_distance}, \code{head_direction},
+#'   \code{head_distance_adj}, and \code{integration_cost}.
 head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
 
   dt <- as.data.table(copy(df_doc))
@@ -325,7 +361,15 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
   dt[, .(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial, head_distance, head_direction, head_distance_adj, integration_cost)]
 }
 
-# safer wrapper: process one document at a time
+#' Compute head-final/initial stats for a corpus
+#'
+#' Wrapper that applies \code{head_final_initial_doc} to each document
+#' and combines results.
+#'
+#' @param df A parsed \code{data.table} with a \code{doc_id} column.
+#' @param include_punct_in_metrics Logical; if FALSE (default), punctuation
+#'   is excluded from metrics.
+#' @returns A combined token-level \code{data.table}.
 head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
 
   dt <- as.data.table(copy(df))
@@ -359,9 +403,19 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
   }), use.names = TRUE)
 }
 
-# Will process sentence heights in batch.
-# include_punct_in_metrics = TRUE by default: punctuation tokens participate
-# in the dependency tree and contribute meaningful depth information.
+#' Batch-compute sentence-level dependency tree statistics
+#'
+#' Vectorised version of \code{sentence_graph_stats} for an entire corpus,
+#' using data.table grouping for efficiency.
+#'
+#' @param dt_corpus A parsed \code{data.table} with \code{doc_id},
+#'   \code{paragraph_id}, \code{sentence_id}, \code{token_id},
+#'   \code{head_token_id}, and optionally \code{upos}.
+#' @param verbose Logical; if TRUE, warns about unresolvable depths.
+#' @param include_punct_in_metrics Logical; if TRUE (default), punctuation
+#'   tokens participate in metrics.
+#' @returns A \code{data.table} with one row per sentence and columns for
+#'   each tree statistic.
 batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metrics = TRUE) {
 
   dt <- as.data.table(copy(dt_corpus))
@@ -503,10 +557,15 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
   }, by = .(doc_id, paragraph_id, sentence_id)]
 }
 
-# Aggregate dependency features at the document level.
-# Uses the empirically optimal punctuation setting for each feature group:
-# - Tree height/depth: PUNCT included (punctuation arcs add tree structure)
-# - Head direction/distance: PUNCT excluded (punctuation arcs add noise)
+#' Aggregate dependency features at the document level
+#'
+#' Combines tree height/depth stats (with punctuation) and head
+#' direction/distance stats (without punctuation) into a single
+#' document-level summary.
+#'
+#' @param df_corpus A parsed \code{data.table} (full corpus).
+#' @returns A \code{data.table} with one row per document and columns for
+#'   all dependency-tree features.
 docwise_graph_stats <- function(df_corpus) {
 
   df_corpus <- copy(df_corpus)
@@ -566,14 +625,18 @@ docwise_graph_stats <- function(df_corpus) {
   return(df_result)
 }
 
-# Apply saved GAM calibration to sentence-level features.
-# Subtracts the expected value for each sentence length, returning residuals
-# that are (approximately) uncorrelated with sentence length.
-#
-# dt_sent: output of batch_graph_stats()
-# gam_models: named list of GAM fits (from models/gam_sent_length_calibration.Rds)
-#             or a path to the .Rds file.
-# suffix: appended to calibrated column names (default "_resid")
+#' Apply GAM calibration to sentence-level features
+#'
+#' Subtracts the expected value for each sentence length (from saved GAM
+#' models), producing residuals approximately uncorrelated with sentence
+#' length.
+#'
+#' @param dt_sent A \code{data.table} from \code{batch_graph_stats} with a
+#'   \code{sentence_length} column.
+#' @param gam_models Named list of GAM fits, or a path to an \code{.Rds} file.
+#' @param suffix String appended to calibrated column names (default
+#'   \code{"_resid"}).
+#' @returns A copy of \code{dt_sent} with additional \code{*_resid} columns.
 apply_calibration <- function(dt_sent, gam_models, suffix = "_resid") {
 
   if (is.character(gam_models) && length(gam_models) == 1L) {

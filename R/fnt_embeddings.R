@@ -1,15 +1,18 @@
 
-# This will embed the sentences.
-# mode can be "basic", "prompt", or "query"
-# instruction is the prompt or query to use, it will be ignored in 'basic' mode
-#
-## Models to consider for French:
-# HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1
-# dangvantuan/french-document-embedding  very fast!
-# dangvantuan/sentence-camembert-base
-# intfloat/multilingual-e5-large-instruct
-# paraphrase-multilingual-MiniLM-L12-v2
-# Lajavaness/bilingual-embedding-large
+#' Encode sentence embeddings via a Python backend
+#'
+#' Computes dense vector embeddings for each sentence in a parsed corpus using
+#' a HuggingFace model via \pkg{reticulate}. Supports basic, prompt, and query
+#' encoding modes.
+#'
+#' @param dt_corpus A \code{data.table} with \code{doc_id}, \code{sentence_id},
+#'   and \code{sentence}.
+#' @param model_name HuggingFace model identifier.
+#' @param mode Encoding mode: \code{"basic"}, \code{"prompt"}, or \code{"query"}.
+#' @param batch_size Batch size for the Python encoder.
+#' @param instruction Instruction string for prompt/query modes (ignored in basic).
+#' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
+#'   \code{sentence}, and embedding columns \code{dim1}...\code{dimN}.
 encode_embeddings <- function(dt_corpus,
                               model_name = "dangvantuan/french-document-embedding",
                               mode = "basic",
@@ -92,8 +95,18 @@ encode_embeddings <- function(dt_corpus,
 }
 
 
-# computes sentence embeddings for a whole corpus,
-# returns sentence embeddings and document mean embeddings
+#' Compute sentence and document embeddings for a corpus
+#'
+#' Wrapper around \code{encode_embeddings} that also computes document-level
+#' mean embeddings by averaging sentence vectors.
+#'
+#' @param dt_corpus A \code{data.table} with \code{doc_id}, \code{sentence_id},
+#'   and \code{sentence}.
+#' @param model_name HuggingFace model identifier.
+#' @param mode Encoding mode: \code{"basic"}, \code{"prompt"}, or \code{"query"}.
+#' @param batch_size Batch size for the Python encoder.
+#' @param instruction Instruction string for prompt/query modes.
+#' @returns A list with \code{dt_sent_embeddings} and \code{dt_doc_embeddings}.
 corpus_embeddings <- function(dt_corpus,
                                 model_name = "Lajavaness/bilingual-embedding-large",
                                 mode = "basic",
@@ -117,8 +130,18 @@ corpus_embeddings <- function(dt_corpus,
 }
 
 
-# Mean NN cosine similarity of interpolated points along sentence-pair segments.
-# Used by embedding_coherence for convexity features.
+#' Mean NN cosine similarity of interpolated points (internal)
+#'
+#' Interpolates between sentence-pair embeddings at several lambda values and
+#' measures nearest-neighbour cosine similarity to actual sentences. Used
+#' internally by \code{embedding_coherence} for convexity features.
+#'
+#' @param mat_norm L2-normalised sentence embedding matrix.
+#' @param idx_a Integer vector of first sentence indices.
+#' @param idx_b Integer vector of second sentence indices.
+#' @param lambdas Numeric vector of interpolation weights.
+#' @returns A numeric scalar: mean NN similarity across all interpolations.
+#' @keywords internal
 .interpolation_convexity <- function(mat_norm, idx_a, idx_b,
                                      lambdas = c(0.25, 0.5, 0.75)) {
   nn_sims <- numeric(0)
@@ -134,9 +157,17 @@ corpus_embeddings <- function(dt_corpus,
   mean(nn_sims)
 }
 
-# Document-level coherence features from sentence embeddings.
-# Input:  dt_sent_embeddings from corpus_embeddings() (doc_id, sentence_id, dim1..dimN)
-# Output: data.table with one row per doc_id and emb_* columns (see FEATURES.md §15).
+#' Compute document-level coherence features from sentence embeddings
+#'
+#' Derives a rich set of semantic coherence features per document: thematic
+#' dispersion, centroid distance SD, sequential similarity, semantic gaps,
+#' topic drift, novelty, estimated number of topics (k-means + silhouette),
+#' and embedding space convexity (Gardenfors).
+#'
+#' @param dt_sent_embeddings A \code{data.table} from \code{corpus_embeddings}
+#'   with \code{doc_id}, \code{sentence_id}, and columns \code{dim1}...\code{dimN}.
+#' @returns A \code{data.table} with one row per document and \code{emb_*}
+#'   columns for each coherence feature.
 embedding_coherence <- function(dt_sent_embeddings) {
 
   dt <- as.data.table(dt_sent_embeddings)

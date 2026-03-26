@@ -1,3 +1,28 @@
+#' Compute Extra Syntactic Complexity Features
+#'
+#' Derives dependency-tree-based syntactic complexity measures from a parsed
+#' corpus. Computes dependency distance, dependency count per token, clause
+#' indicators, complex nominals, and complex verbs at the token level, then
+#' aggregates per sentence and per document.
+#'
+#' @param dt A parsed data.table (UDPipe output after post-processing) containing
+#'   at minimum: \code{doc_id}, \code{paragraph_id}, \code{sentence_id},
+#'   \code{token_id}, \code{head_token_id}, \code{dep_rel}, \code{upos},
+#'   \code{feats}, and \code{compte}.
+#'
+#' @returns A data.frame (grouped tibble) with one row per \code{doc_id} and columns:
+#'   \describe{
+#'     \item{avg_clause_length}{Mean tokens per clause.}
+#'     \item{complex_nom_per_sent}{Mean complex nominals per sentence.}
+#'     \item{complex_verb_per_sent}{Mean complex verbs per sentence.}
+#'     \item{avg_dep_dist}{Mean dependency distance (token-to-head gap).}
+#'     \item{avg_dep_count}{Mean number of dependents per token.}
+#'     \item{clausal_density}{Total clauses divided by number of sentences.}
+#'   }
+#'
+#' @details Clause boundaries are identified by dependency relations: ccomp,
+#'   acl, advcl, xcomp, csubj, csubj:pass, and acl:relcl. Complex nominals
+#'   are nouns that serve as heads; complex verbs are verbs that serve as heads.
 extra_syntactic_features <- function(dt) {
   # Extra dependency tree based features
   dt_corpus <- setDT(copy(dt))

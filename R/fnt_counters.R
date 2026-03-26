@@ -3,7 +3,28 @@
 
 library(data.table)
 
-# Main function to calculate feature counts per doc_id
+#' Compute Document-Level Count Features from Parsed Data
+#'
+#' Calculates word counts, unique words, content words, sentences, paragraphs,
+#' character counts, average word/sentence length, and UPOS tag distribution
+#' (counts and proportions pivoted wide) for each document.
+#'
+#' @param parsed_data A \code{data.table} of parsed tokens with columns
+#'   \code{doc_id}, \code{token}, \code{compte}, \code{upos},
+#'   \code{sentence_id}, and optionally \code{paragraph_id}.
+#' @param content_word_upos Character vector of UPOS tags considered content
+#'   words. Defaults to \code{c("NOUN", "VERB", "ADJ", "ADV", "PRON")}.
+#'
+#' @returns A list with two elements:
+#'   \describe{
+#'     \item{doc_level_counts}{A \code{data.table} with one row per document
+#'       containing word_count, unique_word_count, content_word_count,
+#'       unique_content_word_count, sentence_count, paragraph_count,
+#'       avg_word_length, char_count, char_count_content,
+#'       avg_sentence_length, and avg_content_word_length.}
+#'     \item{upos_counts}{A wide \code{data.table} with per-document UPOS
+#'       counts and proportions (one column per UPOS tag).}
+#'   }
 simple_count_features <- function(parsed_data, content_word_upos = c("NOUN", "VERB", "ADJ", "ADV", "PRON")) {
   # Ensure the input is a data.table
   if (!is.data.table(parsed_data)) {
@@ -54,9 +75,6 @@ simple_count_features <- function(parsed_data, content_word_upos = c("NOUN", "VE
   upos_counts <- parsed_data[, .N, by = .(doc_id, upos)]
   setnames(upos_counts, "N", "count")
   
-  # add a cnt_ prefix to the upos column values
-  # upos_counts[, upos := paste0("cnt_", upos)]
-  
   # add a column with proportions of each UPOS
   upos_counts[, prop := count / sum(count), by = doc_id]
   
@@ -72,8 +90,27 @@ simple_count_features <- function(parsed_data, content_word_upos = c("NOUN", "VE
   return(results)
 }
 
-# Function to calculate verb tense features
-# Function to calculate verb tense features
+#' Compute Verb Tense and Mood Features per Document
+#'
+#' Extracts verb tense and mood counts from the \code{feats} column of a parsed
+#' corpus, then computes proportions relative to each document's word count.
+#' Tracked categories: present, past, future, conditional, subjunctive,
+#' indicative, imperative, infinitive, past participle, present participle,
+#' and passe simple.
+#'
+#' @param parsed_corpus A \code{data.table} of parsed tokens with columns
+#'   \code{doc_id} and \code{feats} (Universal Dependencies morphological
+#'   features string).
+#' @param counts A \code{data.table} with at least columns \code{doc_id} and
+#'   \code{word_count}, used to compute per-document proportions.
+#'
+#' @returns A list with two elements:
+#'   \describe{
+#'     \item{counts}{A \code{data.table} with one row per document and one
+#'       column per tense/mood count.}
+#'     \item{proportions}{A \code{data.table} with one row per document and
+#'       one column per tense/mood proportion (count divided by word_count).}
+#'   }
 verb_tense_features <- function(parsed_corpus, counts) {
   if (!is.data.table(parsed_corpus)) {
     stop("parsed_corpus must be a data.table.")

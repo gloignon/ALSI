@@ -1,37 +1,31 @@
 # Utility functions shared across demos and pipelines.
 library(data.table)
 
-# ---------------------------------------------------------------------------
-# Multi-word sequence matching against CoNLL-style parsed data
-# ---------------------------------------------------------------------------
-#
-# match_multiword_sequences()
-#
-# Given a token-per-row data.table (CoNLL-style) and a lexicon of multi-word
-# expressions, find all occurrences efficiently using rolling n-gram joins.
-#
-# Arguments:
-#   dt_tokens   - data.table with at least: doc_id, sentence_id, token_id, token
-#                 Must be ordered by (doc_id, sentence_id, token_id).
-#   dt_lexicon  - data.table with at least: forme_lower (space-separated MWE),
-#                 n_tokens (number of tokens in the expression).
-#                 May contain additional columns (relation, cat, etc.) that will
-#                 be carried through to the output.
-#   token_col   - column in dt_tokens to match against (default "token").
-#                 Matched case-insensitively (tolower applied).
-#   lexicon_col - column in dt_lexicon containing the expression (default "forme_lower").
-#   lexicon_n_col - column in dt_lexicon with token count (default "n_tokens").
-#
-# Returns:
-#   A data.table with one row per match, containing:
-#     doc_id, sentence_id, token_id_start, token_id_end, matched_forme,
-#     plus all extra columns from dt_lexicon.
-#
-# Algorithm:
-#   For each n-gram length k (from max down to 1), paste k consecutive tokens
-#   into a single key string, then hash-join against the lexicon entries of
-#   length k. This is O(N × max_k) where N = number of tokens.
-
+#' Match multi-word expressions in CoNLL-style parsed data
+#'
+#' Given a token-per-row data.table and a lexicon of multi-word expressions,
+#' finds all occurrences using rolling n-gram joins. For each n-gram length k,
+#' pastes k consecutive tokens into a key string and hash-joins against lexicon
+#' entries of that length. Complexity is O(N x max_k).
+#'
+#' @param dt_tokens A \code{data.table} with at least \code{doc_id},
+#'   \code{sentence_id}, \code{token_id}, and the column named by
+#'   \code{token_col}. Must be ordered by (doc_id, sentence_id, token_id).
+#' @param dt_lexicon A \code{data.table} with at least the expression column
+#'   (space-separated MWE) and a token-count column. May contain extra columns
+#'   (relation, cat, etc.) carried through to output.
+#' @param token_col Column in \code{dt_tokens} to match (default \code{"token"}).
+#' @param lexicon_col Column in \code{dt_lexicon} with the expression
+#'   (default \code{"forme_lower"}).
+#' @param lexicon_n_col Column in \code{dt_lexicon} with the token count
+#'   (default \code{"n_tokens"}).
+#' @param pos_filter Logical; if TRUE, filter matches by UPOS compatibility.
+#' @param upos_col UPOS column name in \code{dt_tokens}.
+#' @param lexicon_cat_col Category column in \code{dt_lexicon} for POS filtering.
+#' @param cat_to_upos Named list mapping lexicon categories to expected UPOS tags.
+#' @returns A \code{data.table} with one row per match: \code{doc_id},
+#'   \code{sentence_id}, \code{token_id_start}, \code{token_id_end},
+#'   \code{matched_forme}, plus extra lexicon columns.
 match_multiword_sequences <- function(dt_tokens, dt_lexicon,
                                        token_col = "token",
                                        lexicon_col = "forme_lower",
@@ -182,16 +176,27 @@ match_multiword_sequences <- function(dt_tokens, dt_lexicon,
   return(dt_matches)
 }
 
-# Split a block of text into sentences on sentence-ending punctuation
-# followed by whitespace and an uppercase letter (including French accented).
-# Returns a character vector of trimmed, non-empty sentences.
+#' Split text into sentences
+#'
+#' Splits on sentence-ending punctuation followed by whitespace and an
+#' uppercase letter (including French accented capitals).
+#'
+#' @param text A character string.
+#' @returns A character vector of trimmed, non-empty sentences.
 split_sentences <- function(text) {
   s <- unlist(strsplit(text, "(?<=[.!?])\\s+(?=[A-Z\u00c0\u00c2\u00c9\u00c8\u00ca\u00cb\u00ce\u00cf\u00d4\u00d9\u00db\u00dc\u00c7])", perl = TRUE))
   trimws(s[nchar(trimws(s)) > 0])
 }
 
-# Read a text file and return a tibble with one row per sentence.
-# Handles both one-sentence-per-line and single-line-blob formats.
+#' Read a text file and return one row per sentence
+#'
+#' Reads a text file, collapses lines, splits into sentences, and returns
+#' a tibble. Handles both one-sentence-per-line and single-blob formats.
+#'
+#' @param path Path to a text file (UTF-8).
+#' @param doc_id Document identifier to assign.
+#' @returns A \code{tibble} with \code{doc_id}, \code{sentence_id}, and
+#'   \code{sentence}, or NULL if no sentences are found.
 read_sentences <- function(path, doc_id) {
   raw <- readLines(path, encoding = "UTF-8", warn = FALSE)
   sents <- raw %>%
