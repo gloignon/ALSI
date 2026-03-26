@@ -2,8 +2,15 @@
 # Query a local Ollama API row-by-row from a data frame.
 # Uses /api/chat with system prompt per request (stateless, no conversation memory).
 
-# Fill a prompt template using column values from one row.
-# Tags are of the form {column_name}.
+#' Fill a prompt template with column values from one row (internal)
+#'
+#' Replaces \code{{column_name}} tags in \code{template} with the
+#' corresponding values from a single data.frame row.
+#'
+#' @param template Character string with \code{{column_name}} placeholders.
+#' @param row A single-row data.frame or list.
+#' @returns A character string with tags replaced.
+#' @keywords internal
 .fill_template <- function(template, row) {
   out <- template
   for (col in names(row)) {
@@ -15,7 +22,18 @@
   out
 }
 
-# Send a single stateless chat request to Ollama.
+#' Send a single stateless chat request to Ollama (internal)
+#'
+#' Posts a system + user message pair to the Ollama \code{/api/chat} endpoint
+#' and returns the assistant response content.
+#'
+#' @param model Ollama model name.
+#' @param system_prompt System prompt string.
+#' @param user_prompt User prompt string.
+#' @param options Named list of model options (temperature, top_p, num_ctx).
+#' @param endpoint Ollama API base URL.
+#' @returns A character string: the model response.
+#' @keywords internal
 .ollama_chat <- function(model, system_prompt, user_prompt, options, endpoint) {
   body <- list(
     model    = model,
@@ -55,7 +73,7 @@
 #' @param output_file         Path for incremental CSV output (also used for resuming).
 #' @param force_restart       If TRUE, ignore existing output file and start from row 1.
 #' @param endpoint            Ollama API base URL.
-#' @return A data.table: all original columns plus \code{ollama_response}.
+#' @returns A data.table: all original columns plus \code{ollama_response}.
 ollama_generate <- function(data,
                             user_prompt_template,
                             system_prompt,

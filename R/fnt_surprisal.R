@@ -1,5 +1,15 @@
 
-# LLM surprisal + entropy (token-level) ----
+#' Load a language model for token-level scoring
+#'
+#' Initialises a masked or autoregressive language model via the Python
+#' \code{llm_scoring.py} backend. The model is cached in the Python session.
+#'
+#' @param model_name HuggingFace model identifier.
+#' @param mode Either \code{"mlm"} (masked LM) or \code{"ar"} (autoregressive).
+#' @param use_fast Logical; use the fast tokenizer if available.
+#' @param trust_remote_code Logical; allow remote code execution for the model.
+#' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @returns Invisible TRUE on success.
 load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
                             mode = "mlm",
                             use_fast = TRUE,
@@ -20,7 +30,23 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
   invisible(TRUE)
 }
 
-# Compute surprisal/entropy sentence-by-sentence, return per token
+#' Compute token-level LLM surprisal and entropy
+#'
+#' Scores each sentence with a masked or autoregressive language model and
+#' returns per-token surprisal, entropy, and sub-word token count.
+#'
+#' @param dt_corpus A \code{data.table} with \code{doc_id},
+#'   \code{sentence_id}, and \code{token}.
+#' @param model_name HuggingFace model identifier.
+#' @param mode Either \code{"mlm"} or \code{"ar"}.
+#' @param context Optional context string prepended to each sentence.
+#' @param batch_size Batch size for MLM scoring (0 = auto).
+#' @param temperature Softmax temperature (default 1.0).
+#' @param use_fast Logical; use the fast tokenizer.
+#' @param trust_remote_code Logical; allow remote code for the model.
+#' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @returns The input \code{data.table} augmented with \code{llm_surprisal},
+#'   \code{llm_entropy}, and \code{llm_subword_n} columns.
 llm_surprisal_entropy <- function(dt_corpus,
                                   model_name = "almanach/moderncamembert-base",
                                   mode = "mlm",
