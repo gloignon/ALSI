@@ -13,6 +13,8 @@ aggregation.R
 __pycache__/
 /.claude/
 /experiments/
+/scrapers/
+/papers/
 
 
 

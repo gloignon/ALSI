@@ -337,13 +337,12 @@ lexical_db_stats <- function(dt_lexical, freq = "freq", freq_u = "freq_u",
 #' @param dt A data.table with a frequency column containing NAs for OOV tokens.
 #' @param count_col Name of the frequency column.
 #' @param output_name Optional name for the output column (if NULL, overwrites \code{count_col}).
-#' @returns A copy of \code{dt} with OOV values left as NA.
+#' @returns \code{dt}, modified by reference. OOV values left as NA.
 impute_skip <- function(dt, count_col, output_name = NULL) {
-  dt <- copy(dt)
   if (!is.null(output_name)) {
     dt[, (output_name) := .SD[[1]], .SDcols = count_col]
   }
-  dt
+  invisible(dt)
 }
 
 #' Impute OOV Frequencies: Epsilon (Small Constant)
@@ -356,10 +355,8 @@ impute_skip <- function(dt, count_col, output_name = NULL) {
 #' @param epsilon Numeric constant to assign to OOV tokens; if NULL, uses
 #'   \code{min(observed) / 2}.
 #' @param output_name Optional name for the output column.
-#' @returns A copy of \code{dt} with OOV values replaced by \code{epsilon}.
+#' @returns \code{dt}, modified by reference, with OOV values replaced by \code{epsilon}.
 impute_epsilon <- function(dt, count_col, epsilon = NULL, output_name = NULL) {
-  dt <- copy(dt)
-
   if (is.null(epsilon)) {
     observed <- dt[[count_col]]
     epsilon <- min(observed, na.rm = TRUE) / 2
@@ -368,7 +365,7 @@ impute_epsilon <- function(dt, count_col, epsilon = NULL, output_name = NULL) {
   col <- if (!is.null(output_name)) output_name else count_col
   dt[, (col) := .SD[[1]], .SDcols = count_col]
   dt[is.na(get(col)), (col) := epsilon]
-  dt
+  invisible(dt)
 }
 
 #' Impute OOV Frequencies: Per-Document Good-Turing (Legacy)
@@ -385,11 +382,10 @@ impute_epsilon <- function(dt, count_col, epsilon = NULL, output_name = NULL) {
 #' @param N_token Total token count from the lexical database.
 #' @param N1_token Number of hapax legomena in the lexical database.
 #' @param output_name Optional name for the output column.
-#' @returns A copy of \code{dt} with OOV values imputed per document.
+#' @returns \code{dt}, modified by reference, with OOV values imputed per document.
 impute_per_doc_gt <- function(dt, count_col, mode = "raw", N_token, N1_token,
                               output_name = NULL) {
   stopifnot("doc_id" %in% names(dt))
-  dt <- copy(dt)
 
   dt[, freq_impute := if (mode == "u") .SD[[1]] * N_token / 1e6 else .SD[[1]],
      .SDcols = count_col]
@@ -406,7 +402,7 @@ impute_per_doc_gt <- function(dt, count_col, mode = "raw", N_token, N1_token,
 
   if (!is.null(output_name)) setnames(dt, "freq_impute", output_name)
   dt[, imputed_value := NULL]
-  dt
+  invisible(dt)
 }
 
 #' Impute OOV Frequencies: Fixed Good-Turing (Recommended Default)
@@ -421,11 +417,9 @@ impute_per_doc_gt <- function(dt, count_col, mode = "raw", N_token, N1_token,
 #' @param N_token Total token count from the lexical database.
 #' @param N1_token Number of hapax legomena in the lexical database.
 #' @param output_name Optional name for the output column.
-#' @returns A copy of \code{dt} with OOV values set to \code{N1/N}.
+#' @returns \code{dt}, modified by reference, with OOV values set to \code{N1/N}.
 impute_fixed_gt <- function(dt, count_col, mode = "raw", N_token, N1_token,
                             output_name = NULL) {
-  dt <- copy(dt)
-
   # Imputed value in raw scale
   gt_value_raw <- N1_token / N_token
   gt_value <- if (mode == "u") gt_value_raw * 1e6 / N_token else gt_value_raw
@@ -433,7 +427,7 @@ impute_fixed_gt <- function(dt, count_col, mode = "raw", N_token, N1_token,
   col <- if (!is.null(output_name)) output_name else count_col
   dt[, (col) := .SD[[1]], .SDcols = count_col]
   dt[is.na(get(col)), (col) := gt_value]
-  dt
+  invisible(dt)
 }
 
 #' Impute OOV Frequencies: Simple Good-Turing
@@ -448,10 +442,9 @@ impute_fixed_gt <- function(dt, count_col, mode = "raw", N_token, N1_token,
 #' @param mode Either \code{"raw"} (raw counts) or \code{"u"} (per-million).
 #' @param db_stats A list returned by \code{lexical_db_stats}.
 #' @param output_name Optional name for the output column.
-#' @returns A copy of \code{dt} with OOV values imputed via SGT.
+#' @returns \code{dt}, modified by reference, with OOV values imputed via SGT.
 impute_sgt <- function(dt, count_col, mode = "raw", db_stats,
                        output_name = NULL) {
-  dt <- copy(dt)
 
   N <- db_stats$N
   spectrum <- copy(db_stats$freq_spectrum)
@@ -490,7 +483,7 @@ impute_sgt <- function(dt, count_col, mode = "raw", db_stats,
   col <- if (!is.null(output_name)) output_name else count_col
   dt[, (col) := .SD[[1]], .SDcols = count_col]
   dt[is.na(get(col)), (col) := imputed_value]
-  dt
+  invisible(dt)
 }
 
 #' Impute OOV Frequencies: Chao1 Abundance-Based Estimator
@@ -503,10 +496,9 @@ impute_sgt <- function(dt, count_col, mode = "raw", db_stats,
 #' @param mode Either \code{"raw"} (raw counts) or \code{"u"} (per-million).
 #' @param db_stats A list returned by \code{lexical_db_stats}.
 #' @param output_name Optional name for the output column.
-#' @returns A copy of \code{dt} with OOV values imputed via Chao1.
+#' @returns \code{dt}, modified by reference, with OOV values imputed via Chao1.
 impute_chao1 <- function(dt, count_col, mode = "raw", db_stats,
                          output_name = NULL) {
-  dt <- copy(dt)
 
   N <- db_stats$N
   N1 <- db_stats$N1
@@ -532,7 +524,7 @@ impute_chao1 <- function(dt, count_col, mode = "raw", db_stats,
   col <- if (!is.null(output_name)) output_name else count_col
   dt[, (col) := .SD[[1]], .SDcols = count_col]
   dt[is.na(get(col)), (col) := imputed_value]
-  dt
+  invisible(dt)
 }
 
 #' Impute OOV Frequencies: Chao2 Incidence-Based Estimator
@@ -547,11 +539,10 @@ impute_chao1 <- function(dt, count_col, mode = "raw", db_stats,
 #' @param mode Either \code{"raw"} (raw counts) or \code{"u"} (per-million).
 #' @param db_stats A list returned by \code{lexical_db_stats}.
 #' @param output_name Optional name for the output column.
-#' @returns A copy of \code{dt} with OOV values imputed via Chao2.
+#' @returns \code{dt}, modified by reference, with OOV values imputed via Chao2.
 impute_chao2 <- function(dt, count_col, mode = "raw", db_stats,
                          output_name = NULL) {
   stopifnot("doc_id" %in% names(dt))
-  dt <- copy(dt)
 
   N <- db_stats$N
 
@@ -562,7 +553,7 @@ impute_chao2 <- function(dt, count_col, mode = "raw", db_stats,
   if (nrow(oov_tokens) == 0L) {
     col <- if (!is.null(output_name)) output_name else count_col
     dt[, (col) := .SD[[1]], .SDcols = count_col]
-    return(dt)
+    return(invisible(dt))
   }
 
   type_incidence <- oov_tokens[, .(n_docs = uniqueN(doc_id)), by = token]
@@ -590,7 +581,7 @@ impute_chao2 <- function(dt, count_col, mode = "raw", db_stats,
   col <- if (!is.null(output_name)) output_name else count_col
   dt[, (col) := .SD[[1]], .SDcols = count_col]
   dt[is.na(get(col)), (col) := imputed_value]
-  dt
+  invisible(dt)
 }
 
 #' Impute OOV Frequencies: Per-UPOS Stratified Good-Turing
@@ -605,10 +596,9 @@ impute_chao2 <- function(dt, count_col, mode = "raw", db_stats,
 #' @param db_stats A list returned by \code{lexical_db_stats}.
 #' @param upos_col Name of the UPOS column.
 #' @param output_name Optional name for the output column.
-#' @returns A copy of \code{dt} with OOV values imputed per UPOS category.
+#' @returns \code{dt}, modified by reference, with OOV values imputed per UPOS category.
 impute_upos_gt <- function(dt, count_col, mode = "raw", db_stats,
                            upos_col = "upos", output_name = NULL) {
-  dt <- copy(dt)
 
   N <- db_stats$N
   N1 <- db_stats$N1
@@ -622,7 +612,7 @@ impute_upos_gt <- function(dt, count_col, mode = "raw", db_stats,
   if (is.null(db_stats$upos_stats) || !upos_col %in% names(dt)) {
     # No UPOS info available: fall back to global fixed GT
     dt[is.na(get(col)), (col) := global_gt]
-    return(dt)
+    return(invisible(dt))
   }
 
   # Build lookup of per-UPOS imputed values
@@ -644,7 +634,7 @@ impute_upos_gt <- function(dt, count_col, mode = "raw", db_stats,
     set(dt, i = oov_idx, j = col, value = imputed)
   }
 
-  dt
+  invisible(dt)
 }
 
 
