@@ -19,6 +19,7 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
   message(sprintf("Loading %s LLM model '%s' (this may take a while on first run)...", mode, model_name))
+  reticulate::py_require(c("torch", "transformers"))
   reticulate::source_python("py/llm_scoring.py")
   load_llm_model(
     model_name,

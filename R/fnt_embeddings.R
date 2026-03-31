@@ -19,6 +19,7 @@ encode_embeddings <- function(dt_corpus,
                               batch_size = 32,
                               instruction = "Identifiez le thème principal et les thèmes secondaires dans ce texte.") {
   
+  reticulate::py_require(c("sentence-transformers", "torch", "numpy"))
   source_python("py/embed_sentences_instruct.py")
 
   cat(sprintf("Loading model '%s'...\n", model_name))
