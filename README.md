@@ -20,6 +20,10 @@ Included lexical frequency databases:
 
 Please cite the relevant papers if you use the lexical databases included in the ALSI/ILSA tool.
 
+## Many features - for real
+
+ALSI extracts many types of features ([see the current list of features](https://github.com/gloignon/ALSI/blob/main/FEATURES.md)). You can easily output classic NLP-style features, POS-tag features, cohesion features, lexical frequency features, dependency parsing features, and now LLM-derived features such as surprisal, entropy and semantic embeddings. You can even use ALSI to "talk" with your locally-run LLM through [Ollama](https://ollama.com/) and run experiments in AI summarization, back translation, question and answer, or anything you can think of.
+
 ## Encoding support
 
 `build_corpus()` reads UTF-8 by default, but also supports Latin-1 (`encoding = "latin1"`) and Windows-1252 (`encoding = "windows-1252"`), which are common in older French corpora. Use `encoding = "auto"` to let the function detect each file's encoding automatically — if a directory contains files with different encodings, they will all be read correctly and you will get a warning listing what was found. See `demos/demo_corpus_read.R` for examples.
