@@ -152,15 +152,33 @@ llm_surprisal_entropy <- function(dt_corpus,
     })
 
     if (!is.null(score)) {
-      n_tokens <- length(sent_tokens)
-      results[[i]] <- data.table::data.table(
-        doc_id = doc_id,
-        sentence_id = sentence_id,
-        token_index = seq_len(n_tokens),
-        llm_surprisal = unlist(score$word_surprisals),
-        llm_entropy = unlist(score$word_entropies),
-        llm_subword_n = unlist(score$word_token_counts)
-      )
+      w_surp <- unlist(score$word_surprisals)
+      if (length(w_surp) > 0) {
+        # Word-level results available (fast tokenizer with word_ids)
+        n_tokens <- length(sent_tokens)
+        results[[i]] <- data.table::data.table(
+          doc_id = doc_id,
+          sentence_id = sentence_id,
+          token_index = seq_len(n_tokens),
+          llm_surprisal = w_surp,
+          llm_entropy = unlist(score$word_entropies),
+          llm_subword_n = unlist(score$word_token_counts)
+        )
+      } else {
+        # Subword-level only (slow tokenizer, no word_ids)
+        sw_surp <- unlist(score$subword_surprisals)
+        sw_ent  <- unlist(score$subword_entropies)
+        # Keep only non-NaN subword positions (excludes special tokens)
+        valid <- !is.nan(sw_surp)
+        results[[i]] <- data.table::data.table(
+          doc_id = doc_id,
+          sentence_id = sentence_id,
+          token_index = seq_len(sum(valid)),
+          llm_surprisal = sw_surp[valid],
+          llm_entropy = sw_ent[valid],
+          llm_subword_n = NA_integer_
+        )
+      }
     }
 
     if (i %% 3 == 0 || i == total_sentences) {
