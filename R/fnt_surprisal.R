@@ -26,7 +26,7 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
     mode = mode,
     use_fast = use_fast,
     trust_remote_code = trust_remote_code,
-    add_prefix_space = add_prefix_space
+    add_prefix_space = isTRUE(add_prefix_space)
   )
   invisible(TRUE)
 }
@@ -100,7 +100,7 @@ llm_surprisal_entropy <- function(dt_corpus,
       mode = mode,
       use_fast = use_fast,
       trust_remote_code = trust_remote_code,
-      add_prefix_space = add_prefix_space
+      add_prefix_space = isTRUE(add_prefix_space)
     )
   }
 
@@ -191,4 +191,78 @@ llm_surprisal_entropy <- function(dt_corpus,
   dt_out[, token_index := NULL]
 
   return(dt_out)
+}
+
+
+#' Compute sentence-level LLM surprisal and entropy
+#'
+#' Takes a data.table of sentences (not parsed tokens), tokenises each sentence
+#' on whitespace, scores with the LLM backend, and returns one row per sentence
+#' with mean surprisal and entropy.
+#'
+#' @param dt_sentences A \code{data.table} with \code{doc_id},
+#'   \code{sentence_id}, and \code{sentence}.
+#' @param model_name HuggingFace model identifier.
+#' @param mode Either \code{"mlm"} or \code{"ar"}.
+#' @param context Optional context string prepended to each sentence.
+#' @param batch_size Batch size for MLM scoring (0 = auto).
+#' @param temperature Softmax temperature (default 1.0).
+#' @param use_fast Logical; use the fast tokenizer.
+#' @param trust_remote_code Logical; allow remote code for the model.
+#' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
+#'   \code{sentence}, \code{llm_surprisal}, and \code{llm_entropy}
+#'   (sentence-level means).
+llm_surprisal_entropy_sentences <- function(dt_sentences,
+                                            model_name = "almanach/moderncamembert-base",
+                                            mode = "mlm",
+                                            context = NULL,
+                                            batch_size = 0,
+                                            temperature = 1.0,
+                                            use_fast = TRUE,
+                                            trust_remote_code = TRUE,
+                                            add_prefix_space = NULL) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
+  }
+  required <- c("doc_id", "sentence_id", "sentence")
+  missing <- setdiff(required, names(dt_sentences))
+  if (length(missing)) {
+    stop(sprintf("dt_sentences must contain columns: %s", paste(required, collapse = ", ")))
+  }
+
+  dt <- data.table::as.data.table(data.table::copy(dt_sentences))
+  # Tokenise on whitespace
+  dt_tok <- dt[, .(token = unlist(strsplit(sentence, "\\s+")),
+                    token_id = seq_along(unlist(strsplit(sentence, "\\s+")))),
+               by = .(doc_id, sentence_id)]
+
+  dt_scored <- llm_surprisal_entropy(
+    dt_tok,
+    model_name = model_name,
+    mode = mode,
+    context = context,
+    batch_size = batch_size,
+    temperature = temperature,
+    use_fast = use_fast,
+    trust_remote_code = trust_remote_code,
+    add_prefix_space = add_prefix_space
+  )
+
+  # Aggregate to sentence level
+  dt_result <- dt_scored[, .(
+    llm_surprisal = mean(llm_surprisal, na.rm = TRUE),
+    llm_entropy   = mean(llm_entropy,   na.rm = TRUE)
+  ), by = .(doc_id, sentence_id)]
+
+  # Merge back the sentence text
+  dt_result <- merge(
+    dt[, .(doc_id, sentence_id, sentence)],
+    dt_result,
+    by = c("doc_id", "sentence_id"),
+    all.x = TRUE
+  )
+
+  data.table::setorderv(dt_result, c("doc_id", "sentence_id"))
+  dt_result
 }
