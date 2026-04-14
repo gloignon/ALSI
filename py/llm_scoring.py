@@ -1,6 +1,6 @@
 import math
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import torch
 from transformers import AutoTokenizer, AutoModelForMaskedLM, AutoModelForCausalLM
@@ -80,26 +80,76 @@ def _compute_surprisal_entropy(logits: torch.Tensor, target_id: int, temperature
     return surprisal, entropy
 
 
+def _get_word_ids(encoding) -> Optional[List]:
+    """Try to get word_ids from encoding; return None if unavailable."""
+    if hasattr(encoding, "word_ids"):
+        try:
+            return encoding.word_ids(0)
+        except Exception:
+            return None
+    return None
+
+
+def _aggregate_to_words(
+    word_ids: List, n_words: int, context_len: int,
+    subword_surprisals: List[float], subword_entropies: List[float],
+) -> Dict[str, List]:
+    """Aggregate subword scores to word level using word_ids mapping."""
+    word_surps = [0.0] * n_words
+    word_ents = [0.0] * n_words
+    word_counts = [0] * n_words
+
+    for pos, wid in enumerate(word_ids):
+        if wid is None:
+            continue
+        if 0 <= wid < n_words:
+            sub_pos = context_len + pos
+            if not math.isnan(subword_surprisals[sub_pos]):
+                word_surps[wid] += subword_surprisals[sub_pos]
+            if not math.isnan(subword_entropies[sub_pos]):
+                word_ents[wid] += subword_entropies[sub_pos]
+            word_counts[wid] += 1
+
+    # Entropy: mean per word; surprisal: sum per word
+    for i in range(n_words):
+        if word_counts[i] > 0:
+            word_ents[i] = word_ents[i] / word_counts[i]
+        else:
+            word_surps[i] = float("nan")
+            word_ents[i] = float("nan")
+
+    return {
+        "word_surprisals": word_surps,
+        "word_entropies": word_ents,
+        "word_token_counts": word_counts,
+    }
+
+
+def _empty_result() -> Dict:
+    return {
+        "word_surprisals": [],
+        "word_entropies": [],
+        "word_token_counts": [],
+        "subword_surprisals": [],
+        "subword_entropies": [],
+        "subword_word_ids": [],
+        "subword_tokens": [],
+    }
+
+
 def score_masked_lm_tokens(
     tokens: List[str],
     temperature: float = 1.0,
     batch_size: int = 0,
     context_text: str = None,
-) -> Dict[str, List[float]]:
+) -> Dict[str, List]:
     global _tokenizer, _model, _device
 
     if _tokenizer is None or _model is None or _mode != "mlm":
         raise RuntimeError("Model not loaded in MLM mode. Call load_llm_model(mode='mlm') first.")
 
     if tokens is None or len(tokens) == 0:
-        return {
-            "word_surprisals": [],
-            "word_entropies": [],
-            "word_token_counts": [],
-            "subword_surprisals": [],
-            "subword_entropies": [],
-            "subword_word_ids": [],
-        }
+        return _empty_result()
 
     tokens = ["" if t is None else str(t) for t in tokens]
     if context_text is not None:
@@ -112,14 +162,7 @@ def score_masked_lm_tokens(
         add_special_tokens=True,
     )
     sentence_ids = encoding["input_ids"][0]
-
-    if hasattr(encoding, "word_ids"):
-        word_ids = encoding.word_ids(0)
-    else:
-        word_ids = None
-
-    if word_ids is None:
-        raise ValueError("Tokenizer does not provide word_ids; use a fast tokenizer.")
+    word_ids = _get_word_ids(encoding)
 
     context_ids = []
     if context_text is not None and str(context_text).strip():
@@ -130,18 +173,35 @@ def score_masked_lm_tokens(
     context_len = len(context_ids)
     seq_len = input_ids.shape[0]
 
-    # Build masked variants for all positions that map to a word
-    positions = [context_len + i for i, wid in enumerate(word_ids) if wid is not None]
+    # Determine which positions to mask: use word_ids if available, else all non-special
+    if word_ids is not None:
+        positions = [context_len + i for i, wid in enumerate(word_ids) if wid is not None]
+    else:
+        # Mask all sentence positions except special tokens
+        special_ids = set()
+        for attr in ("cls_token_id", "sep_token_id", "pad_token_id", "bos_token_id", "eos_token_id"):
+            tid = getattr(_tokenizer, attr, None)
+            if tid is not None:
+                special_ids.add(tid)
+        positions = [
+            context_len + i
+            for i in range(len(sentence_ids))
+            if int(sentence_ids[i].item()) not in special_ids
+        ]
 
     if not positions:
-        return {
-            "word_surprisals": [float("nan")] * len(tokens),
-            "word_entropies": [float("nan")] * len(tokens),
-            "word_token_counts": [0] * len(tokens),
+        result = {
             "subword_surprisals": [float("nan")] * seq_len,
             "subword_entropies": [float("nan")] * seq_len,
-            "subword_word_ids": word_ids,
+            "subword_word_ids": word_ids if word_ids is not None else [],
+            "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
         }
+        if word_ids is not None:
+            result.update(_aggregate_to_words(word_ids, len(tokens), context_len,
+                                              result["subword_surprisals"], result["subword_entropies"]))
+        else:
+            result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
+        return result
 
     mask_id = _tokenizer.mask_token_id
     if mask_id is None:
@@ -149,8 +209,6 @@ def score_masked_lm_tokens(
 
     # Prepare batches
     total = len(positions)
-    # reticulate passes R numerics as Python float; coerce to int for range()
-    # Force batch_size=1 on MPS to avoid incorrect logits from batched attention
     if _device is not None and _device.type == "mps":
         chunk = 1
     else:
@@ -173,7 +231,7 @@ def score_masked_lm_tokens(
 
         with torch.no_grad():
             outputs = _model(batch)
-            logits_batch = outputs.logits  # (batch, seq_len, vocab)
+            logits_batch = outputs.logits
 
         for local_idx, pos in enumerate(batch_positions):
             target_id = int(input_ids[pos].item())
@@ -182,60 +240,36 @@ def score_masked_lm_tokens(
             subword_surprisals[pos] = surp
             subword_entropies[pos] = ent
 
-    # Aggregate by word id
-    n_words = len(tokens)
-    word_surps = [0.0] * n_words
-    word_ents = [0.0] * n_words
-    word_counts = [0] * n_words
-
-    for pos, wid in enumerate(word_ids):
-        if wid is None:
-            continue
-        if 0 <= wid < n_words:
-            sub_pos = context_len + pos
-            if not math.isnan(subword_surprisals[sub_pos]):
-                word_surps[wid] += subword_surprisals[sub_pos]
-            if not math.isnan(subword_entropies[sub_pos]):
-                word_ents[wid] += subword_entropies[sub_pos]
-            word_counts[wid] += 1
-
-    # Convert entropies to mean per word
-    for i in range(n_words):
-        if word_counts[i] > 0:
-            word_ents[i] = word_ents[i] / word_counts[i]
-        else:
-            word_surps[i] = float("nan")
-            word_ents[i] = float("nan")
-
-    return {
-        "word_surprisals": word_surps,
-        "word_entropies": word_ents,
-        "word_token_counts": word_counts,
+    # Build result
+    result = {
         "subword_surprisals": subword_surprisals,
         "subword_entropies": subword_entropies,
-        "subword_word_ids": word_ids,
+        "subword_word_ids": word_ids if word_ids is not None else [],
+        "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
     }
+
+    # Word-level aggregation (when word_ids available)
+    if word_ids is not None:
+        result.update(_aggregate_to_words(word_ids, len(tokens), context_len,
+                                          subword_surprisals, subword_entropies))
+    else:
+        result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
+
+    return result
 
 
 def score_autoregressive_tokens(
     tokens: List[str],
     temperature: float = 1.0,
     context_text: str = None,
-) -> Dict[str, List[float]]:
+) -> Dict[str, List]:
     global _tokenizer, _model, _device, _mode
 
     if _tokenizer is None or _model is None or _mode != "ar":
         raise RuntimeError("Model not loaded in AR mode. Call load_llm_model(mode='ar') first.")
 
     if tokens is None or len(tokens) == 0:
-        return {
-            "word_surprisals": [],
-            "word_entropies": [],
-            "word_token_counts": [],
-            "subword_surprisals": [],
-            "subword_entropies": [],
-            "subword_word_ids": [],
-        }
+        return _empty_result()
 
     tokens = ["" if t is None else str(t) for t in tokens]
     if context_text is not None:
@@ -248,14 +282,7 @@ def score_autoregressive_tokens(
         add_special_tokens=True,
     )
     sentence_ids = encoding["input_ids"][0]
-
-    if hasattr(encoding, "word_ids"):
-        word_ids = encoding.word_ids(0)
-    else:
-        word_ids = None
-
-    if word_ids is None:
-        raise ValueError("Tokenizer does not provide word_ids; use a fast tokenizer.")
+    word_ids = _get_word_ids(encoding)
 
     context_ids = []
     if context_text is not None and str(context_text).strip():
@@ -278,11 +305,9 @@ def score_autoregressive_tokens(
         if pos < context_len:
             continue
         if pos == 0:
-            # Use BOS context if available; otherwise skip
             if getattr(_tokenizer, "bos_token_id", None) is None:
                 continue
             bos_id = int(_tokenizer.bos_token_id)
-            # Minimal logits from BOS-only input
             with torch.no_grad():
                 bos_logits = _model(torch.tensor([[bos_id]], device=_device)).logits[0, -1]
             target_id = int(input_ids[pos].item())
@@ -294,35 +319,19 @@ def score_autoregressive_tokens(
         subword_surprisals[pos] = surp
         subword_entropies[pos] = ent
 
-    # Aggregate by word id
-    n_words = len(tokens)
-    word_surps = [0.0] * n_words
-    word_ents = [0.0] * n_words
-    word_counts = [0] * n_words
-
-    for pos, wid in enumerate(word_ids):
-        if wid is None:
-            continue
-        if 0 <= wid < n_words:
-            sub_pos = context_len + pos
-            if not math.isnan(subword_surprisals[sub_pos]):
-                word_surps[wid] += subword_surprisals[sub_pos]
-            if not math.isnan(subword_entropies[sub_pos]):
-                word_ents[wid] += subword_entropies[sub_pos]
-            word_counts[wid] += 1
-
-    for i in range(n_words):
-        if word_counts[i] > 0:
-            word_ents[i] = word_ents[i] / word_counts[i]
-        else:
-            word_surps[i] = float("nan")
-            word_ents[i] = float("nan")
-
-    return {
-        "word_surprisals": word_surps,
-        "word_entropies": word_ents,
-        "word_token_counts": word_counts,
+    # Build result
+    result = {
         "subword_surprisals": subword_surprisals,
         "subword_entropies": subword_entropies,
-        "subword_word_ids": word_ids,
+        "subword_word_ids": word_ids if word_ids is not None else [],
+        "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
     }
+
+    # Word-level aggregation (when word_ids available)
+    if word_ids is not None:
+        result.update(_aggregate_to_words(word_ids, len(tokens), context_len,
+                                          subword_surprisals, subword_entropies))
+    else:
+        result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
+
+    return result
