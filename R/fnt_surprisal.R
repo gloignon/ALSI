@@ -152,33 +152,15 @@ llm_surprisal_entropy <- function(dt_corpus,
     })
 
     if (!is.null(score)) {
-      w_surp <- unlist(score$word_surprisals)
-      if (length(w_surp) > 0) {
-        # Word-level results available (fast tokenizer with word_ids)
-        n_tokens <- length(sent_tokens)
-        results[[i]] <- data.table::data.table(
-          doc_id = doc_id,
-          sentence_id = sentence_id,
-          token_index = seq_len(n_tokens),
-          llm_surprisal = w_surp,
-          llm_entropy = unlist(score$word_entropies),
-          llm_subword_n = unlist(score$word_token_counts)
-        )
-      } else {
-        # Subword-level only (slow tokenizer, no word_ids)
-        sw_surp <- unlist(score$subword_surprisals)
-        sw_ent  <- unlist(score$subword_entropies)
-        # Keep only non-NaN subword positions (excludes special tokens)
-        valid <- !is.nan(sw_surp)
-        results[[i]] <- data.table::data.table(
-          doc_id = doc_id,
-          sentence_id = sentence_id,
-          token_index = seq_len(sum(valid)),
-          llm_surprisal = sw_surp[valid],
-          llm_entropy = sw_ent[valid],
-          llm_subword_n = NA_integer_
-        )
-      }
+      n_tokens <- length(sent_tokens)
+      results[[i]] <- data.table::data.table(
+        doc_id = doc_id,
+        sentence_id = sentence_id,
+        token_index = seq_len(n_tokens),
+        llm_surprisal = unlist(score$word_surprisals),
+        llm_entropy = unlist(score$word_entropies),
+        llm_subword_n = unlist(score$word_token_counts)
+      )
     }
 
     if (i %% 3 == 0 || i == total_sentences) {
@@ -283,4 +265,140 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
 
   data.table::setorderv(dt_result, c("doc_id", "sentence_id"))
   dt_result
+}
+
+
+#' Compute word-level LLM surprisal and entropy on raw sentences
+#'
+#' Passes each sentence to the Python backend as a raw string (no
+#' pre-tokenization on the R side). The LLM tokenizer's own pre-tokenizer
+#' decides word boundaries, the model scores every subword, and the
+#' backend aggregates subwords back to those words via
+#' \code{encoding.word_ids()}. Returns one row per LLM-tokenizer word.
+#'
+#' @param dt_sentences A \code{data.table} with \code{doc_id},
+#'   \code{sentence_id}, and \code{sentence}.
+#' @param model_name HuggingFace model identifier.
+#' @param mode Either \code{"mlm"} or \code{"ar"}.
+#' @param context Optional context string prepended to each sentence.
+#' @param batch_size Batch size for MLM scoring (0 = auto).
+#' @param temperature Softmax temperature.
+#' @param use_fast Logical; use the fast tokenizer.
+#' @param trust_remote_code Logical; allow remote code for the model.
+#' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
+#'   \code{token_id} (word index within the sentence), \code{token} (the
+#'   word as the tokenizer sees it), \code{llm_surprisal},
+#'   \code{llm_entropy}, and \code{llm_subword_n} (one row per word).
+llm_surprisal_entropy_raw <- function(dt_sentences,
+                                      model_name = "almanach/moderncamembert-base",
+                                      mode = "mlm",
+                                      context = NULL,
+                                      batch_size = 0,
+                                      temperature = 1.0,
+                                      use_fast = TRUE,
+                                      trust_remote_code = TRUE,
+                                      add_prefix_space = NULL) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
+  }
+  required <- c("doc_id", "sentence_id", "sentence")
+  missing <- setdiff(required, names(dt_sentences))
+  if (length(missing)) {
+    stop(sprintf("dt_sentences must contain columns: %s", paste(required, collapse = ", ")))
+  }
+
+  dt <- data.table::as.data.table(data.table::copy(dt_sentences))
+  data.table::setorderv(dt, c("doc_id", "sentence_id"))
+
+  reticulate::py_require(c("torch", "transformers"))
+  reticulate::source_python("py/llm_scoring.py")
+  py_state <- tryCatch(get_llm_state(), error = function(e) NULL)
+  py_model <- if (!is.null(py_state)) py_state$model_name else NULL
+  py_mode  <- if (!is.null(py_state)) py_state$mode       else NULL
+  py_prefix_space <- if (!is.null(py_state)) py_state$add_prefix_space else NULL
+
+  if (is.null(py_model) || is.null(py_mode) ||
+      py_model != model_name || py_mode != mode ||
+      is.null(py_prefix_space) ||
+      (!is.null(add_prefix_space) && isTRUE(add_prefix_space) && !isTRUE(py_prefix_space))) {
+    load_llm_model(
+      model_name,
+      mode = mode,
+      use_fast = use_fast,
+      trust_remote_code = trust_remote_code,
+      add_prefix_space = isTRUE(add_prefix_space)
+    )
+  }
+
+  total_sentences <- nrow(dt)
+  results <- vector("list", total_sentences)
+  start_time <- Sys.time()
+
+  for (i in seq_len(total_sentences)) {
+    sentence <- dt$sentence[i]
+    doc_id <- dt$doc_id[i]
+    sentence_id <- dt$sentence_id[i]
+
+    score <- tryCatch({
+      if (mode == "mlm") {
+        score_masked_lm_tokens(
+          tokens              = sentence,
+          temperature         = temperature,
+          batch_size          = batch_size,
+          context_text        = context,
+          is_split_into_words = FALSE
+        )
+      } else if (mode == "ar") {
+        score_autoregressive_tokens(
+          tokens              = sentence,
+          temperature         = temperature,
+          context_text        = context,
+          is_split_into_words = FALSE
+        )
+      } else {
+        stop("mode must be one of: 'mlm', 'ar'")
+      }
+    }, error = function(e) {
+      warning(sprintf("LLM scoring failed for doc_id = %s, sentence_id = %s: %s",
+                      doc_id, sentence_id, e$message))
+      NULL
+    })
+
+    if (!is.null(score)) {
+      n_words <- length(score$word_surprisals)
+      if (n_words > 0) {
+        results[[i]] <- data.table::data.table(
+          doc_id        = doc_id,
+          sentence_id   = sentence_id,
+          token_id      = seq_len(n_words),
+          token         = unlist(score$word_tokens),
+          llm_surprisal = unlist(score$word_surprisals),
+          llm_entropy   = unlist(score$word_entropies),
+          llm_subword_n = unlist(score$word_token_counts)
+        )
+      }
+    }
+
+    if (i %% 10L == 0L || i == total_sentences) {
+      elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+      if (elapsed > 0) {
+        speed <- i / elapsed * 60
+        cat(sprintf("\rProcessed %d/%d sentences (%.1f sent/min)     ",
+                    i, total_sentences, speed))
+        flush.console()
+      }
+    }
+  }
+  cat("\nDone!\n")
+
+  results <- Filter(Negate(is.null), results)
+  if (length(results) == 0) {
+    return(data.table::data.table(
+      doc_id = character(), sentence_id = integer(), token_id = integer(),
+      token = character(), llm_surprisal = numeric(),
+      llm_entropy = numeric(), llm_subword_n = integer()
+    ))
+  }
+  data.table::rbindlist(results, use.names = TRUE, fill = TRUE)
 }
