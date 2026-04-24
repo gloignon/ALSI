@@ -130,6 +130,7 @@ def _empty_result() -> Dict:
         "word_surprisals": [],
         "word_entropies": [],
         "word_token_counts": [],
+        "word_tokens": [],
         "subword_surprisals": [],
         "subword_entropies": [],
         "subword_word_ids": [],
@@ -137,27 +138,72 @@ def _empty_result() -> Dict:
     }
 
 
+def _extract_word_tokens(
+    is_split_into_words: bool,
+    input_obj,  # list[str] when pretokenized, str otherwise
+    word_ids,
+    sentence_ids,
+    n_words: int,
+) -> List[str]:
+    """Return one string per word. If pretokenized, that's the input list;
+    otherwise reconstruct each word from its subword group via the tokenizer."""
+    if is_split_into_words:
+        return list(input_obj)
+    if word_ids is None or n_words == 0:
+        return []
+    subword_tokens = _tokenizer.convert_ids_to_tokens(sentence_ids.tolist())
+    groups: Dict[int, List[int]] = {}
+    for pos, wid in enumerate(word_ids):
+        if wid is None:
+            continue
+        groups.setdefault(wid, []).append(pos)
+    out = [""] * n_words
+    for wid, positions in groups.items():
+        if 0 <= wid < n_words:
+            subs = [subword_tokens[p] for p in positions]
+            try:
+                out[wid] = _tokenizer.convert_tokens_to_string(subs).strip()
+            except Exception:
+                out[wid] = "".join(subs)
+    return out
+
+
 def score_masked_lm_tokens(
-    tokens: List[str],
+    tokens,
     temperature: float = 1.0,
     batch_size: int = 0,
     context_text: str = None,
+    is_split_into_words: bool = True,
 ) -> Dict[str, List]:
+    """Score a single sentence under an MLM.
+
+    When `is_split_into_words=True` (default) `tokens` is a list of word
+    strings and each element becomes one "word" in the per-word output.
+
+    When `is_split_into_words=False` `tokens` is a raw sentence string and
+    the LLM tokenizer's own pre-tokenizer decides where word boundaries
+    fall; word indices come from `encoding.word_ids()`.
+    """
     global _tokenizer, _model, _device
 
     if _tokenizer is None or _model is None or _mode != "mlm":
         raise RuntimeError("Model not loaded in MLM mode. Call load_llm_model(mode='mlm') first.")
 
-    if tokens is None or len(tokens) == 0:
-        return _empty_result()
+    if is_split_into_words:
+        if tokens is None or len(tokens) == 0:
+            return _empty_result()
+        tokens = ["" if t is None else str(t) for t in tokens]
+    else:
+        if tokens is None or not str(tokens).strip():
+            return _empty_result()
+        tokens = str(tokens)
 
-    tokens = ["" if t is None else str(t) for t in tokens]
     if context_text is not None:
         context_text = str(context_text)
 
     encoding = _tokenizer(
         tokens,
-        is_split_into_words=True,
+        is_split_into_words=is_split_into_words,
         return_tensors="pt",
         add_special_tokens=True,
     )
@@ -172,6 +218,14 @@ def score_masked_lm_tokens(
     input_ids = torch.tensor(context_ids + sentence_ids.tolist(), dtype=torch.long)
     context_len = len(context_ids)
     seq_len = input_ids.shape[0]
+
+    # When input is a raw sentence, the number of words comes from word_ids;
+    # otherwise it's the length of the pre-tokenized list.
+    if is_split_into_words:
+        n_words = len(tokens)
+    else:
+        valid_wids = [w for w in (word_ids or []) if w is not None]
+        n_words = (max(valid_wids) + 1) if valid_wids else 0
 
     # Determine which positions to mask: use word_ids if available, else all non-special
     if word_ids is not None:
@@ -197,10 +251,13 @@ def score_masked_lm_tokens(
             "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
         }
         if word_ids is not None:
-            result.update(_aggregate_to_words(word_ids, len(tokens), context_len,
+            result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                               result["subword_surprisals"], result["subword_entropies"]))
         else:
             result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
+        result["word_tokens"] = _extract_word_tokens(
+            is_split_into_words, tokens, word_ids, sentence_ids, n_words
+        )
         return result
 
     mask_id = _tokenizer.mask_token_id
@@ -250,39 +307,57 @@ def score_masked_lm_tokens(
 
     # Word-level aggregation (when word_ids available)
     if word_ids is not None:
-        result.update(_aggregate_to_words(word_ids, len(tokens), context_len,
+        result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                           subword_surprisals, subword_entropies))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
+    result["word_tokens"] = _extract_word_tokens(
+        is_split_into_words, tokens, word_ids, sentence_ids, n_words
+    )
 
     return result
 
 
 def score_autoregressive_tokens(
-    tokens: List[str],
+    tokens,
     temperature: float = 1.0,
     context_text: str = None,
+    is_split_into_words: bool = True,
 ) -> Dict[str, List]:
+    """AR counterpart of ``score_masked_lm_tokens``; see that function's
+    docstring for the meaning of ``is_split_into_words``.
+    """
     global _tokenizer, _model, _device, _mode
 
     if _tokenizer is None or _model is None or _mode != "ar":
         raise RuntimeError("Model not loaded in AR mode. Call load_llm_model(mode='ar') first.")
 
-    if tokens is None or len(tokens) == 0:
-        return _empty_result()
+    if is_split_into_words:
+        if tokens is None or len(tokens) == 0:
+            return _empty_result()
+        tokens = ["" if t is None else str(t) for t in tokens]
+    else:
+        if tokens is None or not str(tokens).strip():
+            return _empty_result()
+        tokens = str(tokens)
 
-    tokens = ["" if t is None else str(t) for t in tokens]
     if context_text is not None:
         context_text = str(context_text)
 
     encoding = _tokenizer(
         tokens,
-        is_split_into_words=True,
+        is_split_into_words=is_split_into_words,
         return_tensors="pt",
         add_special_tokens=True,
     )
     sentence_ids = encoding["input_ids"][0]
     word_ids = _get_word_ids(encoding)
+
+    if is_split_into_words:
+        n_words = len(tokens)
+    else:
+        valid_wids = [w for w in (word_ids or []) if w is not None]
+        n_words = (max(valid_wids) + 1) if valid_wids else 0
 
     context_ids = []
     if context_text is not None and str(context_text).strip():
@@ -329,9 +404,12 @@ def score_autoregressive_tokens(
 
     # Word-level aggregation (when word_ids available)
     if word_ids is not None:
-        result.update(_aggregate_to_words(word_ids, len(tokens), context_len,
+        result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                           subword_surprisals, subword_entropies))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
+    result["word_tokens"] = _extract_word_tokens(
+        is_split_into_words, tokens, word_ids, sentence_ids, n_words
+    )
 
     return result
