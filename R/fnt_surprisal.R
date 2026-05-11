@@ -9,12 +9,19 @@
 #' @param use_fast Logical; use the fast tokenizer if available.
 #' @param trust_remote_code Logical; allow remote code execution for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @param force_fast Logical; bypass AutoTokenizer and load
+#'   \code{PreTrainedTokenizerFast} directly from \code{tokenizer.json}. Use
+#'   this when a model repo declares a slow \code{tokenizer_class} but ships
+#'   only \code{tokenizer.json} (e.g., \code{almanach/camembertv2-base}),
+#'   which would otherwise cause AutoTokenizer to fall through to
+#'   character-level tokenization.
 #' @returns Invisible TRUE on success.
 load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
                             mode = "mlm",
                             use_fast = TRUE,
                             trust_remote_code = TRUE,
-                            add_prefix_space = NULL) {
+                            add_prefix_space = NULL,
+                            force_fast = FALSE) {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -26,7 +33,8 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
     mode = mode,
     use_fast = use_fast,
     trust_remote_code = trust_remote_code,
-    add_prefix_space = isTRUE(add_prefix_space)
+    add_prefix_space = isTRUE(add_prefix_space),
+    force_fast = isTRUE(force_fast)
   )
   invisible(TRUE)
 }
@@ -46,6 +54,9 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
 #' @param use_fast Logical; use the fast tokenizer.
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @param pll_mode Character; PLL scoring mode for MLM models. Either
+#'   \code{"original"} (Salazar et al. 2020) or \code{"within_word_l2r"}
+#'   (Kauf & Ivanova 2023). Ignored for AR models.
 #' @returns The input \code{data.table} augmented with \code{llm_surprisal},
 #'   \code{llm_entropy}, and \code{llm_subword_n} columns.
 llm_surprisal_entropy <- function(dt_corpus,
@@ -56,7 +67,8 @@ llm_surprisal_entropy <- function(dt_corpus,
                                   temperature = 1.0,
                                   use_fast = TRUE,
                                   trust_remote_code = TRUE,
-                                  add_prefix_space = NULL) {
+                                  add_prefix_space = NULL,
+                                  pll_mode = "original") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -134,7 +146,8 @@ llm_surprisal_entropy <- function(dt_corpus,
           tokens = sent_tokens,
           temperature = temperature,
           batch_size = batch_size,
-          context_text = context
+          context_text = context,
+          pll_mode = pll_mode
         )
       } else if (mode == "ar") {
         score_autoregressive_tokens(
@@ -210,6 +223,7 @@ llm_surprisal_entropy <- function(dt_corpus,
 #' @param use_fast Logical; use the fast tokenizer.
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @param pll_mode Character; PLL scoring mode. See \code{llm_surprisal_entropy}.
 #' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
 #'   \code{sentence}, \code{llm_surprisal}, and \code{llm_entropy}
 #'   (sentence-level means).
@@ -221,7 +235,8 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
                                             temperature = 1.0,
                                             use_fast = TRUE,
                                             trust_remote_code = TRUE,
-                                            add_prefix_space = NULL) {
+                                            add_prefix_space = NULL,
+                                            pll_mode = "original") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -232,7 +247,6 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
   }
 
   dt <- data.table::as.data.table(data.table::copy(dt_sentences))
-  # Tokenise on whitespace
   dt_tok <- dt[, .(token = unlist(strsplit(sentence, "\\s+")),
                     token_id = seq_along(unlist(strsplit(sentence, "\\s+")))),
                by = .(doc_id, sentence_id)]
@@ -246,16 +260,15 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
     temperature = temperature,
     use_fast = use_fast,
     trust_remote_code = trust_remote_code,
-    add_prefix_space = add_prefix_space
+    add_prefix_space = add_prefix_space,
+    pll_mode = pll_mode
   )
 
-  # Aggregate to sentence level
   dt_result <- dt_scored[, .(
     llm_surprisal = mean(llm_surprisal, na.rm = TRUE),
     llm_entropy   = mean(llm_entropy,   na.rm = TRUE)
   ), by = .(doc_id, sentence_id)]
 
-  # Merge back the sentence text
   dt_result <- merge(
     dt[, .(doc_id, sentence_id, sentence)],
     dt_result,
@@ -286,6 +299,7 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
 #' @param use_fast Logical; use the fast tokenizer.
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @param pll_mode Character; PLL scoring mode. See \code{llm_surprisal_entropy}.
 #' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
 #'   \code{token_id} (word index within the sentence), \code{token} (the
 #'   word as the tokenizer sees it), \code{llm_surprisal},
@@ -298,7 +312,8 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
                                       temperature = 1.0,
                                       use_fast = TRUE,
                                       trust_remote_code = TRUE,
-                                      add_prefix_space = NULL) {
+                                      add_prefix_space = NULL,
+                                      pll_mode = "original") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -347,7 +362,8 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
           temperature         = temperature,
           batch_size          = batch_size,
           context_text        = context,
-          is_split_into_words = FALSE
+          is_split_into_words = FALSE,
+          pll_mode            = pll_mode
         )
       } else if (mode == "ar") {
         score_autoregressive_tokens(
