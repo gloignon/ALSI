@@ -51,3 +51,18 @@ dt_parsed_edit <- post_process_lexicon(dt_parsed_raw)
 
 if (!dir.exists("out")) dir.create("out", recursive = TRUE)
 saveRDS(dt_parsed_edit, 'out/demo_parsed_tagged.Rds')
+
+
+# Parsing straight from a CSV corpus -----
+# Some corpora ship as a single CSV (one row per document) rather than
+# individual text files. Alector is one example: id | text | class.
+# parse_text() accepts a data.frame directly — just rename to doc_id/text.
+
+dt_alector <- fread("demo_corpora/alector_corpus.csv", encoding = "UTF-8")
+setnames(dt_alector, "id", "doc_id")  # parse_text expects doc_id/text columns
+
+dt_alector_raw <- parse_text(dt_alector, n_cores = n_cores)  # as long as you have doc_id/text
+                                                             # parse_text will be happy and parse just fine.
+dt_alector_parsed <- post_process_lexicon(dt_alector_raw)
+
+saveRDS(dt_alector_parsed, 'out/demo_alector_parsed.Rds')

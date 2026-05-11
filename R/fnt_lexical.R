@@ -827,64 +827,40 @@ lexical_diversity_general <- function(df,
                                       content_upos = c("NOUN", "VERB", "ADJ", "ADV"),
                                       window_size = 50) {
 
-  # check that a tokens vector is provided
-  if (missing(df)) {
-    stop("No corpus provided.")
-  }
-
-  # check that I have the required columns
+  if (missing(df)) stop("No corpus provided.")
   if (!all(c("token", "doc_id") %in% colnames(df))) {
     stop("The corpus db does not have all the required columns (doc_id, token).")
   }
-  
-  # Filter
-  # if we have a start column, we can apply this rule to remove UDPipe-generated tokens
-  if ("start" %in% colnames(df)) {
-    df <- df %>% filter(!is.na(start))
-  }
-  
-  # and if we have our "compte" custom column we can use that
-  if ("compte" %in% colnames(df)) {
-    df <- df %>% filter(compte)
-  } else {
-    # otherwise, we can at least remove punctuation as it does not count for a word
-    df <- df %>% filter(!upos %in% c("PUNCT"))
-  }
-  
-  df_result <- df %>%
-    group_by(doc_id) %>%
-    summarise(
-      TTR = calculate_TTR(token, token),
-      maas = calculate_maas(token, token),
-      MATTR = calculate_moving_TTR(token, window_size),
-      simpsons_D = D_measure_from_tokens(token)
-    )
-  
-  # if we have a upos column in df, we can also do content words only
-  # check if df has a upos column
-  if ("upos" %in% colnames(df)) {
-    df_result_extra <- df %>%
-      filter(!is.na(upos) & upos %in% content_upos) %>%
-      group_by(doc_id) %>%
-      summarise(
-        TTR_content = calculate_TTR(token, token),
-        maas_content = calculate_maas(token, token),
-        MATTR_content = calculate_moving_TTR(token, window_size),
-        simpsons_D_content = D_measure_from_tokens(token),
-      )
-    df_result <- left_join(df_result, df_result_extra, by = "doc_id")
-    
-    df_result_verb <- df %>%
-      filter(!is.na(upos) & upos %in% "VERB") %>%
-      group_by(doc_id) %>%
-      summarise(
-        maas_verb = calculate_maas(token, token),
-        simpsons_D_verb = D_measure_from_tokens(token),
-      )
-    
-    df_result <- left_join(df_result, df_result_verb, by = "doc_id")
+
+  dt <- as.data.table(df)
+
+  # Remove UDPipe-generated tokens / punctuation
+  if ("start" %in% names(dt))   dt <- dt[!is.na(start)]
+  if ("compte" %in% names(dt))  dt <- dt[(compte)]  else
+  if ("upos"   %in% names(dt))  dt <- dt[!upos %in% "PUNCT"]
+
+  df_result <- dt[, .(
+    TTR        = calculate_TTR(token, token),
+    maas       = calculate_maas(token, token),
+    MATTR      = calculate_moving_TTR(token, window_size),
+    simpsons_D = D_measure_from_tokens(token)
+  ), by = doc_id]
+
+  if ("upos" %in% names(dt)) {
+    extra <- dt[!is.na(upos) & upos %in% content_upos, .(
+      TTR_content        = calculate_TTR(token, token),
+      maas_content       = calculate_maas(token, token),
+      MATTR_content      = calculate_moving_TTR(token, window_size),
+      simpsons_D_content = D_measure_from_tokens(token)
+    ), by = doc_id]
+    df_result <- merge(df_result, extra, by = "doc_id", all.x = TRUE)
+
+    verbs <- dt[!is.na(upos) & upos %in% "VERB", .(
+      maas_verb       = calculate_maas(token, token),
+      simpsons_D_verb = D_measure_from_tokens(token)
+    ), by = doc_id]
+    df_result <- merge(df_result, verbs, by = "doc_id", all.x = TRUE)
   }
 
-  
   return(df_result)
 }
