@@ -1,0 +1,80 @@
+index,title,author,genre,source_chars,target_chars
+0,A quoi sert de manger ?,Florence Thinard,explicatif|documentaire,2097,1870
+1,A quoi servent les satellites ?,Images Doc,explicatif|documentaire,1281,1147
+2,Arbre aux deux branches,H. Gougaud,narratif|conte,2196,1931
+3,Arbres et forêts,Jean Parret,explicatif|documentaire,2271,2213
+4,Arc-en-ciel,Emeline Ferard,explicatif|documentaire,2233,1864
+5,Chichois,Nicole Ciravégna,narratif|conte,2027,2018
+6,Chocolat,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,2155,2092
+7,Comment se protègent les animaux ?,F. Vital-Durand,explicatif|documentaire,828,755
+8,Crin blanc,René Guillot,narratif|conte,1982,1903
+9,Diable et paysan,François Rabelais,narratif|conte,2250,2121
+10,Dragonne de minuit,Agnès Laroche,narratif|conte,2152,1970
+11,Ecureuil au Québec,Masha Malygin,explicatif|documentaire,2425,2133
+12,Eléphant-oiseau,Conte d'Inde,narratif|conte,1931,1784
+13,Emilie et le crayon magique,Henriette Bichonnier,narratif|conte,1669,1477
+14,Enfant Harry,Joanne K. Rowling,narratif|roman,1833,1673
+15,Entre dans la grotte,Wapiti,explicatif|documentaire,1297,1247
+16,Feuilles des arbres,Guy Berger,narratif|conte,2435,2222
+17,Hugo l'asticot,Antoon Krings,narratif|conte,1400,1221
+18,Jack le rétameur,James Riordan,narratif|conte,1732,1392
+19,Jojo collectionneur jouets,Bruno Heitz,narratif|roman,2110,2017
+20,L'alchimie des arômes,Florence Thinard,explicatif|documentaire,1548,1424
+21,L'attraction universelle,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1378,1291
+22,L'enfant de neige,Georges E. Clancier,narratif|conte,1826,1661
+23,L'orage et la foudre,Pass-éducation,explicatif|documentaire,2078,1866
+24,La case des jours de pluie,Conte burkinabé,narratif|conte,2413,2091
+25,La chèvre de monsieur Seguin,Alphonse Daudet,narratif|conte,1511,1405
+26,La couleur des animaux,F. Vital-Durand,explicatif|documentaire,772,691
+27,"La forêt amazonienne, un milieu fragile",Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1925,1791
+28,La fée au long nez,Claude Boujon,narratif|conte,1489,1378
+29,La lumière terrestre,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1885,1706
+30,La maison de l'escargot,Collectif,narratif|conte,1904,1837
+31,Langage des éléphants,Alain Robert,explicatif|documentaire,1905,1815
+32,Le buveur d'encre,Eric Sanvoisin,narratif|roman,1592,1531
+33,Le bûcheron,Charles Perrault,narratif|conte,1601,1361
+34,Le camouflage des pieuvres,Sweet random science,explicatif|documentaire,2154,2016
+35,Le chat ne sachant pas chasser,John Yeoman et Quentin Blake,narratif|conte,1822,1732
+36,Le climat et les animaux,F. Vital-Durand,explicatif|documentaire,832,705
+37,"Le goût, une expérience multisensorielle",Florence Thinard,explicatif|documentaire,1671,1511
+38,"Le hérisson, visiteur du jardin",Wapiti,explicatif|documentaire,1328,1194
+39,Le joueur de flûte de Hammelin,Frères Grimm,narratif|conte,1645,1568
+40,Le petit Nicolas,Goscinny et Sempé,narratif|conte,1370,1319
+41,Le petit chaperon rouge,Charles Perrault,narratif|conte,1311,1211
+42,Le petit poucet,Charles Perrault,narratif|conte,1671,1657
+43,Le savon,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,2351,2169
+44,Le vent,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1483,1357
+45,Les algues,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1415,1333
+46,Les animaux en hiver,F. Vital-Durand,explicatif|documentaire,829,796
+47,Les animaux et leurs proies,F. Vital-Durand,explicatif|documentaire,828,723
+48,Les araignées,F. Vital-Durand,explicatif|documentaire,827,706
+49,Les arbres,F. Vital-Durand,explicatif|documentaire,829,751
+50,Les boîtes de peinture,Marcel Aymé,narratif|conte,1644,1400
+51,Les cartables,Didier Dufresne,narratif|conte,2305,2287
+52,Les castors,F. Vital-Durand,explicatif|documentaire,828,728
+53,Les cinq frères,Claire Huchet et Laurent Audoin,narratif|conte,2407,2169
+54,Les coquillages,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1819,1682
+55,Les dinosaures ont-ils vraiment disparu ?,Collectif,explicatif|documentaire,1688,1630
+56,Les habits neufs du grand duc,Christian Andersen,narratif|conte,2451,2130
+57,Les moulins,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1504,1363
+58,Les mousquetaires,Inconnu,narratif|conte,1294,1223
+59,Les roches utiles,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1328,1201
+60,Les souris,F. Vital-Durand,narratif|conte,779,655
+61,Les trois frères,Inconnu,narratif|conte,1689,1577
+62,Les îles,F. Vital-Durand,explicatif|documentaire,828,767
+63,Lune à croquer,Jean Jacques Vacher,narratif|conte,2624,2388
+64,Oeil du loup,Daniel Pennac,narratif|conte,2237,2151
+65,Ouro et le marchand de ballons,René Guillot,narratif|conte,1634,1524
+66,Passe une bonne nuit,Wapiti,explicatif|documentaire,1167,1071
+67,Perles huîtres,Kidiscience,explicatif|documentaire,2321,2001
+68,Pourquoi est-on malade en voiture ?,Pascale Bauge,explicatif|documentaire,1794,1620
+69,Qu'est-ce que la marée ?,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1610,1549
+70,Qu'est-ce que mesurer ?,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1595,1463
+71,Sophie et l'arbre magique,Sophie Atchoum,narratif|conte,1414,1074
+72,Sorcière amoureuse,Bernard Friot,narratif|conte,2470,2178
+73,Sources,Antoinette Cagnat,narratif|conte,2595,2385
+74,Taro et la déesse de l'océan (pécheur),Claudius Ferrand,narratif|fable,2137,1857
+75,Tenshin le petit samouraï,Inconnu,narratif|conte,1525,1426
+76,Trou noir,Pass-éducation,explicatif|documentaire,2422,2256
+77,Une rencontre inhabituelle (taxi),Joan Aiken,narratif|conte,2025,1889
+78,Vivre dans l'espace,Bibliothèque de Travail Junior (BTJ,explicatif|documentaire,1725,1611
