@@ -31,7 +31,22 @@ def load_llm_model(
     use_fast: bool = True,
     trust_remote_code: bool = True,
     add_prefix_space: bool = False,
+    force_fast: bool = False,
 ):
+    """Load tokenizer + model.
+
+    `force_fast=True` bypasses AutoTokenizer entirely and loads
+    PreTrainedTokenizerFast directly from tokenizer.json. Use this when a
+    repo's tokenizer_config.json points at a slow tokenizer class whose
+    merges/vocab files are missing (e.g., almanach/camembertv2-base ships only
+    tokenizer.json but declares tokenizer_class: RobertaTokenizer, which then
+    falls through to character-level tokenization).
+
+    `force_fast=False` (default) tries AutoTokenizer and auto-falls-back to
+    PreTrainedTokenizerFast only if the loaded tokenizer breaks the French word
+    "Cette" into more than 3 subwords (a clear sign of the BPE-merges-not-loaded
+    failure mode).
+    """
     global _tokenizer, _model, _device, _mode, _model_name, _add_prefix_space
     _device = _best_device()
     tokenizer_kwargs = {
@@ -40,12 +55,30 @@ def load_llm_model(
     }
     if add_prefix_space:
         tokenizer_kwargs["add_prefix_space"] = True
-    try:
-        _tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
-    except TypeError:
-        # Some tokenizers don't accept add_prefix_space
-        tokenizer_kwargs.pop("add_prefix_space", None)
-        _tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
+
+    if force_fast:
+        from transformers import PreTrainedTokenizerFast
+        _tokenizer = PreTrainedTokenizerFast.from_pretrained(model_name)
+    else:
+        try:
+            _tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
+        except TypeError:
+            tokenizer_kwargs.pop("add_prefix_space", None)
+            _tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
+
+        # Auto-fallback: detect character-level BPE failure and switch to
+        # PreTrainedTokenizerFast (reads tokenizer.json directly).
+        try:
+            _probe_ids = _tokenizer("Cette", add_special_tokens=False)["input_ids"]
+            if len(_probe_ids) > 3:
+                from transformers import PreTrainedTokenizerFast
+                _fast = PreTrainedTokenizerFast.from_pretrained(model_name)
+                _probe_fast = _fast("Cette", add_special_tokens=False)["input_ids"]
+                if len(_probe_fast) <= 3:
+                    _tokenizer = _fast
+        except Exception:
+            pass
+
     if mode == "mlm":
         _model = AutoModelForMaskedLM.from_pretrained(
             model_name, trust_remote_code=trust_remote_code
@@ -140,7 +173,7 @@ def _empty_result() -> Dict:
 
 def _extract_word_tokens(
     is_split_into_words: bool,
-    input_obj,  # list[str] when pretokenized, str otherwise
+    input_obj,
     word_ids,
     sentence_ids,
     n_words: int,
@@ -168,12 +201,25 @@ def _extract_word_tokens(
     return out
 
 
+def _build_input_ids(context_ids: list, sentence_ids) -> torch.Tensor:
+    """Concatenate context and sentence ids, keeping any leading special token
+    at position 0 (RoBERTa-family models expect BOS/<s> at position 0)."""
+    if not context_ids:
+        return sentence_ids
+    sent_list = sentence_ids.tolist()
+    has_leading_special = sent_list and sent_list[0] in _tokenizer.all_special_ids
+    if has_leading_special:
+        return torch.tensor(sent_list[:1] + context_ids + sent_list[1:], dtype=torch.long)
+    return torch.tensor(context_ids + sent_list, dtype=torch.long)
+
+
 def score_masked_lm_tokens(
     tokens,
     temperature: float = 1.0,
     batch_size: int = 0,
     context_text: str = None,
     is_split_into_words: bool = True,
+    pll_mode: str = "original",
 ) -> Dict[str, List]:
     """Score a single sentence under an MLM.
 
@@ -181,13 +227,23 @@ def score_masked_lm_tokens(
     strings and each element becomes one "word" in the per-word output.
 
     When `is_split_into_words=False` `tokens` is a raw sentence string and
-    the LLM tokenizer's own pre-tokenizer decides where word boundaries
-    fall; word indices come from `encoding.word_ids()`.
+    the LLM tokenizer's own pre-tokenizer decides where word boundaries fall;
+    word indices come from `encoding.word_ids()`.
+
+    `pll_mode`:
+      - "original": mask one subword at a time (Salazar et al. 2020). Sibling
+        subwords of a multi-subword word stay visible.
+      - "within_word_l2r": when scoring subword k of a word, also mask all
+        later subwords of that same word (Kauf & Ivanova 2023). Falls back to
+        "original" when word_ids is unavailable.
     """
     global _tokenizer, _model, _device
 
     if _tokenizer is None or _model is None or _mode != "mlm":
         raise RuntimeError("Model not loaded in MLM mode. Call load_llm_model(mode='mlm') first.")
+
+    if pll_mode not in ("original", "within_word_l2r"):
+        raise ValueError("pll_mode must be one of: 'original', 'within_word_l2r'")
 
     if is_split_into_words:
         if tokens is None or len(tokens) == 0:
@@ -215,23 +271,20 @@ def score_masked_lm_tokens(
         ctx = _tokenizer(context_text, add_special_tokens=False, return_tensors="pt")
         context_ids = ctx["input_ids"][0].tolist()
 
-    input_ids = torch.tensor(context_ids + sentence_ids.tolist(), dtype=torch.long)
+    input_ids = _build_input_ids(context_ids, sentence_ids)
     context_len = len(context_ids)
     seq_len = input_ids.shape[0]
 
-    # When input is a raw sentence, the number of words comes from word_ids;
-    # otherwise it's the length of the pre-tokenized list.
     if is_split_into_words:
         n_words = len(tokens)
     else:
         valid_wids = [w for w in (word_ids or []) if w is not None]
         n_words = (max(valid_wids) + 1) if valid_wids else 0
 
-    # Determine which positions to mask: use word_ids if available, else all non-special
+    # Determine which positions to mask
     if word_ids is not None:
         positions = [context_len + i for i, wid in enumerate(word_ids) if wid is not None]
     else:
-        # Mask all sentence positions except special tokens
         special_ids = set()
         for attr in ("cls_token_id", "sep_token_id", "pad_token_id", "bos_token_id", "eos_token_id"):
             tid = getattr(_tokenizer, attr, None)
@@ -264,40 +317,55 @@ def score_masked_lm_tokens(
     if mask_id is None:
         raise ValueError("Model doesn't have a [MASK] token.")
 
-    # Prepare batches
-    total = len(positions)
-    if _device is not None and _device.type == "mps":
-        chunk = 1
+    # Build (target_pos, extra_positions_to_also_mask) pairs.
+    # For "within_word_l2r": when scoring subword k of a word, also mask later
+    # subwords of that word so they can't leak the target's identity
+    # (Kauf & Ivanova 2023). Falls back to "original" when word_ids unavailable.
+    if pll_mode == "within_word_l2r" and word_ids is not None:
+        word_groups: Dict[int, List[int]] = {}
+        for sent_i, wid in enumerate(word_ids):
+            if wid is None:
+                continue
+            word_groups.setdefault(wid, []).append(context_len + sent_i)
+        variants: List = []
+        for group in word_groups.values():
+            for k, target_pos in enumerate(group):
+                variants.append((target_pos, group[k + 1:]))
     else:
-        chunk = int(batch_size) if batch_size and batch_size > 0 else total
+        variants = [(pos, []) for pos in positions]
+
+    total = len(variants)
+    # reticulate passes R numerics as Python float; coerce to int for range()
+    chunk = int(batch_size) if batch_size and batch_size > 0 else total
 
     subword_surprisals = [float("nan")] * seq_len
     subword_entropies = [float("nan")] * seq_len
 
     for start in range(0, total, chunk):
         end = min(start + chunk, total)
-        batch_positions = positions[start:end]
+        batch_variants = variants[start:end]
 
         masked_batch = []
-        for pos in batch_positions:
+        for target_pos, extra_positions in batch_variants:
             masked = input_ids.clone()
-            masked[pos] = mask_id
+            masked[target_pos] = mask_id
+            for extra in extra_positions:
+                masked[extra] = mask_id
             masked_batch.append(masked)
 
         batch = torch.stack(masked_batch).to(_device)
 
         with torch.no_grad():
             outputs = _model(batch)
-            logits_batch = outputs.logits
+            logits_batch = outputs.logits  # (batch, seq_len, vocab)
 
-        for local_idx, pos in enumerate(batch_positions):
-            target_id = int(input_ids[pos].item())
-            logits = logits_batch[local_idx, pos]
+        for local_idx, (target_pos, _extra) in enumerate(batch_variants):
+            target_id = int(input_ids[target_pos].item())
+            logits = logits_batch[local_idx, target_pos]
             surp, ent = _compute_surprisal_entropy(logits, target_id, temperature)
-            subword_surprisals[pos] = surp
-            subword_entropies[pos] = ent
+            subword_surprisals[target_pos] = surp
+            subword_entropies[target_pos] = ent
 
-    # Build result
     result = {
         "subword_surprisals": subword_surprisals,
         "subword_entropies": subword_entropies,
@@ -305,7 +373,6 @@ def score_masked_lm_tokens(
         "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
     }
 
-    # Word-level aggregation (when word_ids available)
     if word_ids is not None:
         result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                           subword_surprisals, subword_entropies))
@@ -364,7 +431,7 @@ def score_autoregressive_tokens(
         ctx = _tokenizer(context_text, add_special_tokens=False, return_tensors="pt")
         context_ids = ctx["input_ids"][0].tolist()
 
-    input_ids = torch.tensor(context_ids + sentence_ids.tolist(), dtype=torch.long)
+    input_ids = _build_input_ids(context_ids, sentence_ids)
     context_len = len(context_ids)
     seq_len = input_ids.shape[0]
     input_tensor = input_ids.unsqueeze(0).to(_device)
@@ -380,9 +447,11 @@ def score_autoregressive_tokens(
         if pos < context_len:
             continue
         if pos == 0:
+            # Use BOS context if available; otherwise skip
             if getattr(_tokenizer, "bos_token_id", None) is None:
                 continue
             bos_id = int(_tokenizer.bos_token_id)
+            # Minimal logits from BOS-only input
             with torch.no_grad():
                 bos_logits = _model(torch.tensor([[bos_id]], device=_device)).logits[0, -1]
             target_id = int(input_ids[pos].item())
@@ -394,7 +463,6 @@ def score_autoregressive_tokens(
         subword_surprisals[pos] = surp
         subword_entropies[pos] = ent
 
-    # Build result
     result = {
         "subword_surprisals": subword_surprisals,
         "subword_entropies": subword_entropies,
@@ -402,7 +470,6 @@ def score_autoregressive_tokens(
         "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
     }
 
-    # Word-level aggregation (when word_ids available)
     if word_ids is not None:
         result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                           subword_surprisals, subword_entropies))
