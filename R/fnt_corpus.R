@@ -193,7 +193,7 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
 #' @param future_plan Optional \pkg{future} plan. If NULL, uses the current
 #'   plan or falls back to sequential.
 #' @returns A \code{data.table} in CoNLL-U format (one row per token).
-parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL) {
+parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL, parser = "default") {
   
   # Check if the model file exists
   if (!file.exists(ud_model)) {
@@ -230,7 +230,7 @@ parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cor
     if (!exists(".udpipe_model", envir = .GlobalEnv)) {
       assign(".udpipe_model", udpipe::udpipe_load_model(file = model_path), envir = .GlobalEnv)
     }
-    parsed <- udpipe::udpipe(x = chunk, object = get(".udpipe_model", envir = .GlobalEnv), trace = FALSE)
+    parsed <- udpipe::udpipe(x = chunk, object = get(".udpipe_model", envir = .GlobalEnv), trace = FALSE, parser = parser)
     data.table::as.data.table(parsed)
   }
   
@@ -394,3 +394,15 @@ post_process_lexicon <- function(dt) {
   
   return(dt_out)
 }
+
+
+#' Read a wikiviki TSV dump into a long-format corpus table
+#'
+#' The wikiviki TSV has one article per row with columns
+#' \code{doc_id_hard}, \code{hard_text}, \code{doc_id_easy}, \code{easy_text}.
+#' This function reshapes it to a \code{data.table(doc_id, text)} suitable for
+#' \code{parse_text()}.
+#'
+#' @param path Path to the TSV file.
+#' @param which One of \code{"both"} (default), \code{"hard"}, or \code{"easy"}.
+#' @returns A \code{data.table} with columns \code{doc_id} and \code{text}.

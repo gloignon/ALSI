@@ -5,6 +5,7 @@ Scope: features produced by the current pipeline in `R/main.R`.
 Scripts covered:
 - `R/fnt_counters.R`
 - `R/fnt_lexical.R`
+- `R/fnt_burstiness.R`
 - `R/fnt_heights.R`
 - `R/fnt_extra_syntax.R`
 - `R/fnt_pos_surprisal.R`
@@ -347,6 +348,32 @@ labels that can then be parsed into whatever columns are needed downstream.
 
 Requires Ollama running locally (or on the network). See `demos/demo_ollama.R` for a
 worked example that generates statements about texts and then verifies them.
+
+## 19) `features$burstiness`
+Produced in: `R/fnt_burstiness.R` (`burstiness_doc_features`)
+
+Word-level burstiness norms (Weibull β, Negative Binomial adaptation) are derived
+from a reference corpus — by default the target corpus itself, or an external
+reference passed via `ref_corpus` (recommended for group comparisons).  Each
+document receives a lookup-and-average over the reference-derived word properties.
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `mean_beta` | `R/fnt_burstiness.R` | Mean Weibull β over all tokens with a valid estimate (β < 1 = bursty, β ≈ 1 = Poisson). | document |
+| `median_beta` | `R/fnt_burstiness.R` | Median Weibull β. | document |
+| `prop_bursty` | `R/fnt_burstiness.R` | Proportion of tokens with β < 0.6 (clearly bursty threshold, Altmann et al. 2009). | document |
+| `mean_adaptation` | `R/fnt_burstiness.R` | Mean NB adaptation ratio Pr(x≥2\|x≥1)/Pr(x≥1) over all tokens. | document |
+| `median_adaptation` | `R/fnt_burstiness.R` | Median adaptation ratio. | document |
+| `mean_beta_content` | `R/fnt_burstiness.R` | Mean β restricted to content words (NOUN, VERB, ADJ, ADV). | document |
+| `prop_bursty_content` | `R/fnt_burstiness.R` | Proportion of content-word tokens with β < 0.6. | document |
+| `mean_adaptation_content` | `R/fnt_burstiness.R` | Mean adaptation ratio restricted to content words. | document |
+
+Also available (not in main pipeline yet): `burstiness_within_doc()` computes the
+Goh–Barabási B parameter within each document independently (document-blind, no
+reference corpus needed); best suited to long texts.
+
+References: Altmann, Pierrehumbert & Motter (2009); Church & Gale (1995);
+Goh & Barabási (2008). See [docs/features/burstiness.md](docs/features/burstiness.md).
 
 ## Maintenance notes
 - If `n_sent_context` changes in `simple_lexical_cohesion`, overlap feature names change accordingly (`...prevK`).
