@@ -6,7 +6,7 @@ Produces classic readability features and more advanced psycholinguistic feature
 
 This is a complete re-write of the pipeline described Loignon (2021). Please cite the 2021 paper if you use ALSI/ILSA (see bibliography at the end of this page).
 
-Included lexical frequency databases:
+Included French lexical frequency databases:
 
 -   Manulex (Lété et al, 2004)
 
@@ -20,9 +20,20 @@ Included lexical frequency databases:
 
 Please cite the relevant papers if you use the lexical databases included in the ALSI/ILSA tool.
 
-## Many features - for real
+## Many features, for real
 
-ALSI extracts many types of features ([see the current list of features](https://github.com/gloignon/ALSI/blob/main/FEATURES.md)). You can easily output classic NLP-style features, POS-tag features, cohesion features, lexical frequency features, dependency parsing features, and now LLM-derived features such as surprisal, entropy and semantic embeddings. You can even use ALSI to "talk" with your locally-run LLM through [Ollama](https://ollama.com/) and run experiments in AI summarization, back translation, question and answer, or anything you can think of.
+ALSI extracts many types of features ([see the full feature list](https://github.com/gloignon/ALSI/blob/main/FEATURES.md)):
+
+- **Surface counts** — word, sentence, and character counts; POS-tag counts and proportions; verb tense and mood distributions.
+- **Lexical frequency** — word-level frequency and grade-level lookup against four French databases (ÉQOL, Franqus, Manulex, FLELex), with Good-Turing imputation for out-of-vocabulary items.
+- **Lexical diversity** — TTR, Maas, MATTR, and Simpson's D, computed on full vocabulary, content words, and verbs separately.
+- **Dependency / syntactic complexity** — dependency depth, branching factor, head distance, Gibson DLT integration cost, clausal density, and head-final/head-initial ratios.
+- **Lexical cohesion** — token and lemma overlap across sentence windows, argument overlap, and cosine similarity between adjacent sentences.
+- **Semantic embeddings and coherence** — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
+- **LLM surprisal** — token-level surprisal and entropy from masked (MLM) or autoregressive (AR) language models.
+- **Word burstiness** — Weibull β and negative-binomial adaptation scores measuring how clustered each word's occurrences are across documents.
+- **Multi-word expression (MWE) matching** — density features for any user-supplied MWE lexicon, broken down by relation group and category. Demonstrated with LEXCONN (Roze, Danlos & Muller, 2012), a French discourse-connective lexicon.
+- **Ollama LLM querying** — general-purpose row-by-row querying of a locally-run LLM (via [Ollama](https://ollama.com/)) for annotation, classification, paraphrase, or any templated task.
 
 ## Encoding support
 
@@ -30,7 +41,7 @@ ALSI extracts many types of features ([see the current list of features](https:/
 
 ## Parser/tagger
 
-ALSI uses a Universal Dependency based model of the French language. The model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
+ALSI uses a Universal Dependency based model, with a custom model of the French language by default. Our French model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
 -    ALSI/ISLA custom model: "Le (DET) chat (NOUN) est (VERB) gris (ADJ). Il (PRON) est (AUX) parti (VERB)." The copula "est" is tagged as VERB. The auxiliary "est" in the second sentence is also correctly tagged as AUX.
 -    UDPipe model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
   
