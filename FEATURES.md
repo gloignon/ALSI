@@ -12,6 +12,7 @@ Scripts covered:
 - `R/fnt_cohesion.R`
 - `R/fnt_embeddings.R`
 - `R/fnt_ollama.R`
+- `R/fnt_mwe.R`
 - `R/main.R`
 
 ## 1) `features$simple_counts$doc_level_counts`
@@ -374,6 +375,24 @@ reference corpus needed); best suited to long texts.
 
 References: Altmann, Pierrehumbert & Motter (2009); Church & Gale (1995);
 Goh & Barabási (2008). See [docs/features/burstiness.md](docs/features/burstiness.md).
+
+## 20) MWE connective density features
+Produced in: `R/fnt_mwe.R` (`connective_density_features`)
+
+Requires a match table from `match_multiword_sequences()` against a connective lexicon
+(e.g. LEXCONN). Output columns depend on the `relation_group` and `cat` values present
+in the lexicon — the feature set is dynamic. All raw counts are also provided as
+`*_per100w` density variants.
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `n_connectives` | `R/fnt_mwe.R` | Total number of connective matches. | document |
+| `<relation_group>` | `R/fnt_mwe.R` | Count of matches per LEXCONN relation group (e.g. `contrast`, `goal`, `cause`). | document |
+| `cat_<cat>` | `R/fnt_mwe.R` | Count of matches per LEXCONN grammatical category (e.g. `cat_cco`, `cat_adv`). | document |
+| `*_per100w` | `R/fnt_mwe.R` | Per-100-word density variant of every count column above. | document |
+
+See `demos/demo_mwe_matching.R` for a worked example with LEXCONN on Vikidia/Wikipedia
+and ALECTOR corpora.
 
 ## Maintenance notes
 - If `n_sent_context` changes in `simple_lexical_cohesion`, overlap feature names change accordingly (`...prevK`).

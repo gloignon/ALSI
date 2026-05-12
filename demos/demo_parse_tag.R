@@ -11,7 +11,7 @@ library(udpipe)
 
 source('R/fnt_corpus.R', encoding = 'UTF-8')
 
-corpus_dir <- 'demo_corpus/'  # folder with .txt files
+corpus_dir <- 'demo_corpora/viki_wiki/'
 udmodel_french <- udpipe_load_model(file = 'models/french_gsd-remix_2.udpipe')
 
 n_cores <- max(1, parallel::detectCores() - 1)
@@ -28,7 +28,7 @@ print(dt_example_raw[, .(token, lemma, upos, dep_rel, head_token_id)])
 
 # Parse a single text file (full pipeline: read → parse → post-process)
 
-dt_single_txt <- build_corpus('demo_corpus/viki_20729.txt')
+dt_single_txt <- build_corpus('demo_corpora/viki_wiki/viki_20729.txt')
 dt_single_raw <- parse_text(dt_single_txt, n_cores = 1)
 dt_single <- post_process_lexicon(dt_single_raw)
 
@@ -61,8 +61,7 @@ saveRDS(dt_parsed_edit, 'out/demo_parsed_tagged.Rds')
 dt_alector <- fread("demo_corpora/alector_corpus.csv", encoding = "UTF-8")
 setnames(dt_alector, "id", "doc_id")  # parse_text expects doc_id/text columns
 
-dt_alector_raw <- parse_text(dt_alector, n_cores = n_cores)  # as long as you have doc_id/text
-                                                             # parse_text will be happy and parse just fine.
+dt_alector_raw <- parse_text(dt_alector, n_cores = n_cores)  # skip dependency parsing — tokens + POS only
 dt_alector_parsed <- post_process_lexicon(dt_alector_raw)
 
 saveRDS(dt_alector_parsed, 'out/demo_alector_parsed.Rds')
