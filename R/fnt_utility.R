@@ -23,6 +23,20 @@ report_effects <- function(dt_features, label) {
     print()
 }
 
+#' Count words in a string
+#'
+#' Splits on whitespace and punctuation, so contractions and elisions count
+#' as two words (\emph{l'avion} → 2) and comma-separated items count
+#' individually (\emph{Bonjour, Alex} → 2).
+#'
+#' @param text A character vector.
+#' @returns An integer vector of word counts, one per element of \code{text}.
+count_words <- function(text) {
+  tokens <- gregexpr("[[:alpha:]À-ɏ]+", text, perl = TRUE)
+  vapply(tokens, function(m) sum(m > 0L), integer(1L))
+}
+
+
 #' Split text into sentences
 #'
 #' Splits on sentence-ending punctuation followed by whitespace and an

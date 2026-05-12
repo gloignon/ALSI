@@ -396,6 +396,79 @@ post_process_lexicon <- function(dt) {
 }
 
 
+#' Segment texts into sentences with syntok (Python)
+#'
+#' A lightweight alternative to \code{parse_text()} when only sentence
+#' boundaries are needed and installing a UDPipe model is undesirable.
+#' Calls \code{py/segment_sentences.py} via \pkg{reticulate}.
+#'
+#' @param txt Either a \code{data.frame}/\code{data.table} with columns
+#'   \code{doc_id} and \code{text}, or a character vector of texts.
+#' @param min_sent_len Integer. Trailing sentences shorter than this many
+#'   tokens are merged into the preceding sentence. Set to 0 to disable.
+#'   Default 4.
+#' @param merge_colon_semicolon Logical; if TRUE, sentences ending with
+#'   \code{:} or \code{;} are merged with the following sentence when safe.
+#'   Default FALSE.
+#' @param max_prev_len,max_next_len,max_merged_len Token-length guards for
+#'   the colon/semicolon merge heuristic. See \code{segment_sentences.py}.
+#' @returns A \code{data.table} with columns \code{doc_id},
+#'   \code{sentence_id} (restarts at 1 per document), and \code{sentence}.
+segment_sentences_syntok <- function(txt,
+                                     min_sent_len = 4L,
+                                     merge_colon_semicolon = FALSE,
+                                     max_prev_len = 35L,
+                                     max_next_len = 35L,
+                                     max_merged_len = 60L) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
+  }
+  reticulate::py_require("syntok")
+  reticulate::source_python(
+    system.file("py/segment_sentences.py", package = "ALSI",
+                mustWork = FALSE) |>
+      (\(p) if (nzchar(p)) p else "py/segment_sentences.py")()
+  )
+
+  normalize_input <- function(x) {
+    if (is.data.frame(x)) {
+      if (!all(c("doc_id", "text") %in% names(x))) {
+        stop("segment_sentences_syntok | data.frame must have columns: doc_id, text")
+      }
+      return(as.data.table(x[, c("doc_id", "text")]))
+    }
+    if (is.character(x)) {
+      return(data.table(doc_id = paste0("doc_", seq_along(x)), text = x))
+    }
+    stop("segment_sentences_syntok | txt must be a data.frame with doc_id/text or a character vector")
+  }
+
+  txt_dt <- normalize_input(txt)
+
+  rows <- vector("list", nrow(txt_dt))
+  for (i in seq_len(nrow(txt_dt))) {
+    did  <- txt_dt$doc_id[i]
+    text <- txt_dt$text[i]
+    sents <- reticulate::py$segment_text_syntok(
+      text,
+      min_sent_len         = as.integer(min_sent_len),
+      merge_colon_semicolon = merge_colon_semicolon,
+      max_prev_len         = as.integer(max_prev_len),
+      max_next_len         = as.integer(max_next_len),
+      max_merged_len       = as.integer(max_merged_len)
+    )
+    if (length(sents) == 0L) next
+    rows[[i]] <- data.table(
+      doc_id      = did,
+      sentence_id = seq_along(sents),
+      sentence    = as.character(sents)
+    )
+  }
+
+  return(data.table::rbindlist(rows, use.names = TRUE))
+}
+
+
 #' Read a wikiviki TSV dump into a long-format corpus table
 #'
 #' The wikiviki TSV has one article per row with columns
