@@ -12,12 +12,15 @@
 #'
 #' @returns A data.frame (grouped tibble) with one row per \code{doc_id} and columns:
 #'   \describe{
-#'     \item{avg_clause_length}{Mean tokens per clause.}
+#'     \item{avg_clause_length}{Mean tokens per clause (Lu MLC).}
 #'     \item{complex_nom_per_sent}{Mean complex nominals per sentence.}
 #'     \item{complex_verb_per_sent}{Mean complex verbs per sentence.}
-#'     \item{avg_dep_dist}{Mean dependency distance (token-to-head gap).}
+#'     \item{avg_dep_dist}{Mean dependency distance (token-to-head gap, Liu MDD).}
 #'     \item{avg_dep_count}{Mean number of dependents per token.}
-#'     \item{clausal_density}{Total clauses divided by number of sentences.}
+#'     \item{clausal_density}{Total clauses divided by number of sentences (Lu C/S).}
+#'     \item{dc_per_clause}{Mean proportion of clauses that are dependent clauses (Lu DC/C).}
+#'     \item{cn_per_clause}{Mean complex nominals per clause (Lu CN/C).}
+#'     \item{cv_per_clause}{Mean complex verbs per clause.}
 #'   }
 #'
 #' @details Operationalizations follow Lu (2010, \emph{International Journal of
@@ -129,12 +132,15 @@ extra_syntactic_features <- function(dt) {
     ) %>%
     group_by(doc_id) %>%
     summarise(
-      avg_clause_length     = mean(n_tokens / n_clause, na.rm = TRUE),
-      complex_nom_per_sent  = mean(n_complex_nominal,   na.rm = TRUE),
-      complex_verb_per_sent = mean(n_complex_verb,      na.rm = TRUE),
-      avg_dep_dist          = mean(dep_dist,             na.rm = TRUE),
-      avg_dep_count         = mean(dep_count,            na.rm = TRUE),
-      clausal_density       = sum(n_clause, na.rm = TRUE) / n(),
+      avg_clause_length     = mean(n_tokens / n_clause,          na.rm = TRUE),
+      complex_nom_per_sent  = mean(n_complex_nominal,            na.rm = TRUE),
+      complex_verb_per_sent = mean(n_complex_verb,               na.rm = TRUE),
+      avg_dep_dist          = mean(dep_dist,                     na.rm = TRUE),
+      avg_dep_count         = mean(dep_count,                    na.rm = TRUE),
+      clausal_density       = sum(n_clause,  na.rm = TRUE) / n(),
+      dc_per_clause         = mean((n_clause - 1L) / n_clause,   na.rm = TRUE),
+      cn_per_clause         = mean(n_complex_nominal / n_clause, na.rm = TRUE),
+      cv_per_clause         = mean(n_complex_verb    / n_clause, na.rm = TRUE),
       .groups = "drop"
     )
   

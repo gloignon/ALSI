@@ -59,6 +59,77 @@ split_sentences <- function(text) {
   trimws(s[nchar(trimws(s)) > 0])
 }
 
+#' Faceted Boxplot with Optional Cohen's d Annotation
+#'
+#' Takes a wide data frame (one row per document, one column per feature),
+#' pivots it to long format, and draws a faceted boxplot comparing two groups.
+#' Optionally overlays each facet with the Cohen's \emph{d} effect size.
+#'
+#' @param df A data frame with a grouping column and one or more numeric feature
+#'   columns to compare.
+#' @param group_col Name of the grouping column (unquoted or as a string).
+#'   Must have exactly two levels.
+#' @param feature_cols A \code{<tidy-select>} expression for the feature columns
+#'   to plot (e.g. \code{ends_with("_per100w")} or \code{c(feat_a, feat_b)}).
+#' @param title Plot title passed to \code{labs()}.
+#' @param x_lab,y_lab Axis labels (default \code{NULL} suppresses the label).
+#' @param ncol Number of columns in \code{facet_wrap()} (default \code{NULL}
+#'   lets ggplot choose).
+#' @param notch Logical; whether to draw notched boxplots (default \code{FALSE}).
+#' @param show_d Logical; whether to annotate each facet with Cohen's \emph{d}
+#'   (default \code{TRUE}).
+#' @param d_size Text size for the Cohen's \emph{d} label (default \code{3.5}).
+#' @returns A \code{ggplot} object.
+plot_faceted_boxplot <- function(df,
+                                 group_col,
+                                 feature_cols,
+                                 title    = NULL,
+                                 x_lab    = NULL,
+                                 y_lab    = "Value",
+                                 ncol     = NULL,
+                                 notch    = FALSE,
+                                 show_d   = TRUE,
+                                 d_size   = 2.8) {
+  group_col <- rlang::ensym(group_col)
+
+  df_long <- df |>
+    select(!!group_col, {{ feature_cols }}) |>
+    pivot_longer({{ feature_cols }}, names_to = "feature", values_to = "value") |>
+    mutate(group = as.factor(!!group_col))
+
+  p <- ggplot(df_long, aes(x = group, y = value, fill = group)) +
+    geom_boxplot(notch = notch, outlier.size = 0.8) +
+    facet_wrap(~ feature, scales = "free_y", ncol = ncol) +
+    labs(title = title, x = x_lab, y = y_lab) +
+    theme_minimal() +
+    theme(legend.position = "none")
+
+  if (show_d) {
+    groups <- levels(df_long$group)
+    d_labels <- df_long |>
+      summarise(
+        d = effsize::cohen.d(
+          value[group == groups[1]],
+          value[group == groups[2]]
+        )$estimate,
+        .by = feature
+      ) |>
+      mutate(label = paste0("d = ", round(d, 2)))
+
+    p <- p +
+      geom_text(
+        data      = d_labels,
+        aes(label = label),
+        x         = 1.5, y = Inf,
+        hjust     = 0.5, vjust = 1.4,
+        size      = d_size,
+        inherit.aes = FALSE
+      )
+  }
+
+  return(p)
+}
+
 #' Read a text file and return one row per sentence
 #'
 #' Reads a text file, collapses lines, splits into sentences, and returns

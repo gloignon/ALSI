@@ -16,7 +16,8 @@ py_require(c(
 ))
 
 source('R/fnt_surprisal.R', encoding = 'UTF-8')
-source('R/fnt_corpus.R', encoding = 'UTF-8')
+source('R/fnt_corpus.R',    encoding = 'UTF-8')
+source('R/fnt_utility.R',   encoding = 'UTF-8')
 
 
 # 1) Download Alector (if not already present) ----
@@ -108,19 +109,13 @@ df_docs <- dt_alector_mlm %>%
 
 # 5) Faceted boxplots ----
 
-df_docs %>%
-  pivot_longer(cols = c(llm_surprisal, llm_entropy),
-               names_to = "metric", values_to = "value") %>%
-  mutate(metric = recode(metric,
-                         llm_surprisal = "Surprisal",
-                         llm_entropy   = "Entropy")) %>%
-  ggplot(aes(x = source, y = value, fill = source)) +
-  geom_boxplot(notch = TRUE) +
-  facet_wrap(~ metric, scales = "free_y") +
-  labs(title = "Alector: Original vs Simplified (CamemBERT MLM)",
-       x = NULL, y = "Mean per document") +
-  theme_minimal() +
-  theme(legend.position = "none")
+df_docs |>
+  rename(Surprisal = llm_surprisal, Entropy = llm_entropy) |>
+  plot_faceted_boxplot(source, c(Surprisal, Entropy),
+    title = "Alector: Original vs Simplified (CamemBERT MLM)",
+    y_lab = "Mean per document",
+    notch = TRUE
+  )
 
 # 6) Summary table ----
 

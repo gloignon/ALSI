@@ -13,6 +13,7 @@ library(udpipe)
 
 source("R/fnt_corpus.R",     encoding = "UTF-8")
 source("R/fnt_burstiness.R", encoding = "UTF-8")
+source("R/fnt_utility.R",    encoding = "UTF-8")
 
 dir.create("out", showWarnings = FALSE)
 
@@ -119,14 +120,7 @@ library(tidyverse)
 doc_burst |>
   as_tibble() |>
   select(version, all_of(names(metrics))) |>
-  pivot_longer(-version, names_to = "metric", values_to = "value") |>
-  mutate(metric = factor(recode(metric, !!!metrics), levels = metrics)) |>
-  ggplot(aes(x = version, y = value, fill = version)) +
-  geom_boxplot(notch = TRUE, outlier.size = 0.8) +
-  facet_wrap(~ metric, scales = "free_y", ncol = 3) +
-  scale_fill_manual(values = c(original = "#4C72B0", simplified = "#DD8452")) +
-  labs(title = "Burstiness: Alector original vs simplified (wikiviki norms)",
-       x = NULL, y = NULL) +
-  theme_minimal() +
-  theme(legend.position = "none",
-        strip.text = element_text(size = 9))
+  plot_faceted_boxplot(version, all_of(names(metrics)),
+    title = "Burstiness: Alector original vs simplified (wikiviki norms)",
+    y_lab = NULL, ncol = 3, notch = TRUE
+  )

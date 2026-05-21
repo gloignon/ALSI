@@ -26,6 +26,7 @@ library(udpipe)
 
 source("R/fnt_corpus.R",       encoding = "UTF-8")
 source("R/fnt_extra_syntax.R", encoding = "UTF-8")
+source("R/fnt_utility.R",      encoding = "UTF-8")
 
 dir.create("out", showWarnings = FALSE)
 
@@ -226,17 +227,14 @@ dt_syntax |>
 
 
 # 5) Boxplot: key features by source ----
+#
+# The per-clause ratios (dc_per_clause, cn_per_clause, cv_per_clause) normalize
+# CN and CV counts by clausal structure rather than sentence count — useful when
+# documents vary in sentence length.
 
-dt_syntax |>
-  select(source, clausal_density, avg_dep_dist,
-         complex_nom_per_sent, complex_verb_per_sent) |>
-  pivot_longer(-source, names_to = "feature", values_to = "value") |>
-  ggplot(aes(x = source, y = value, fill = source)) +
-  geom_boxplot(outlier.size = 0.8) +
-  facet_wrap(~ feature, scales = "free_y") +
-  scale_fill_manual(values = c(Vikidia = "#4C72B0", Wikipedia = "#DD8452")) +
-  labs(title = "Extra syntactic features: Vikidia vs Wikipedia",
-       x = NULL, y = NULL) +
-  theme_minimal() +
-  theme(legend.position = "none",
-        strip.text = element_text(size = 9))
+plot_faceted_boxplot(
+  dt_syntax, source,
+  c(clausal_density, dc_per_clause, cn_per_clause, cv_per_clause, avg_dep_dist),
+  title = "Extra syntactic features: Vikidia vs Wikipedia",
+  y_lab = NULL
+)

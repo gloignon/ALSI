@@ -141,31 +141,15 @@ res_al <- cohesion_effect_sizes(dt_cohesion_al, dt_alector,
 
 # 6) Boxplots (Vikidia vs Wikipedia) ----
 
-df_long <- res_vw$dt_cohesion %>%
-  select(doc_id, class, all_of(res_vw$features)) %>%
-  pivot_longer(cols = all_of(res_vw$features), names_to = "feature", values_to = "value")
-
-df_long %>%
-  ggplot(aes(x = factor(class), y = value)) +
-  geom_boxplot() +
-  facet_wrap(~ feature, scales = "free_y") +
-  labs(
-    title = "Lexical Cohesion: Vikidia (1) vs Wikipedia (2)",
-    x = "Class", y = "Feature value"
-  ) +
-  theme_minimal()
+plot_faceted_boxplot(
+  res_vw$dt_cohesion, class, all_of(res_vw$features),
+  title = "Lexical Cohesion: Vikidia (1) vs Wikipedia (2)",
+  x_lab = "Class", y_lab = "Feature value"
+)
 
 # Boxplots (ALECTOR)
-df_long_al <- res_al$dt_cohesion %>%
-  select(doc_id, class, all_of(res_al$features)) %>%
-  pivot_longer(cols = all_of(res_al$features), names_to = "feature", values_to = "value")
-
-df_long_al %>%
-  ggplot(aes(x = factor(class), y = value)) +
-  geom_boxplot() +
-  facet_wrap(~ feature, scales = "free_y") +
-  labs(
-    title = "Lexical Cohesion: ALECTOR target (1) vs source (2)",
-    x = "Class", y = "Feature value"
-  ) +
-  theme_minimal()
+plot_faceted_boxplot(
+  res_al$dt_cohesion, class, all_of(res_al$features),
+  title = "Lexical Cohesion: ALECTOR target (1) vs source (2)",
+  x_lab = "Class", y_lab = "Feature value"
+)

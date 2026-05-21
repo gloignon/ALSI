@@ -106,17 +106,8 @@ dt_features_al <- connective_density_features(dt_alector, matches_alector) |>
 report_effects(dt_features_al, "ALECTOR: target/simplified (1) vs source/original (2)")
 
 # Boxplots (ALECTOR)
-density_cols_al <- grep("_per100w$", names(dt_features_al), value = TRUE)
-df_long_al <- dt_features_al %>%
-  select(doc_id, class, all_of(density_cols_al)) %>%
-  pivot_longer(cols = all_of(density_cols_al), names_to = "feature", values_to = "value")
-
-df_long_al %>%
-  ggplot(aes(x = factor(class), y = value)) +
-  geom_boxplot() +
-  facet_wrap(~ feature, scales = "free_y") +
-  labs(
-    title = "Connective Density: ALECTOR target (1) vs source (2)",
-    x = "Class", y = "Per 100 words"
-  ) +
-  theme_minimal()
+plot_faceted_boxplot(
+  dt_features_al, class, ends_with("_per100w"),
+  title = "Connective Density: ALECTOR target (1) vs source (2)",
+  x_lab = "Class", y_lab = "Per 100 words"
+)
