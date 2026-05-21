@@ -27,12 +27,12 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Surface counts** — word, sentence, and character counts; POS-tag counts and proportions; verb tense and mood distributions.
 - **Lexical frequency** — word-level frequency and grade-level lookup against four French databases (ÉQOL, Franqus, Manulex, FLELex), with Good-Turing imputation for out-of-vocabulary items.
 - **Lexical diversity** — TTR, Maas, MATTR, and Simpson's D, computed on full vocabulary, content words, and verbs separately.
-- **Dependency / syntactic complexity** — dependency depth, branching factor, head distance, Gibson DLT integration cost, and head-final/head-initial ratios.
+- **Dependency / syntactic complexity** — dependency depth, branching factor, head distance, Gibson (1998) DLT integration cost, and head-final/head-initial ratios.
 - **Clausal complexity** — clausal density, mean clause length, complex nominals, and complex verbs, operationalized from Universal Dependency relations following Lu (2010); mean dependency distance following Liu (2008).
 - **Lexical cohesion** — token and lemma overlap across sentence windows, argument overlap, and cosine similarity between adjacent sentences.
 - **Semantic embeddings and coherence** — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
 - **LLM surprisal** — token-level surprisal and entropy from masked (MLM) or autoregressive (AR) language models.
-- **Word burstiness** — Weibull β and negative-binomial adaptation scores measuring how clustered each word's occurrences are across documents.
+- **Word burstiness** — Weibull β scores (Altmann, Pierrehumbert & Motter, 2009) and negative-binomial adaptation scores (Church & Gale, 1995) measuring how clustered each word's occurrences are across documents.
 - **Multi-word expression (MWE) matching** — density features for any user-supplied MWE lexicon, broken down by relation group and category. Demonstrated with LEXCONN (Roze, Danlos & Muller, 2012), a French discourse-connective lexicon.
 - **Ollama LLM querying** — general-purpose row-by-row querying of a locally-run LLM (via [Ollama](https://ollama.com/)) for annotation, classification, paraphrase, or any templated task.
 
@@ -47,6 +47,10 @@ ALSI uses a Universal Dependency based model, with a custom model of the French 
 -    UDPipe model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
   
 # Bibliography
+
+Altmann, E. G., Pierrehumbert, J. B., & Motter, A. E. (2009). Beyond word frequency: Bursts, lulls, and scaling in the temporal distributions of words. PLoS ONE, 4(11), e7678. <https://doi.org/10.1371/journal.pone.0007678>
+
+Church, K. W., & Gale, W. A. (1995). Poisson mixtures. Natural Language Engineering, 1(2), 163–190. <https://doi.org/10.1017/S1351324900000139>
 
 Gibson, E. (1998). Linguistic complexity: Locality of syntactic dependencies. Cognition, 68(1), 1–76. <https://doi.org/10.1016/S0010-0277(98)00034-1>
 
