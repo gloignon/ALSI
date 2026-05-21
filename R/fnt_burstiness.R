@@ -87,8 +87,8 @@ compute_burstiness_beta <- function(dt_corpus,
     )
     if (is.na(beta)) return(c(beta = NA_real_, se = NA_real_))
 
-    tb   <- gaps^beta
-    s0   <- sum(tb); s1 <- sum(tb * lg); s2 <- sum(tb * lg^2)
+    tb <- gaps^beta
+    s0 <- sum(tb); s1 <- sum(tb * lg); s2 <- sum(tb * lg^2)  # Σt^β, Σt^β·log t, Σt^β·(log t)²
     info <- n / beta^2 - n * (s2 / s0 - (s1 / s0)^2)
     se   <- if (is.finite(info) && info > 0) 1 / sqrt(info) else NA_real_
     c(beta = beta, se = se)
@@ -338,7 +338,7 @@ burstiness_within_doc <- function(dt_corpus,
 
   .B <- function(gaps) {
     if (length(gaps) < min_gaps) return(NA_real_)
-    mu <- mean(gaps); s <- sd(gaps)
+    mu <- mean(gaps); s <- sd(gaps)  # μ_τ, σ_τ from Goh & Barabási eq. 1
     if ((s + mu) == 0) return(NA_real_)
     (s - mu) / (s + mu)
   }

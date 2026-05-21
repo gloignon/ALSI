@@ -1,7 +1,7 @@
 # Demo: Word burstiness features
 #
 # Scores Alector (79 original/simplified French text pairs) against
-# pre-built wikiviki burstiness norms. Run R/calibration/build_wikiviki_norms.R
+# pre-built wikiviki burstiness norms. Run R/artefact_builders/build_wikiviki_norms.R
 # once before running this demo.
 #
 # References:
