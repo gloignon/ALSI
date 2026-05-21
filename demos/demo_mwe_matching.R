@@ -8,7 +8,7 @@
 #
 # Prerequisite:
 # - Run demos/demo_parse_tag.R first (creates out/demo_parsed_tagged.Rds).
-# - Run scrapers/fetch_lexconn.R first (creates lexical_dbs/dt_lexconn.Rds).
+# - Run R/artefact_builders/fetch_lexconn.R first (creates lexical_dbs/dt_lexconn.Rds).
 
 # 0) Setup ----
 
@@ -100,14 +100,16 @@ dt_classes_al <- unique(data.table(
   class = ifelse(grepl("_target_", dt_alector$doc_id), 1L, 2L)
 ))
 
-connective_density_features(dt_alector, matches_alector) |>
-  merge(dt_classes_al, by = "doc_id") |>
-  report_effects("ALECTOR: target/simplified (1) vs source/original (2)")
+dt_features_al <- connective_density_features(dt_alector, matches_alector) |>
+  merge(dt_classes_al, by = "doc_id")
+
+report_effects(dt_features_al, "ALECTOR: target/simplified (1) vs source/original (2)")
 
 # Boxplots (ALECTOR)
-df_long_al <- res_al$dt_features %>%
-  select(doc_id, class, all_of(res_al$density_cols)) %>%
-  pivot_longer(cols = all_of(res_al$density_cols), names_to = "feature", values_to = "value")
+density_cols_al <- grep("_per100w$", names(dt_features_al), value = TRUE)
+df_long_al <- dt_features_al %>%
+  select(doc_id, class, all_of(density_cols_al)) %>%
+  pivot_longer(cols = all_of(density_cols_al), names_to = "feature", values_to = "value")
 
 df_long_al %>%
   ggplot(aes(x = factor(class), y = value)) +

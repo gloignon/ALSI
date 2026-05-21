@@ -3,9 +3,19 @@ library(data.table)
 library(tidyverse)
 library(effsize)
 
-# Print a sorted effect-size table for a set of per-100w density features,
-# comparing two classes. dt_features must have a `class` column (values 1 and 2),
-# a `word_count` column, and columns ending in `_per100w`.
+#' Report Effect Sizes for Per-100-Word Features
+#'
+#' Prints a sorted summary table for columns ending in \code{"_per100w"},
+#' comparing two classes with Pearson correlation and Cohen's \emph{d}. When
+#' \code{word_count} is present, also reports each feature's correlation with
+#' document length.
+#'
+#' @param dt_features A data.frame or \code{data.table} with a \code{class}
+#'   column, where class values \code{1} and \code{2} define the two groups to
+#'   compare, plus one or more numeric columns ending in \code{"_per100w"}.
+#'   If present, \code{word_count} is used for the length-correlation column.
+#' @param label Character label printed as the section title.
+#' @returns The printed tibble is returned invisibly by \code{print()}.
 report_effects <- function(dt_features, label) {
   has_length <- "word_count" %in% names(dt_features)
   cat("\n===", label, "===\n\n")
