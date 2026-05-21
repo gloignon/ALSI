@@ -27,7 +27,8 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Surface counts** — word, sentence, and character counts; POS-tag counts and proportions; verb tense and mood distributions.
 - **Lexical frequency** — word-level frequency and grade-level lookup against four French databases (ÉQOL, Franqus, Manulex, FLELex), with Good-Turing imputation for out-of-vocabulary items.
 - **Lexical diversity** — TTR, Maas, MATTR, and Simpson's D, computed on full vocabulary, content words, and verbs separately.
-- **Dependency / syntactic complexity** — dependency depth, branching factor, head distance, Gibson DLT integration cost, clausal density, and head-final/head-initial ratios.
+- **Dependency / syntactic complexity** — dependency depth, branching factor, head distance, Gibson DLT integration cost, and head-final/head-initial ratios.
+- **Clausal complexity** — clausal density, mean clause length, complex nominals, and complex verbs, operationalized from Universal Dependency relations following Lu (2010); mean dependency distance following Liu (2008).
 - **Lexical cohesion** — token and lemma overlap across sentence windows, argument overlap, and cosine similarity between adjacent sentences.
 - **Semantic embeddings and coherence** — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
 - **LLM surprisal** — token-level surprisal and entropy from masked (MLM) or autoregressive (AR) language models.
@@ -37,7 +38,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 
 ## Encoding support
 
-`build_corpus()` reads UTF-8 by default, but also supports Latin-1 (`encoding = "latin1"`) and Windows-1252 (`encoding = "windows-1252"`), which are common in older French corpora. Use `encoding = "auto"` to let the function detect each file's encoding automatically — if a directory contains files with different encodings, they will all be read correctly and you will get a warning listing what was found. See `demos/demo_corpus_read.R` for examples.
+`build_corpus()` reads UTF-8 by default, but also supports Latin-1 (`encoding = "latin1"`) and Windows-1252 (`encoding = "windows-1252"`). Use `encoding = "auto"` to let the function detect each file's encoding automatically — if a directory contains files with different encodings, they will all be read correctly and you will get a warning listing what was found. See `demos/demo_corpus_read.R` for examples.
 
 ## Parser/tagger
 
@@ -57,4 +58,4 @@ Roze, C., Danlos, L., & Muller, P. (2012). LEXCONN: A French lexicon of discours
 
 Lété, B., Sprenger-Charolles, L., & Colé, P. (2004). MANULEX: A grade-level lexical database from French elementary school readers. Behavior Research Methods, Instruments, & Computers, 36(1), 156-166.
 
-Stanké, B., Mené, M. L., Rezzonico, S., Moreau, A., Dumais, C., Robidoux, J., ... & Royle, P. (2019). ÉQOL: Une nouvelle base de données québécoise du lexique scolaire du primaire comportant une échelle d’acquisition de l’orthographe lexicale. Corpus, (19).
+Stanké, B., Le Mené, M., Rezzonico, S., Moreau, A., Dumais, C., Robidoux, J., Dault, C., & Royle, P. (2019). ÉQOL: Une nouvelle base de données québécoise du lexique scolaire du primaire comportant une échelle d’acquisition de l’orthographe lexicale. Corpus, (19). <https://doi.org/10.4000/corpus.3818>
