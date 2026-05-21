@@ -48,6 +48,8 @@ ALSI uses a Universal Dependency based model, with a custom model of the French 
   
 # Bibliography
 
+Gibson, E. (1998). Linguistic complexity: Locality of syntactic dependencies. Cognition, 68(1), 1–76. <https://doi.org/10.1016/S0010-0277(98)00034-1>
+
 Duran, M., Pagano, A., Rassi, A., & Pardo, T. (2021). On auxiliary verb in Universal Dependencies: Untangling the issue and proposing a systematized annotation strategy. In N. Mazziotta & S. Mille (Eds.), Proceedings of the Sixth International Conference on Dependency Linguistics (Depling, SyntaxFest 2021) (pp. 10–21). Association for Computational Linguistics. <https://aclanthology.org/2021.depling-1.2/>
 
 François, T., Gala, N., Watrin, P., & Fairon, C. (2014, May). FLELex: a graded lexical resource for French foreign learners. In International conference on Language Resources and Evaluation (LREC 2014).
@@ -57,5 +59,9 @@ Loignon, G. (2021). ILSA: an automated language complexity analysis tool for Fre
 Roze, C., Danlos, L., & Muller, P. (2012). LEXCONN: A French lexicon of discourse connectives. Discours, 10. <https://doi.org/10.4000/discours.8645>
 
 Lété, B., Sprenger-Charolles, L., & Colé, P. (2004). MANULEX: A grade-level lexical database from French elementary school readers. Behavior Research Methods, Instruments, & Computers, 36(1), 156-166.
+
+Liu, H. (2008). Dependency distance as a metric of language comprehension difficulty. Journal of Cognitive Science, 9(2), 159–191. <https://doi.org/10.17791/jcs.2008.9.2.159>
+
+Lu, X. (2010). Automatic analysis of syntactic complexity in second language writing. International Journal of Corpus Linguistics, 15(4), 474–496. <https://doi.org/10.1075/ijcl.15.4.02lu>
 
 Stanké, B., Le Mené, M., Rezzonico, S., Moreau, A., Dumais, C., Robidoux, J., Dault, C., & Royle, P. (2019). ÉQOL: Une nouvelle base de données québécoise du lexique scolaire du primaire comportant une échelle d’acquisition de l’orthographe lexicale. Corpus, (19). <https://doi.org/10.4000/corpus.3818>
