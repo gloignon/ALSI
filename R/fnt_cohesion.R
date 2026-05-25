@@ -298,8 +298,8 @@ simple_lexical_cohesion <- function(dt_corpus, n_sent_context = c(1,5)) {
     list(content_doc_overlap = mean(normalized_match, na.rm = TRUE))
   ), by = doc_id]
   dt_result_cosine <- dt_cosine[, .(
-    cosine_sent = mean(similarity, na.rm = T),
-    cosine_content = mean(similarity_content, na.rm = T)
+    cosine_sent = mean(similarity, na.rm = TRUE),
+    cosine_content = mean(similarity_content, na.rm = TRUE)
   ), by = doc_id]
   
   # Argument overlap (Coh-Metrix style): binary noun/pronoun overlap per adjacent pair

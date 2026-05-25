@@ -118,9 +118,9 @@ extra_syntactic_features <- function(dt) {
   dt_corpus[, is_complex_verb    := upos == "VERB" & has_cv_child]
   
   
-  sum_extra_syn_features <- dt_corpus %>%
-    filter(compte == TRUE) %>%
-    group_by(doc_id, paragraph_id, sentence_id) %>%
+  sum_extra_syn_features <- dt_corpus |>
+    filter(compte == TRUE) |>
+    group_by(doc_id, paragraph_id, sentence_id) |>
     summarise(
       n_clause          = sum(is_clause_indicator, na.rm = TRUE) + 1L,
       n_tokens          = n(),
@@ -129,8 +129,8 @@ extra_syntactic_features <- function(dt) {
       dep_dist          = mean(dep_dist,  na.rm = TRUE),
       dep_count         = mean(dep_count, na.rm = TRUE),
       .groups = "drop"
-    ) %>%
-    group_by(doc_id) %>%
+    ) |>
+    group_by(doc_id) |>
     summarise(
       avg_clause_length     = mean(n_tokens / n_clause,          na.rm = TRUE),
       complex_nom_per_sent  = mean(n_complex_nominal,            na.rm = TRUE),

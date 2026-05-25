@@ -391,7 +391,8 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
           token         = unlist(score$word_tokens),
           llm_surprisal = unlist(score$word_surprisals),
           llm_entropy   = unlist(score$word_entropies),
-          llm_subword_n = unlist(score$word_token_counts)
+          llm_subword_n = unlist(score$word_token_counts),
+          tokenizer_oov = unlist(score$word_oov)
         )
       }
     }

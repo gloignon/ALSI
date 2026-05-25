@@ -235,9 +235,8 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   if (length(hf_idx) > 0L) {
     open_at <- tok_sorted[hf_idx]
     close_at <- head_for_tok[hf_idx]
-    inc_counts <- vapply(tok_sorted, function(pos) {
-      sum(open_at <= pos & close_at > pos)
-    }, integer(1L))
+    inc_counts <- as.integer(rowSums(outer(tok_sorted, open_at, ">=") &
+                                       outer(tok_sorted, close_at, "<")))
     max_incomplete_deps <- max(inc_counts)
     avg_incomplete_deps <- mean(inc_counts)
   } else {
@@ -246,15 +245,15 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   }
 
   if (verbose) {
-    cat("Max path:", max_path, "\n")
-    cat("Average dependency depth:", avg_dependency_depth, "\n")
-    cat("Adjusted average dependency depth:", avg_dependency_depth_adj, "\n")
-    cat("Depth variance (sd):", sd_depth, "\n")
-    cat("Branching factor:", branching_factor, "\n")
-    cat("Sentence length:", n, "\n")
-    cat("Max incomplete dependencies (Gibson DLT):", max_incomplete_deps, "\n")
-    cat("Max incomplete deps (adjusted):", round(max_incomplete_deps / pmax(n, 1L), 3), "\n")
-    cat("Avg incomplete dependencies:", round(avg_incomplete_deps, 2), "\n")
+    message("Max path: ", max_path)
+    message("Average dependency depth: ", avg_dependency_depth)
+    message("Adjusted average dependency depth: ", avg_dependency_depth_adj)
+    message("Depth variance (sd): ", sd_depth)
+    message("Branching factor: ", branching_factor)
+    message("Sentence length: ", n)
+    message("Max incomplete dependencies (Gibson DLT): ", max_incomplete_deps)
+    message("Max incomplete deps (adjusted): ", round(max_incomplete_deps / pmax(n, 1L), 3))
+    message("Avg incomplete dependencies: ", round(avg_incomplete_deps, 2))
   }
 
   list(
@@ -350,12 +349,15 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
   dt[valid_dependency, integration_cost := {
     lo <- pmin(token_id_num, head_token_id_num) + 1L
     hi <- pmax(token_id_num, head_token_id_num) - 1L
-    mapply(function(l, h, pid, sid) {
-      if (l > h) return(0L)
-      sent_dt <- dt[paragraph_id == pid & sentence_id == sid &
-                     token_id_num >= l & token_id_num <= h]
-      sum(sent_dt$upos %in% discourse_upos, na.rm = TRUE)
-    }, lo, hi, paragraph_id, sentence_id, SIMPLIFY = TRUE)
+    mapply(
+      function(l, h, pid, sid) {
+        if (l > h) return(0L)
+        sum(dt$paragraph_id == pid & dt$sentence_id == sid &
+              !is.na(dt$token_id_num) & dt$token_id_num >= l & dt$token_id_num <= h &
+              dt$upos %in% discourse_upos, na.rm = TRUE)
+      },
+      lo, hi, paragraph_id, sentence_id
+    )
   }]
 
   dt[, .(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial, head_distance, head_direction, head_distance_adj, integration_cost)]
@@ -395,12 +397,12 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
 
   doc_ids <- unique(dt$doc_id)
 
-  rbindlist(lapply(doc_ids, function(id) {
-    head_final_initial_doc(
-      dt[doc_id == id],
-      include_punct_in_metrics = include_punct_in_metrics
-    )
-  }), use.names = TRUE)
+  rbindlist(
+    lapply(doc_ids, function(id) {
+      head_final_initial_doc(dt[doc_id == id], include_punct_in_metrics)
+    }),
+    use.names = TRUE
+  )
 }
 
 #' Batch-compute sentence-level dependency tree statistics
@@ -529,10 +531,9 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       if (length(hf_idx) > 0L) {
         open_at <- tok_sorted[hf_idx]   # dep opens at this position
         close_at <- head_for_tok[hf_idx] # dep resolves at this position
-        # count open deps at each token position
-        inc_counts <- vapply(tok_sorted, function(pos) {
-          sum(open_at <= pos & close_at > pos)
-        }, integer(1L))
+        # count open deps at each token position (vectorised outer product)
+        inc_counts <- as.integer(rowSums(outer(tok_sorted, open_at, ">=") &
+                                           outer(tok_sorted, close_at, "<")))
         max_inc <- max(inc_counts)
         avg_inc <- mean(inc_counts)
       } else {
@@ -576,8 +577,8 @@ docwise_graph_stats <- function(df_corpus) {
     df_corpus,
     include_punct_in_metrics = FALSE
   )
-  sum_head_final <- df_head_final %>%
-    group_by(doc_id) %>%
+  sum_head_final <- df_head_final |>
+    group_by(doc_id) |>
     summarise(
       prop_hf = sum(head_final, na.rm = TRUE) / n(),
       prop_hi = sum(head_initial, na.rm = TRUE) / n(),
@@ -600,8 +601,8 @@ docwise_graph_stats <- function(df_corpus) {
     include_punct_in_metrics = TRUE
   )
 
-  sum_heights <- df_heights %>%
-    group_by(doc_id) %>%
+  sum_heights <- df_heights |>
+    group_by(doc_id) |>
     summarise(
       avg_sent_height = mean(max_path, na.rm = TRUE),
       avg_sent_height_adj = mean(max_path / pmax(sentence_length - 1L, 1L), na.rm = TRUE),
@@ -616,7 +617,7 @@ docwise_graph_stats <- function(df_corpus) {
       n = sum(sentence_length),
       s = n(),
       total_paths = sum(count_path, na.rm = TRUE)
-    ) %>%
+    ) |>
     mutate(
       avg_dependency_depth = (1 / (n - s)) * total_paths
     )
@@ -655,5 +656,5 @@ apply_calibration <- function(dt_sent, gam_models, suffix = "_resid") {
     dt_out[[paste0(feat, suffix)]] <- dt_out[[feat]] - predicted
   }
 
-  dt_out
+  return(dt_out)
 }

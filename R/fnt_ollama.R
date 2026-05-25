@@ -180,5 +180,23 @@ ollama_generate <- function(data,
   elapsed_total <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
   message(sprintf("[ollama] Done. %d/%d rows completed in %.1f min.", n - length(errors), n, elapsed_total))
 
-  dt
+  return(dt)
+}
+
+#' Parse a numbered list response from an LLM into a character vector
+#'
+#' Extracts items from a response formatted as a numbered list
+#' (e.g. "1. First item\n2. Second item"). Missing items become \code{NA}.
+#'
+#' @param response A single character string (one LLM response).
+#' @param n Number of items expected.
+#' @returns A character vector of length \code{n}.
+parse_numbered_list <- function(response, n = 4L) {
+  if (is.na(response)) return(rep(NA_character_, n))
+  lines <- unlist(strsplit(response, "\n"))
+  purrr::map_chr(seq_len(n), function(k) {
+    pattern <- sprintf("^\\s*\\*{0,2}%d[.):]+\\*{0,2} *", k)
+    hit <- grep(pattern, lines, value = TRUE)
+    if (length(hit) > 0) trimws(sub(pattern, "", hit[1])) else NA_character_
+  })
 }

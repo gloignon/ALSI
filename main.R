@@ -42,18 +42,18 @@ library(zoo)
 library(future)
 library(future.apply)
 
-source('R/fnt_corpus.R',        encoding = 'UTF-8')
-source('R/fnt_lexical.R',       encoding = 'UTF-8')
-source('R/fnt_heights.R',       encoding = 'UTF-8')
-source('R/fnt_counters.R',      encoding = 'UTF-8')
-source('R/fnt_pos_surprisal.R', encoding = 'UTF-8')
-source('R/fnt_extra_syntax.R',  encoding = 'UTF-8')
-source('R/fnt_cohesion.R',      encoding = 'UTF-8')
-source('R/fnt_utility.R',       encoding = 'UTF-8')
-source('R/fnt_embeddings.R',    encoding = 'UTF-8')
-source('R/fnt_burstiness.R',    encoding = 'UTF-8')
-source('R/fnt_mwe.R',           encoding = 'UTF-8')
-source('R/artefact_builders/build_pos_ngrams.R', encoding = 'UTF-8')
+source("R/fnt_corpus.R",        encoding = "UTF-8")
+source("R/fnt_lexical.R",       encoding = "UTF-8")
+source("R/fnt_heights.R",       encoding = "UTF-8")
+source("R/fnt_counters.R",      encoding = "UTF-8")
+source("R/fnt_pos_surprisal.R", encoding = "UTF-8")
+source("R/fnt_extra_syntax.R",  encoding = "UTF-8")
+source("R/fnt_cohesion.R",      encoding = "UTF-8")
+source("R/fnt_utility.R",       encoding = "UTF-8")
+source("R/fnt_embeddings.R",    encoding = "UTF-8")
+source("R/fnt_burstiness.R",    encoding = "UTF-8")
+source("R/fnt_mwe.R",           encoding = "UTF-8")
+source("R/artefact_builders/build_pos_ngrams.R", encoding = "UTF-8")
 
 corpus_dir <- "demo_corpora/viki_wiki/"
 
@@ -161,7 +161,7 @@ if (!reticulate::py_available(initialize = TRUE)) {
   )
 
   # 16) LLM surprisal and entropy ----
-  source('R/fnt_surprisal.R', encoding = 'UTF-8')
+  source("R/fnt_surprisal.R", encoding = "UTF-8")
 
   features$surprisal$mlm <- llm_surprisal_entropy(
     features$parsed_corpus,

@@ -42,8 +42,8 @@ report_effects <- function(dt_features, label) {
 #' @param text A character vector.
 #' @returns An integer vector of word counts, one per element of \code{text}.
 count_words <- function(text) {
-  tokens <- gregexpr("[[:alpha:]À-ɏ]+", text, perl = TRUE)
-  vapply(tokens, function(m) sum(m > 0L), integer(1L))
+  matches <- gregexpr("[[:alpha:]À-ɏ]+", text, perl = TRUE)
+  return(lengths(regmatches(text, matches)))
 }
 
 
@@ -168,10 +168,60 @@ plot_faceted_boxplot <- function(df,
 #' @param doc_id Document identifier to assign.
 #' @returns A \code{tibble} with \code{doc_id}, \code{sentence_id}, and
 #'   \code{sentence}, or NULL if no sentences are found.
+#' Compare two groups across a set of features
+#'
+#' For each feature, computes Cohen's d and a Wilcoxon p-value between two
+#' groups. Supports paired designs via \code{pair_col}.
+#'
+#' @param df A data frame with one row per document.
+#' @param grp_col Name of the column that identifies the group.
+#' @param grp_a,grp_b Values of \code{grp_col} to compare.
+#' @param feat_cols Character vector of feature column names.
+#' @param corpus_label Label for the \code{corpus} column in the output.
+#' @param paired Logical; if TRUE uses paired Cohen's d and Wilcoxon test.
+#' @param pair_col Column name used to align pairs (required when \code{paired = TRUE}).
+#' @param strip_prefix Optional string prefix to remove from feature names in output.
+#' @returns A tibble with columns \code{corpus}, \code{feature}, \code{d}, \code{p}.
+compare_groups <- function(df, grp_col, grp_a, grp_b, feat_cols,
+                           corpus_label, paired = FALSE, pair_col = NULL,
+                           strip_prefix = NULL) {
+  purrr::map_dfr(feat_cols, function(f) {
+    if (paired) {
+      wide <- df |>
+        select(all_of(c(pair_col, grp_col, f))) |>
+        pivot_wider(names_from = all_of(grp_col), values_from = all_of(f))
+      x_a <- wide[[grp_a]]
+      x_b <- wide[[grp_b]]
+      ok  <- is.finite(x_a) & is.finite(x_b)
+      x_a <- x_a[ok]
+      x_b <- x_b[ok]
+    } else {
+      x_a <- df |> filter(.data[[grp_col]] == grp_a) |> pull(all_of(f))
+      x_b <- df |> filter(.data[[grp_col]] == grp_b) |> pull(all_of(f))
+      x_a <- x_a[is.finite(x_a)]
+      x_b <- x_b[is.finite(x_b)]
+    }
+
+    feat_label <- if (!is.null(strip_prefix)) str_remove(f, strip_prefix) else f
+
+    if (length(x_a) < 2) {
+      return(tibble(corpus = corpus_label, feature = feat_label,
+                    d = NA_real_, p = NA_real_))
+    }
+
+    tibble(
+      corpus  = corpus_label,
+      feature = feat_label,
+      d = effsize::cohen.d(x_a, x_b, paired = paired)$estimate,
+      p = wilcox.test(x_a, x_b, paired = paired)$p.value
+    )
+  })
+}
+
 read_sentences <- function(path, doc_id) {
   raw <- readLines(path, encoding = "UTF-8", warn = FALSE)
-  sents <- raw %>%
-    paste(collapse = " ") %>%
+  sents <- raw |>
+    paste(collapse = " ") |>
     split_sentences()
   if (length(sents) == 0) return(NULL)
   tibble::tibble(doc_id = doc_id,

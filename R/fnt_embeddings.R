@@ -92,7 +92,7 @@ encode_embeddings <- function(dt_corpus,
                     paste(failed_docs, collapse = ", ")))
   }
   
-  dt_embed
+  return(dt_embed)
 }
 
 
@@ -126,8 +126,8 @@ corpus_embeddings <- function(dt_corpus,
   dim_cols <- grep("^dim", names(dt_embeddings), value = TRUE)
   dt_doc_mean <- dt_embeddings[, lapply(.SD, mean, na.rm = TRUE), by = doc_id, .SDcols = dim_cols]
 
-  list(dt_sent_embeddings = dt_embeddings,
-       dt_doc_embeddings  = dt_doc_mean)
+  return(list(dt_sent_embeddings = dt_embeddings,
+              dt_doc_embeddings  = dt_doc_mean))
 }
 
 

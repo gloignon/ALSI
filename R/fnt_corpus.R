@@ -34,14 +34,14 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
   # Auto-detect encoding (per-file when processing a directory)
   per_file_encoding <- NULL
   if (tolower(encoding) == "auto") {
-    per_file_encoding <- vapply(file_paths, function(fp) {
+    per_file_encoding <- purrr::map_chr(file_paths, function(fp) {
       guess <- readr::guess_encoding(fp)
       if (nrow(guess) == 0 || guess$confidence[1] < 0.2) {
         stop("build_corpus | could not detect encoding for '", basename(fp),
              "'. Please specify encoding manually (e.g. encoding = 'latin1').")
       }
       guess$encoding[1]
-    }, character(1), USE.NAMES = FALSE)
+    })
 
     # Treat ASCII as UTF-8 (ASCII is a strict subset)
     per_file_encoding[per_file_encoding == "ASCII"] <- "UTF-8"
@@ -193,8 +193,8 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
 #' @param future_plan Optional \pkg{future} plan. If NULL, uses the current
 #'   plan or falls back to sequential.
 #' @returns A \code{data.table} in CoNLL-U format (one row per token).
-parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL, parser = "default") {
-  
+parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL, parser = "default", reparse_copulas = TRUE) {
+
   # Check if the model file exists
   if (!file.exists(ud_model)) {
     stop(paste("UDPipe model not found at:", ud_model))
@@ -314,13 +314,107 @@ parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cor
     }
   )
   
-  err_idx <- vapply(res, inherits, logical(1), "parse_text_error")
+  err_idx <- purrr::map_lgl(res, inherits, "parse_text_error")
   if (any(err_idx)) {
-    msg <- paste(vapply(res[err_idx], `[[`, "", "error"), collapse = "\n- ")
+    msg <- paste(purrr::map_chr(res[err_idx], "error"), collapse = "\n- ")
     stop(paste0("parse_text | worker error(s):\n- ", msg))
   }
-  
-  data.table::rbindlist(res, use.names = TRUE, fill = TRUE)
+
+  result <- data.table::rbindlist(res, use.names = TRUE, fill = TRUE)
+
+  if (reparse_copulas) {
+    if (!exists(".udpipe_model", envir = .GlobalEnv)) {
+      assign(".udpipe_model", udpipe::udpipe_load_model(file = ud_model), envir = .GlobalEnv)
+    }
+    result <- reparse_copular_etre(result, get(".udpipe_model", envir = .GlobalEnv))
+  }
+
+  result
+}
+
+#' Reparse Sentences Containing Copular Être
+#'
+#' For sentences where \emph{être} is annotated with \code{dep_rel = "cop"},
+#' replaces its lemma with \emph{paraitre} in the CoNLL-U input and re-runs the
+#' parser only (tokenizer and tagger skipped). The parser then heads the copula
+#' as the main predicate and attaches the nominal/adjectival predicate as
+#' \code{xcomp}. Afterwards the original lemma is kept (only the dependency
+#' structure changes).
+#'
+#' This is a no-op when the custom ALSI model is used, since that model already
+#' outputs the correct structure. It is useful when running with the standard
+#' French-GSD model, which still uses the \code{cop} relation.
+#'
+#' @param dt   A \code{data.table} of raw UDPipe output (from \code{parse_text}).
+#' @param ud_model_obj A loaded UDPipe model object (\code{udpipe_load_model()}).
+#' @returns A \code{data.table} with updated \code{head_token_id} and
+#'   \code{dep_rel} for affected sentences.
+reparse_copular_etre <- function(dt, ud_model_obj) {
+  cop_keys <- unique(dt[dep_rel == "cop" & tolower(lemma) %in% c("être", "etre"),
+                         .(doc_id, paragraph_id, sentence_id)])
+  if (nrow(cop_keys) == 0L) return(dt)
+
+  message("reparse_copular_etre | reparsing ", nrow(cop_keys), " sentence(s)")
+
+  fna <- function(x) ifelse(is.na(x) | x == "", "_", as.character(x))
+
+  # Build CoNLL-U blocks and track expected row counts per sentence
+  blocks     <- character(nrow(cop_keys))
+  row_counts <- integer(nrow(cop_keys))
+
+  for (i in seq_len(nrow(cop_keys))) {
+    k    <- cop_keys[i]
+    rows <- dt[doc_id == k$doc_id & paragraph_id == k$paragraph_id &
+                 sentence_id == k$sentence_id]
+
+    lm <- fna(rows$lemma)
+    lm[rows$dep_rel == "cop" & tolower(rows$lemma) %in% c("être", "etre")] <- "paraitre"
+
+    token_lines <- paste(
+      fna(rows$token_id), fna(rows$token), lm,
+      fna(rows$upos), fna(rows$xpos), fna(rows$feats),
+      fna(rows$head_token_id), fna(rows$dep_rel),
+      "_", "_", sep = "\t"
+    )
+    blocks[i]     <- paste(c(token_lines, ""), collapse = "\n")
+    row_counts[i] <- nrow(rows)
+  }
+
+  ann <- udpipe::udpipe_annotate(
+    ud_model_obj,
+    x         = paste(blocks, collapse = "\n"),
+    tokenizer = "conllu",
+    tagger    = "none",
+    parser    = "default"
+  )
+  new_dt <- as.data.table(as.data.frame(ann))
+
+  # Assign sentence index using expected row counts (robust to MWT rows)
+  row_ends   <- cumsum(row_counts)
+  row_starts <- c(1L, row_ends[-length(row_ends)] + 1L)
+  new_dt[, .row := seq_len(.N)]
+  new_dt[, .sent_idx := findInterval(.row, row_starts)]
+
+  # Attach original keys
+  cop_keys[, .sent_idx := .I]
+  new_dt[cop_keys, on = ".sent_idx",
+          `:=`(.orig_doc = i.doc_id, .orig_para = i.paragraph_id,
+               .orig_sent = i.sentence_id)]
+
+  # Collect updates for syntactic words only (no MWT / empty nodes)
+  upd <- new_dt[!grepl("[-.]", token_id) & !is.na(.orig_doc),
+                 .(doc_id     = .orig_doc,
+                   paragraph_id = .orig_para,
+                   sentence_id  = .orig_sent,
+                   token_id,
+                   new_head   = head_token_id,
+                   new_deprel = dep_rel)]
+
+  dt_out <- copy(dt)
+  dt_out[upd, on = .(doc_id, paragraph_id, sentence_id, token_id),
+          `:=`(head_token_id = i.new_head, dep_rel = i.new_deprel)]
+
+  dt_out
 }
 
 #' Post-Process UDPipe Output
@@ -361,7 +455,7 @@ post_process_lexicon <- function(dt) {
   # Remove punctuation and particles from counts
   dt_out[upos %in% c("PUNCT", "PART"), compte := FALSE]
   
-  # Correct copula to VERB
+  # Ensure copula UPOS is VERB (fallback for any remaining cop relations)
   dt_out[dep_rel == "cop", upos := "VERB"]
   
   # Remove duplicates

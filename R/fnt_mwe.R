@@ -168,7 +168,7 @@ match_multiword_sequences <- function(dt_tokens, dt_lexicon,
   if (use_pos) {
     cat_vec       <- dt_matches[[lexicon_cat_col]]
     expected_upos <- cat_to_upos[cat_vec]
-    has_mapping   <- !sapply(expected_upos, is.null)
+    has_mapping   <- !purrr::map_lgl(expected_upos, is.null)
     expected_upos[!has_mapping] <- NA_character_
     dt_matches[, .expected_upos := unlist(expected_upos)]
     dt_matches <- dt_matches[is.na(.expected_upos) | .upos_start == .expected_upos]
