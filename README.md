@@ -31,6 +31,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Clausal complexity** — clausal density, mean clause length, complex nominals, and complex verbs, operationalized from Universal Dependency relations following Lu (2010); mean dependency distance following Liu (2008).
 - **Lexical cohesion** — token and lemma overlap across sentence windows, argument overlap, and cosine similarity between adjacent sentences.
 - **Semantic embeddings and coherence** — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
+- **POS surprisal** — token-, sentence-, and document-level surprisal and entropy from a UPOS trigram model. Includes Stupid Backoff (Brants et al. 2007) for unseen trigrams, optional sentence-boundary padding, and SD of surprisal as a Uniform Information Density proxy (Jaeger 2010).
 - **LLM surprisal** — token-level surprisal and entropy from masked (MLM) or autoregressive (AR) language models.
 - **Word burstiness** — Weibull β scores (Altmann, Pierrehumbert & Motter, 2009) and negative-binomial adaptation scores (Church & Gale, 1995) measuring how clustered each word's occurrences are across documents.
 - **Multi-word expression (MWE) matching** — density features for any user-supplied MWE lexicon, broken down by relation group and category. Demonstrated with LEXCONN (Roze, Danlos & Muller, 2012), a French discourse-connective lexicon.
@@ -47,6 +48,8 @@ ALSI uses a Universal Dependency based model, with a custom model of the French 
 -    UDPipe model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
   
 # Bibliography
+
+Brants, T., Popat, A. C., Xu, P., Och, F. J., & Dean, J. (2007). Large language models in machine translation. *Proceedings of EMNLP-CoNLL*, 858–867.
 
 Altmann, E. G., Pierrehumbert, J. B., & Motter, A. E. (2009). Beyond word frequency: Bursts, lulls, and scaling in the temporal distributions of words. PLoS ONE, 4(11), e7678. <https://doi.org/10.1371/journal.pone.0007678>
 
@@ -67,5 +70,7 @@ Lété, B., Sprenger-Charolles, L., & Colé, P. (2004). MANULEX: A grade-level l
 Liu, H. (2008). Dependency distance as a metric of language comprehension difficulty. Journal of Cognitive Science, 9(2), 159–191. <https://doi.org/10.17791/jcs.2008.9.2.159>
 
 Lu, X. (2010). Automatic analysis of syntactic complexity in second language writing. International Journal of Corpus Linguistics, 15(4), 474–496. <https://doi.org/10.1075/ijcl.15.4.02lu>
+
+Jaeger, T. F. (2010). Redundancy and reduction: Speakers manage syntactic information density. *Cognitive Psychology*, 61(1), 23–62. <https://doi.org/10.1016/j.cogpsych.2010.02.002>
 
 Stanké, B., Le Mené, M., Rezzonico, S., Moreau, A., Dumais, C., Robidoux, J., Dault, C., & Royle, P. (2019). ÉQOL: Une nouvelle base de données québécoise du lexique scolaire du primaire comportant une échelle d’acquisition de l’orthographe lexicale. Corpus, (19). <https://doi.org/10.4000/corpus.3818>

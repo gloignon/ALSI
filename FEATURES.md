@@ -222,25 +222,32 @@ Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 ## 8) `features$syntactic`
 Produced in: `R/fnt_extra_syntax.R` (`extra_syntactic_features`)
 
+Operationalized following Lu (2010, *International Journal of Corpus Linguistics*, 15(4), 474–496), translated from Penn Treebank tregex patterns to Universal Dependencies. Dependency distance follows Liu (2008, *Journal of Cognitive Science*, 9(2), 159–191).
+
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
-| `avg_clause_length` | `R/fnt_extra_syntax.R` | Mean tokens per clause estimate. | document |
-| `complex_nom_per_sent` | `R/fnt_extra_syntax.R` | Mean number of complex nominals per sentence. | document |
-| `complex_verb_per_sent` | `R/fnt_extra_syntax.R` | Mean number of complex verbs per sentence. | document |
-| `avg_dep_dist` | `R/fnt_extra_syntax.R` | Mean dependency distance. | document |
-| `avg_dep_count` | `R/fnt_extra_syntax.R` | Mean dependents per token/head relation proxy. | document |
-| `clausal_density` | `R/fnt_extra_syntax.R` | Clauses per sentence. | document |
+| `clausal_density` | `R/fnt_extra_syntax.R` | Mean clauses per sentence (Lu C/S). Clause boundaries identified by UD relations: `ccomp`, `acl`, `advcl`, `xcomp`, `csubj`, `csubj:pass`, `acl:relcl`. Each sentence counts as at least 1. | document |
+| `avg_clause_length` | `R/fnt_extra_syntax.R` | Mean tokens per clause (Lu MLC). | document |
+| `dc_per_clause` | `R/fnt_extra_syntax.R` | Mean proportion of clauses that are dependent clauses (Lu DC/C): mean((n\_clause − 1) / n\_clause) per sentence. | document |
+| `complex_nom_per_sent` | `R/fnt_extra_syntax.R` | Mean complex nominals per sentence. A NOUN head with at least one child bearing `amod`, `nmod`, `nmod:poss`, `acl`, `acl:relcl`, `nummod`, `appos`, `compound`, or `det:nummod`. | document |
+| `cn_per_clause` | `R/fnt_extra_syntax.R` | Mean complex nominals per clause (Lu CN/C). | document |
+| `complex_verb_per_sent` | `R/fnt_extra_syntax.R` | Mean complex verbs per sentence. A VERB head with at least one `aux` or `aux:pass` child (captures modals, passives, perfect, progressive). Not one of Lu's 14 indices; added by ALSI. | document |
+| `cv_per_clause` | `R/fnt_extra_syntax.R` | Mean complex verbs per clause. Analogous to Lu CN/C but for complex verbs. Not one of Lu's 14 indices; added by ALSI. | document |
+| `avg_dep_dist` | `R/fnt_extra_syntax.R` | Mean Dependency Distance (MDD, Liu 2008): mean \|position(head) − position(dependent)\| over non-PUNCT tokens. | document |
+| `avg_dep_count` | `R/fnt_extra_syntax.R` | Mean number of dependents per token (mean out-degree in the dependency tree). | document |
 
 ## 9) `features$pos_surprisal$doc_surprisal`
 Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
 
+All values in bits (log₂). `pos_surprisal()` accepts `exclude_pos`, `use_sentence_boundaries`, and `backoff_scale` (Stupid Backoff, default 0.4 — see [docs/features/pos-surprisal.md](docs/features/pos-surprisal.md)).
+
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
-| `mean_pos_surprisal` | `R/fnt_pos_surprisal.R` | Mean POS surprisal over filtered tokens. | document |
-| `sd_pos_surprisal` | `R/fnt_pos_surprisal.R` | SD of POS surprisal. | document |
+| `mean_pos_surprisal` | `R/fnt_pos_surprisal.R` | Mean POS trigram surprisal (−log₂ p) over scored tokens. | document |
+| `sd_pos_surprisal` | `R/fnt_pos_surprisal.R` | SD of POS surprisal — proxy for Uniform Information Density (Jaeger 2010). | document |
 | `mean_pos_entropy` | `R/fnt_pos_surprisal.R` | Mean POS trigram-context entropy. | document |
-| `sd_pos_entropy` | `R/fnt_pos_surprisal.R` | SD of POS entropy. | document |
-| `mean_pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | Mean token-to-token entropy change. | document |
+| `sd_pos_entropy` | `R/fnt_pos_surprisal.R` | SD of POS context entropy. | document |
+| `mean_pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | Mean token-to-token entropy change (telescopes to ≈ 0 across a document). | document |
 | `sd_pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | SD of entropy change. | document |
 
 ## 10) `features$pos_surprisal$sent_surprisal`
@@ -253,16 +260,16 @@ Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
 | `mean_pos_entropy` | `R/fnt_pos_surprisal.R` | Mean POS entropy at sentence level. | sentence |
 | `sd_pos_entropy` | `R/fnt_pos_surprisal.R` | SD of POS entropy at sentence level. | sentence |
 | `mean_pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | Mean entropy reduction at sentence level. | sentence |
-| `sd_pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | SD entropy reduction at sentence level. | sentence |
+| `sd_pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | SD of entropy reduction at sentence level. | sentence |
 
 ## 11) `features$pos_surprisal$token_surprisal`
 Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
 
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
-| `pos_surprisal` | `R/fnt_pos_surprisal.R` | Token-level POS surprisal (`-log2 p`). | word |
-| `pos_entropy` | `R/fnt_pos_surprisal.R` | Token-level POS context entropy. | word |
-| `pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | Difference from previous token entropy in sentence. | word |
+| `pos_surprisal` | `R/fnt_pos_surprisal.R` | Token-level POS surprisal (−log₂ p, bits). | word |
+| `pos_entropy` | `R/fnt_pos_surprisal.R` | Token-level POS context entropy (bits); `NA` when Stupid Backoff reaches unigram level. | word |
+| `pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | entropy[t−1] − entropy[t] within sentence. | word |
 
 ## 12) `features$lexical_cohesion`
 Produced in: `R/fnt_cohesion.R` (`simple_lexical_cohesion`)

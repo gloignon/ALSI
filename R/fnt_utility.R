@@ -79,6 +79,13 @@ split_sentences <- function(text) {
 #' @param show_d Logical; whether to annotate each facet with Cohen's \emph{d}
 #'   (default \code{TRUE}).
 #' @param d_size Text size for the Cohen's \emph{d} label (default \code{3.5}).
+#' @param paired Logical; if \code{TRUE}, compute paired Cohen's \emph{d}
+#'   (appropriate for matched pairs such as Wikipedia–Vikidia article pairs).
+#'   Default \code{FALSE}.
+#' @param pair_col Optional name of the column identifying matched pairs
+#'   (unquoted or as a string). When \code{paired = TRUE} and \code{pair_col}
+#'   is \code{NULL}, rows are matched by their position within each group (first
+#'   row of group 1 pairs with first row of group 2, etc.).
 #' @returns A \code{ggplot} object.
 plot_faceted_boxplot <- function(df,
                                  group_col,
@@ -89,11 +96,17 @@ plot_faceted_boxplot <- function(df,
                                  ncol     = NULL,
                                  notch    = FALSE,
                                  show_d   = TRUE,
-                                 d_size   = 2.8) {
+                                 d_size   = 2.8,
+                                 paired   = FALSE,
+                                 pair_col = NULL) {
   group_col <- rlang::ensym(group_col)
 
+  if (paired && is.null(pair_col)) {
+    stop("`pair_col` must be supplied when `paired = TRUE`.")
+  }
+
   df_long <- df |>
-    select(!!group_col, {{ feature_cols }}) |>
+    select(!!group_col, {{ feature_cols }}, any_of(as.character(pair_col))) |>
     pivot_longer({{ feature_cols }}, names_to = "feature", values_to = "value") |>
     mutate(group = as.factor(!!group_col))
 
@@ -106,15 +119,31 @@ plot_faceted_boxplot <- function(df,
 
   if (show_d) {
     groups <- levels(df_long$group)
-    d_labels <- df_long |>
-      summarise(
-        d = effsize::cohen.d(
-          value[group == groups[1]],
-          value[group == groups[2]]
-        )$estimate,
-        .by = feature
-      ) |>
-      mutate(label = paste0("d = ", round(d, 2)))
+
+    if (paired) {
+      pair_sym <- rlang::sym(pair_col)
+      d_labels <- df_long |>
+        select(feature, group, !!pair_sym, value) |>
+        pivot_wider(names_from = group, values_from = value) |>
+        summarise(
+          d = {
+            diffs <- .data[[groups[1]]] - .data[[groups[2]]]
+            mean(diffs, na.rm = TRUE) / sd(diffs, na.rm = TRUE)
+          },
+          .by = feature
+        ) |>
+        mutate(label = paste0("d = ", round(d, 2)))
+    } else {
+      d_labels <- df_long |>
+        summarise(
+          d = effsize::cohen.d(
+            value[group == groups[1]],
+            value[group == groups[2]]
+          )$estimate,
+          .by = feature
+        ) |>
+        mutate(label = paste0("d = ", round(d, 2)))
+    }
 
     p <- p +
       geom_text(
