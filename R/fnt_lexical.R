@@ -106,14 +106,20 @@ fuzzy_match_lexical_db <- function(dt_corpus, dt_lexical,
   # Copy data for safety
   dt_corpus <- setDT(copy(dt_corpus))
   dt_lexical <- setDT(copy(dt_lexical))
-  
+
   # Validation checks
   if (!(token_col %in% colnames(dt_lexical))) stop("The token column does not exist in the lexical db.")
   if (!(freq_col %in% colnames(dt_lexical))) stop("The frequency column does not exist in the lexical db.")
   if (!all(c(token_col, lemma_col, upos_col, id_col) %in% colnames(dt_corpus))) {
     stop("The corpus db does not have all required columns.")
   }
-  
+
+  # Stash original-case values so we can restore them after matching
+  .orig_token_col <- paste0(".orig_", token_col)
+  .orig_lemma_col <- paste0(".orig_", lemma_col)
+  dt_corpus[, (.orig_token_col) := get(token_col)]
+  dt_corpus[, (.orig_lemma_col) := get(lemma_col)]
+
   # Lowercase tokens and lemmas for case-insensitive matching
   dt_corpus[, (token_col) := tolower(get(token_col))]
   dt_corpus[, (lemma_col) := tolower(get(lemma_col))]
@@ -224,6 +230,12 @@ fuzzy_match_lexical_db <- function(dt_corpus, dt_lexical,
 
   # Remove sorting column
   dt_merged[, .sorting_col := NULL]
+
+  # Restore original-case token and lemma columns
+  dt_merged[, (token_col) := get(.orig_token_col)]
+  dt_merged[, (lemma_col) := get(.orig_lemma_col)]
+  dt_merged[, (.orig_token_col) := NULL]
+  dt_merged[, (.orig_lemma_col) := NULL]
 
   # Rename new columns
   cols_to_rename <- setdiff(names(dt_lexical), c(token_col, upos_col, ".sorting_col"))

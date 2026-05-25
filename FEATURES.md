@@ -239,7 +239,7 @@ Operationalized following Lu (2010, *International Journal of Corpus Linguistics
 ## 9) `features$pos_surprisal$doc_surprisal`
 Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
 
-All values in bits (log₂). `pos_surprisal()` accepts `exclude_pos`, `use_sentence_boundaries`, and `backoff_scale` (Stupid Backoff, default 0.4 — see [docs/features/pos-surprisal.md](docs/features/pos-surprisal.md)).
+All values in bits (log₂). `pos_surprisal()` accepts `exclude_pos`, `use_sentence_boundaries`, and `backoff_scale` (Stupid Backoff, default `NULL` — see [docs/features/pos-surprisal.md](docs/features/pos-surprisal.md)).
 
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
@@ -336,14 +336,7 @@ Produced in: `R/fnt_surprisal.R` (`llm_surprisal_entropy`)
 | `llm_entropy` | `R/fnt_surprisal.R` | Token-level predictive entropy from language model. | word |
 | `llm_subword_n` | `R/fnt_surprisal.R` | Number of subword pieces used for the token. | word |
 
-## 17) Optional label currently added in demo pipeline
-Produced in: `R/main.R`
-
-| Feature name | Script | Short description | Level |
-|---|---|---|---|
-| `class` | `R/main.R` | Demo label: `1` for `viki*` docs, `2` otherwise. | document |
-
-## 18) Ollama LLM querying
+## 17) Ollama LLM querying
 Provided by: `R/fnt_ollama.R` (`ollama_generate`)
 
 Not a fixed feature set — this is a general-purpose utility for querying a local LLM
@@ -357,7 +350,7 @@ labels that can then be parsed into whatever columns are needed downstream.
 Requires Ollama running locally (or on the network). See `demos/demo_ollama.R` for a
 worked example that generates statements about texts and then verifies them.
 
-## 19) `features$burstiness`
+## 18) `features$burstiness`
 Produced in: `R/fnt_burstiness.R` (`burstiness_doc_features`)
 
 Word-level burstiness norms (Weibull β, Negative Binomial adaptation) are derived
@@ -383,7 +376,7 @@ reference corpus needed); best suited to long texts.
 References: Altmann, Pierrehumbert & Motter (2009); Church & Gale (1995);
 Goh & Barabási (2008). See [docs/features/burstiness.md](docs/features/burstiness.md).
 
-## 20) MWE connective density features
+## 19) MWE connective density features
 Produced in: `R/fnt_mwe.R` (`connective_density_features`)
 
 Requires a match table from `match_multiword_sequences()` against a connective lexicon
