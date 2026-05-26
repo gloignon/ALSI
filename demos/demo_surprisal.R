@@ -25,7 +25,7 @@
 # Prerequisites:
 #   - Python with transformers, torch, tokenizers, numpy (auto-installed via py_require)
 #   - Internet access for first download of corpus and model
-#   - models/french_gsd-remix_2.udpipe
+#   - models/french_gsd-remix_3.udpipe
 #
 # Note: computing surprisal on 158 documents takes several minutes on CPU;
 #   much faster with a GPU. Results are cached in out/ to avoid recomputing.

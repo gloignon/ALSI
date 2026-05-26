@@ -14,7 +14,7 @@
 #
 # Prerequisite:
 # - Run demos/demo_parse_tag.R first (creates out/demo_parsed_tagged.Rds).
-# - A UDPipe model must be available at models/french_gsd-remix_2.udpipe.
+# - A UDPipe model must be available at models/french_gsd-remix_3.udpipe.
 # - For English sentences: install the English UD model once with
 #     udpipe_download_model("english-ewt", model_dir = "models/")
 #   then adjust the path below.
@@ -30,7 +30,7 @@ source("R/fnt_utility.R",      encoding = "UTF-8")
 
 dir.create("out", showWarnings = FALSE)
 
-udmodel_french <- udpipe_load_model("models/french_gsd-remix_2.udpipe")
+udmodel_french <- udpipe_load_model("models/french_gsd-remix_3.udpipe")
 
 english_path <- list.files("models", "english.*udpipe$", full.names = TRUE)[1]
 if (is.na(english_path)) {

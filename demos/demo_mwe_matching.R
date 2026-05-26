@@ -19,7 +19,7 @@ source("R/fnt_corpus.R",  encoding = "UTF-8")
 source("R/fnt_mwe.R",     encoding = "UTF-8")
 source("R/fnt_utility.R", encoding = "UTF-8")
 
-udmodel_path <- "models/french_gsd-remix_2.udpipe"
+udmodel_path <- "models/french_gsd-remix_3.udpipe"
 
 
 # 1) Toy example: hand-built lexicon ----

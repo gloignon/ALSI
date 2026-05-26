@@ -12,7 +12,7 @@
 # Prerequisites:
 #   - demo_corpora/viki_wiki/   — paired Vikidia / Wikipedia plain-text files
 #   - demo_corpora/alector_corpus.csv — ALECTOR simplification corpus (optional)
-#   - models/french_gsd-remix_2.udpipe — ALSI French UDPipe model
+#   - models/french_gsd-remix_3.udpipe — ALSI French UDPipe model
 #
 # Output:
 #   - out/demo_parsed_tagged.Rds   — parsed Viki-Wiki corpus
@@ -31,7 +31,7 @@ corpus_dir <- "demo_corpora/viki_wiki/"
 # Load the French UDPipe model into memory.
 # This only needs to be done once per session — it is slow to load,
 # but fast once loaded.
-udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_2.udpipe")
+udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
 
 # Detect the number of CPU cores available and reserve one for the OS.
 # parse_text() will spread sentences across cores to speed things up.

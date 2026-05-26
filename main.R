@@ -22,7 +22,7 @@
 # Prerequisites:
 #   R packages : data.table, udpipe, tidyverse, utf8, zoo, future,
 #                future.apply, reticulate, effsize
-#   Models     : models/french_gsd-remix_2.udpipe
+#   Models     : models/french_gsd-remix_3.udpipe
 #                models/pos_trigram_fr_gsd_alsi.Rds
 #   Lexical DBs: lexical_dbs/dt_eqol.Rds, dt_franqus.Rds,
 #                dt_manulex_token.Rds, dt_corpus_flelex.Rds, dt_lexconn.Rds
@@ -57,7 +57,7 @@ source("R/artefact_builders/build_pos_ngrams.R", encoding = "UTF-8")
 
 corpus_dir <- "demo_corpora/viki_wiki/"
 
-udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_2.udpipe")
+udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
 
 # Demo workflow ----
 # Each block showcases a capability (parsing, counts, lexical enrichment, syntax,

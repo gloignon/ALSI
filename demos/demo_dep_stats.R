@@ -23,7 +23,7 @@
 #
 # Prerequisites:
 #   - Run demos/demo_parse_tag.R first (creates out/demo_parsed_tagged.Rds)
-#   - models/french_gsd-remix_2.udpipe
+#   - models/french_gsd-remix_3.udpipe
 
 
 # 0) Setup ----
@@ -36,7 +36,7 @@ library(effsize)  # for cohen.d()
 source("R/fnt_heights.R", encoding = "UTF-8")
 source("R/fnt_utility.R", encoding = "UTF-8")
 
-udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_2.udpipe")
+udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
 
 
 # 1) Single-sentence inspection ----

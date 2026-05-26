@@ -193,7 +193,7 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
 #' @param future_plan Optional \pkg{future} plan. If NULL, uses the current
 #'   plan or falls back to sequential.
 #' @returns A \code{data.table} in CoNLL-U format (one row per token).
-parse_text <- function(txt, ud_model = "models/french_gsd-remix_2.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL, parser = "default", reparse_copulas = TRUE) {
+parse_text <- function(txt, ud_model = "models/french_gsd-remix_3.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL, parser = "default", reparse_copulas = TRUE) {
 
   # Check if the model file exists
   if (!file.exists(ud_model)) {
