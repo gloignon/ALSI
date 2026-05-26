@@ -46,31 +46,47 @@ ALSI extracts many types of features ([see the full feature list](https://github
 ALSI uses a Universal Dependency based model, with a custom model of the French language by default. Our French model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
 -    ALSI/ISLA custom model: "Le (DET) chat (NOUN) est (VERB) gris (ADJ). Il (PRON) est (AUX) parti (VERB)." The copula "est" is tagged as VERB. The auxiliary "est" in the second sentence is also correctly tagged as AUX.
 -    UDPipe model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
-  
-# Bibliography
 
-Brants, T., Popat, A. C., Xu, P., Och, F. J., & Dean, J. (2007). Large language models in machine translation. *Proceedings of EMNLP-CoNLL*, 858–867.
+## Model benchmarks
+
+The newer v3 "remixed" French model was trained on French-GSD (UD 2.16) with copular AUX→VERB retagging, erroneous training data filtering (e.g. lemmatization errors in the treebank), data augmentation ("silver" label sentences targeting weak areas of our previous model), fastText embeddings (Grave et al., 2018), and Lefff UPOS dictionary (Sagot, 2010). The older v2 model only had AUX→VERB retagging. The official UDPipe model uses the unmodified UD 2.5 treebank with no augmentation.
+
+| Model | Sent | Tok | UPOS | Lemma | UAS | LAS |
+|---|---:|---:|---:|---:|---:|---:|
+| **ALSI french_gsd-remix_3** (current) | **97.51** | **98.92** | **96.65** | **97.38** | **88.96** | **86.35** |
+| ALSI french_gsd-remix_2 | 96.66 | 98.79 | 95.74 | 93.46 | 78.88 | 75.36 |
+| UDPipe 1 official (french-gsd-ud-2.5) | 93.59 | 98.71 | 95.45 | 93.68 | 86.56 | 83.22 |
+
+This comparison needs to be taken with a grain of salt as the models have slightly different treebanks and test sets. Test on your own data and judge for yourself. For official udpipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
+
+# Bibliography
 
 Altmann, E. G., Pierrehumbert, J. B., & Motter, A. E. (2009). Beyond word frequency: Bursts, lulls, and scaling in the temporal distributions of words. PLoS ONE, 4(11), e7678. <https://doi.org/10.1371/journal.pone.0007678>
 
-Church, K. W., & Gale, W. A. (1995). Poisson mixtures. Natural Language Engineering, 1(2), 163–190. <https://doi.org/10.1017/S1351324900000139>
+Brants, T., Popat, A. C., Xu, P., Och, F. J., & Dean, J. (2007). Large language models in machine translation. *Proceedings of EMNLP-CoNLL*, 858–867.
 
-Gibson, E. (1998). Linguistic complexity: Locality of syntactic dependencies. Cognition, 68(1), 1–76. <https://doi.org/10.1016/S0010-0277(98)00034-1>
+Church, K. W., & Gale, W. A. (1995). Poisson mixtures. Natural Language Engineering, 1(2), 163–190. <https://doi.org/10.1017/S1351324900000139>
 
 Duran, M., Pagano, A., Rassi, A., & Pardo, T. (2021). On auxiliary verb in Universal Dependencies: Untangling the issue and proposing a systematized annotation strategy. In N. Mazziotta & S. Mille (Eds.), Proceedings of the Sixth International Conference on Dependency Linguistics (Depling, SyntaxFest 2021) (pp. 10–21). Association for Computational Linguistics. <https://aclanthology.org/2021.depling-1.2/>
 
 François, T., Gala, N., Watrin, P., & Fairon, C. (2014, May). FLELex: a graded lexical resource for French foreign learners. In International conference on Language Resources and Evaluation (LREC 2014).
 
-Loignon, G. (2021). ILSA: an automated language complexity analysis tool for French. Mesure et évaluation en éducation, 44, 61-88. <https://doi.org/10.7202/1095682ar>
+Gibson, E. (1998). Linguistic complexity: Locality of syntactic dependencies. Cognition, 68(1), 1–76. <https://doi.org/10.1016/S0010-0277(98)00034-1>
 
-Roze, C., Danlos, L., & Muller, P. (2012). LEXCONN: A French lexicon of discourse connectives. Discours, 10. <https://doi.org/10.4000/discours.8645>
+Grave, E., Bojanowski, P., Gupta, P., Joulin, A., & Mikolov, T. (2018). Learning word vectors for 157 languages. In *Proceedings of the Eleventh International Conference on Language Resources and Evaluation (LREC 2018)*. European Language Resources Association. <https://aclanthology.org/L18-1550/>
+
+Jaeger, T. F. (2010). Redundancy and reduction: Speakers manage syntactic information density. *Cognitive Psychology*, 61(1), 23–62. <https://doi.org/10.1016/j.cogpsych.2010.02.002>
 
 Lété, B., Sprenger-Charolles, L., & Colé, P. (2004). MANULEX: A grade-level lexical database from French elementary school readers. Behavior Research Methods, Instruments, & Computers, 36(1), 156-166.
 
 Liu, H. (2008). Dependency distance as a metric of language comprehension difficulty. Journal of Cognitive Science, 9(2), 159–191. <https://doi.org/10.17791/jcs.2008.9.2.159>
 
+Loignon, G. (2021). ILSA: an automated language complexity analysis tool for French. Mesure et évaluation en éducation, 44, 61-88. <https://doi.org/10.7202/1095682ar>
+
 Lu, X. (2010). Automatic analysis of syntactic complexity in second language writing. International Journal of Corpus Linguistics, 15(4), 474–496. <https://doi.org/10.1075/ijcl.15.4.02lu>
 
-Jaeger, T. F. (2010). Redundancy and reduction: Speakers manage syntactic information density. *Cognitive Psychology*, 61(1), 23–62. <https://doi.org/10.1016/j.cogpsych.2010.02.002>
+Roze, C., Danlos, L., & Muller, P. (2012). LEXCONN: A French lexicon of discourse connectives. Discours, 10. <https://doi.org/10.4000/discours.8645>
+
+Sagot, B. (2010). The Lefff, a freely available and large-coverage morphological and syntactic lexicon for French. In *Proceedings of the Seventh International Conference on Language Resources and Evaluation (LREC 2010)*. European Language Resources Association.
 
 Stanké, B., Le Mené, M., Rezzonico, S., Moreau, A., Dumais, C., Robidoux, J., Dault, C., & Royle, P. (2019). ÉQOL: Une nouvelle base de données québécoise du lexique scolaire du primaire comportant une échelle d’acquisition de l’orthographe lexicale. Corpus, (19). <https://doi.org/10.4000/corpus.3818>
