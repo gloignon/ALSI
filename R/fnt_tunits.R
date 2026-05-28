@@ -1,7 +1,8 @@
 #' Compute T-unit Complexity Features
 #'
-#' Identifies T-unit boundaries in a parsed corpus and returns Hunt (1965) /
-#' Lu (2010) syntactic complexity measures aggregated per document.
+#' Identifies T-unit boundaries in a parsed corpus and returns all 14 measures
+#' from Lu's (2010) L2SCA battery, plus Hunt's (1965) MLT and a coordination
+#' proportion index, aggregated per document.
 #'
 #' A T-unit (minimal terminable unit) is an independent clause together with
 #' all subordinate clauses and non-clausal phrases attached to it. In UD
@@ -20,41 +21,56 @@
 #'   \describe{
 #'     \item{n_tunits}{Total number of T-units in the document.}
 #'     \item{n_sentences}{Total number of orthographic sentences.}
-#'     \item{mlt}{Mean length of T-unit in tokens (Hunt 1965 MLT). PUNCT
-#'       tokens are excluded.}
-#'     \item{t_s}{T-units per sentence (coordination index; Bardovi-Harlig
-#'       1992). Values above 1 indicate sentences with multiple coordinate
-#'       main clauses.}
-#'     \item{prop_coord_sent}{Proportion of sentences containing more than one
-#'       T-unit (i.e. at least one predicate-level coordination).}
-#'     \item{c_t}{Clauses per T-unit (Hunt 1965 C/T): \code{1 + dc_t}. Each
-#'       T-unit contributes one root clause plus any finite dependent clauses
-#'       embedded in it. Always >= 1; increases with subordination depth.}
-#'     \item{dc_t}{Dependent clauses per T-unit (Lu 2010 DC/T). Finite
-#'       subordinate clause heads (\code{ccomp}, \code{advcl}, \code{acl},
-#'       \code{acl:relcl}) per T-unit. Non-finite complements (\code{xcomp})
-#'       are excluded following Lu's definition of DC.}
+#'     \item{mls}{Mean length of sentence in tokens (Lu 2010 MLS). PUNCT
+#'       excluded.}
+#'     \item{mlt}{Mean length of T-unit in tokens (Hunt 1965 / Lu 2010 MLT).
+#'       PUNCT excluded.}
+#'     \item{mlc}{Mean length of clause in tokens (Lu 2010 MLC). Total tokens
+#'       divided by total clauses (T-units + dependent clauses). PUNCT
+#'       excluded.}
+#'     \item{c_s}{Clauses per sentence (Lu 2010 C/S).}
+#'     \item{t_s}{T-units per sentence (Lu 2010 T/S; coordination index,
+#'       Bardovi-Harlig 1992). Values above 1 indicate sentences with multiple
+#'       coordinate main clauses.}
+#'     \item{c_t}{Clauses per T-unit (Hunt 1965 / Lu 2010 C/T): always >= 1;
+#'       increases with subordination depth within each T-unit.}
+#'     \item{dc_c}{Dependent clauses per clause (Lu 2010 DC/C). Finite
+#'       subordinate clauses (\code{ccomp}, \code{advcl}, \code{acl},
+#'       \code{acl:relcl}) divided by total clauses.}
+#'     \item{dc_t}{Dependent clauses per T-unit (Lu 2010 DC/T). Same DC
+#'       definition; denominator is T-units rather than clauses.}
 #'     \item{ct_t}{Complex T-unit ratio (Lu 2010 CT/T). Proportion of T-units
 #'       that contain at least one dependent clause. Ranges from 0 to 1.}
 #'     \item{vp_t}{Verb phrases per T-unit (Lu 2010 VP/T). Total VERB and AUX
-#'       tokens divided by total T-units. Captures both finite and non-finite
-#'       predication within each T-unit.}
+#'       tokens divided by total T-units.}
 #'     \item{cp_t}{Coordinate phrases per T-unit (Lu 2010 CP/T). \code{conj}
-#'       arcs whose head is a NOUN, ADJ, or ADV (phrasal coordination, not
-#'       clausal). Distinguishes within-T-unit phrase-level coordination from
-#'       the predicate-level coordination counted in \code{t_s}.}
-#'     \item{cn_t}{Complex nominals per T-unit (Lu 2010 CN/T, type i). NOUN
-#'       tokens that have at least one substantive modifier child (\code{amod},
-#'       \code{nmod}, \code{acl}, \code{acl:relcl}, \code{nummod},
-#'       \code{appos}, \code{compound}). A proxy for nominal elaboration.}
+#'       arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination,
+#'       not clausal).}
+#'     \item{cp_c}{Coordinate phrases per clause (Lu 2010 CP/C). Same CP
+#'       definition; denominator is total clauses.}
+#'     \item{cn_t}{Complex nominals per T-unit (Lu 2010 CN/T). NOUN tokens
+#'       with at least one substantive modifier child. Uses the same relation
+#'       set as \code{add_complex_nominal_flag()} in \code{fnt_extra_syntax.R}.}
+#'     \item{cn_c}{Complex nominals per clause (Lu 2010 CN/C). Same CN
+#'       definition; denominator is total clauses.}
+#'     \item{prop_coord_sent}{Proportion of sentences containing more than one
+#'       T-unit. Not part of Lu's battery; added by ALSI.}
 #'   }
 #'
 #' @details
+#'   \strong{Clause count}: total clauses = T-units + dependent clauses.
+#'   Each T-unit contributes one root (independent) clause; each DC adds one
+#'   subordinate clause. This gives \code{c_t = 1 + dc_t} always.
+#'
 #'   \strong{T-unit boundary rule}: starting from the sentence root, follow
 #'   \code{conj} arcs transitively (BFS). Every node in this conj-reachable
 #'   set whose UPOS is \code{VERB}, \code{AUX}, or \code{ADJ} with a
 #'   \code{cop} child marks the head of a new T-unit. The root itself always
 #'   anchors the first T-unit, so \code{n_tunits >= n_sentences}.
+#'
+#'   \strong{Dependent clause (DC)}: finite subordinate clause heads with
+#'   dep_rel in \code{ccomp}, \code{advcl}, \code{acl}, \code{acl:relcl}.
+#'   Non-finite \code{xcomp} is excluded following Lu's (2010) definition.
 #'
 #'   \strong{Limitations}: the heuristic cannot distinguish shared-subject
 #'   coordination from non-shared-subject coordination based on UD structure
@@ -63,7 +79,7 @@
 #'   is excluded because the conj head is not a predicate.
 #'
 #'   \strong{Token length}: only tokens where \code{compte == TRUE} are
-#'   counted toward MLT, which excludes punctuation.
+#'   counted toward MLS, MLT, and MLC, which excludes punctuation.
 #'
 #' @references
 #'   Hunt, K. W. (1965). \emph{Grammatical structures written at three grade
@@ -135,10 +151,10 @@ tunit_features <- function(dt) {
   cp_head_upos <- c("NOUN", "PROPN", "ADJ", "ADV")
 
   dt_sent_vocab <- dt_corpus[compte == TRUE, .(
-    n_vp   = sum(upos %in% c("VERB", "AUX")),
-    n_dc   = sum(dep_rel %in% dc_rels),
-    n_cp   = sum(dep_rel == "conj" & upos[match(head_token_id, token_id)] %in% cp_head_upos,
-                 na.rm = TRUE)
+    n_vp = sum(upos %in% c("VERB", "AUX")),
+    n_dc = sum(dep_rel %in% dc_rels),
+    n_cp = sum(dep_rel == "conj" & upos[match(head_token_id, token_id)] %in% cp_head_upos,
+               na.rm = TRUE)
   ), by = sent_keys]
 
   # Complex nominals: delegate to the shared helper in fnt_extra_syntax.R
@@ -147,27 +163,42 @@ tunit_features <- function(dt) {
                            .(n_cn = sum(is_complex_nominal, na.rm = TRUE)),
                            by = sent_keys]
 
-  dt_sent <- merge(dt_sent_tu,   dt_sent_len,   by = sent_keys, all.x = TRUE)
-  dt_sent <- merge(dt_sent,      dt_sent_vocab, by = sent_keys, all.x = TRUE)
-  dt_sent <- merge(dt_sent,      dt_sent_cn,    by = sent_keys, all.x = TRUE)
+  dt_sent <- merge(dt_sent_tu,  dt_sent_len,   by = sent_keys, all.x = TRUE)
+  dt_sent <- merge(dt_sent,     dt_sent_vocab, by = sent_keys, all.x = TRUE)
+  dt_sent <- merge(dt_sent,     dt_sent_cn,    by = sent_keys, all.x = TRUE)
 
   for (col in c("n_tokens", "n_vp", "n_dc", "n_cp", "n_cn")) {
     dt_sent[is.na(get(col)), (col) := 0L]
   }
 
-  result <- dt_sent[, .(
-    n_tunits        = sum(n_tunits),
-    n_sentences     = .N,
-    mlt             = sum(n_tokens) / sum(n_tunits),
-    t_s             = mean(n_tunits),
-    prop_coord_sent = mean(n_tunits > 1L),
-    c_t             = 1 + sum(n_dc) / sum(n_tunits),
-    dc_t            = sum(n_dc)  / sum(n_tunits),
-    ct_t            = sum(n_dc > 0L) / sum(n_tunits),
-    vp_t            = sum(n_vp)  / sum(n_tunits),
-    cp_t            = sum(n_cp)  / sum(n_tunits),
-    cn_t            = sum(n_cn)  / sum(n_tunits)
-  ), by = "doc_id"]
+  result <- dt_sent[, {
+    tot_tu      <- sum(n_tunits)
+    tot_dc      <- sum(n_dc)
+    tot_clauses <- tot_tu + tot_dc   # clauses = T-units + dependent clauses
+    tot_tokens  <- sum(n_tokens)
+    n_sents     <- .N
+    .(
+      n_tunits        = tot_tu,
+      n_sentences     = n_sents,
+      # Lu (2010) 14 measures
+      mls             = tot_tokens  / n_sents,
+      mlt             = tot_tokens  / tot_tu,
+      mlc             = tot_tokens  / tot_clauses,
+      c_s             = tot_clauses / n_sents,
+      t_s             = tot_tu      / n_sents,
+      c_t             = tot_clauses / tot_tu,
+      dc_c            = tot_dc      / tot_clauses,
+      dc_t            = tot_dc      / tot_tu,
+      ct_t            = sum(n_dc > 0L) / tot_tu,
+      vp_t            = sum(n_vp)  / tot_tu,
+      cp_t            = sum(n_cp)  / tot_tu,
+      cp_c            = sum(n_cp)  / tot_clauses,
+      cn_t            = sum(n_cn)  / tot_tu,
+      cn_c            = sum(n_cn)  / tot_clauses,
+      # ALSI addition
+      prop_coord_sent = mean(n_tunits > 1L)
+    )
+  }, by = "doc_id"]
 
   return(as.data.frame(result))
 }
