@@ -13,10 +13,16 @@ aggregation.R
 __pycache__/
 /.claude/
 /experiments/
-/scrapers/
-/docs/papers/
+/docs/
 ._*
+/tests/
 
+# Training pipeline — lives in its own git repo
+training/
+/training/*
 
+# Large transformer weights (users fetch from HuggingFace)
+/models/trankit_fr_v1/xlm-roberta-base/models--xlm-roberta-base/blobs/
+/models/trankit_fr_v1/xlm-roberta-base/models--xlm-roberta-base/snapshots/*/model.safetensors
 
 

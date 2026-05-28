@@ -83,7 +83,7 @@ print(dt_single[, .(sentence_id, token, lemma, upos, dep_rel, head_token_id)])
 # 3) Full corpus: parse and tag ----
 #
 # This reads every .txt in corpus_dir, parses it, and post-processes.
-# On a laptop with 4 cores and ~100 documents this takes a few minutes.
+# On a laptop with 4 cores and ~400 documents (200 Vikidia/Wikipedia pairs) this takes a few minutes.
 #
 # For encoding issues (Latin-1, Windows-1252), see demos/demo_corpus_read.R
 

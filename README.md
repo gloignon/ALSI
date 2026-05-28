@@ -49,15 +49,17 @@ ALSI uses a Universal Dependency based model, with a custom model of the French 
 
 ## Model benchmarks
 
-The newer v3 "remixed" French model was trained on French-GSD (UD 2.16) with copular AUX→VERB retagging, erroneous training data filtering (e.g. lemmatization errors in the treebank), data augmentation ("silver" label sentences targeting weak areas of our previous model), fastText embeddings (Grave et al., 2018), and Lefff UPOS dictionary (Sagot, 2010). The older v2 model only had AUX→VERB retagging. The official UDPipe model uses the unmodified UD 2.5 treebank with no augmentation.
+The ALSI French models are trained on French-GSD (UD 2.16) with copular AUX→VERB retagging, erroneous training data filtering (e.g. lemmatization errors in the treebank), data augmentation ("silver" label sentences targeting weak areas of our previous model), fastText embeddings (Grave et al., 2018), and Lefff UPOS dictionary (Sagot, 2010). Three backends are available: UDPipe (fast, no GPU required), spaCy (CNN-based, best sentence segmentation), and Trankit (XLM-RoBERTa transformer, highest accuracy). All metrics are end-to-end from raw text on the French-GSD UD 2.16 test set.
 
 | Model | Sent | Tok | UPOS | Lemma | UAS | LAS |
 |---|---:|---:|---:|---:|---:|---:|
-| **ALSI french_gsd-remix_3** (current) | **97.51** | **98.92** | **96.65** | **97.38** | **88.96** | **86.35** |
-| ALSI french_gsd-remix_2 | 96.66 | 98.79 | 95.74 | 93.46 | 78.88 | 75.36 |
+| **ALSI Trankit v1** (XLM-RoBERTa) | 99.6 | — | 98.32 | 97.01 | 94.68 | 92.19 |
+| **ALSI spaCy v1** (CNN tok2vec) | 99.64 | — | 95.64 | 93.99 | 90.52 | 85.94 |
+| **ALSI french_gsd-remix_3** (UDPipe) | 95.27 | 98.83 | 96.31 | 97.21 | 87.80 | 84.75 |
 | UDPipe 1 official (french-gsd-ud-2.5) | 93.59 | 98.71 | 95.45 | 93.68 | 86.56 | 83.22 |
 
-This comparison needs to be taken with a grain of salt as the models have slightly different treebanks and test sets. Test on your own data and judge for yourself. For official udpipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
+
+All ALSI models use the same custom AUX→VERB tagging convention for copular être. Test on your own data and judge for yourself. For official UDPipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
 
 # Bibliography
 

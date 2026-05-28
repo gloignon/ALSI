@@ -52,6 +52,39 @@
 #'   TODO: add a \code{clause_rels} parameter so callers can supply a
 #'   language-specific profile (e.g. drop \code{xcomp} for English, keep
 #'   \code{acl:relcl} for French).
+
+# UD relations that make a NOUN head a "complex nominal" (Lu 2010).
+# Marked (EN) fire mainly on English parses; (FR) on French; unmarked on both.
+#   amod       — adjectival modifier               (both)
+#   nmod       — nominal post-modifier / PP        (both)
+#   nmod:poss  — possessive "X's N"                (EN; French uses det "son/ma")
+#   acl        — adnominal clause                  (both)
+#   acl:relcl  — relative clause                   (both)
+#   nummod     — numeral modifier                  (both)
+#   appos      — apposition                        (both)
+#   compound   — noun compound "guard dog"         (EN; rare in French UD)
+#   det:nummod — numeral determiner                (EN/FR depending on model)
+.cn_child_rels <- c("amod", "nmod", "nmod:poss", "acl", "acl:relcl",
+                    "nummod", "appos", "compound", "det:nummod")
+
+# Add is_complex_nominal column to a parsed data.table (modifies in place).
+# A NOUN token qualifies when at least one of its children has a relation in
+# .cn_child_rels. Bare nouns with only det/case/punct dependents are excluded.
+add_complex_nominal_flag <- function(dt_corpus) {
+  dt_child_flags <- dt_corpus[, .(
+    has_cn_child = any(dep_rel %in% .cn_child_rels)
+  ), by = .(doc_id, paragraph_id, sentence_id, head_token_id)]
+
+  if ("has_cn_child" %in% names(dt_corpus)) dt_corpus[, has_cn_child := NULL]
+  dt_corpus <- merge(dt_corpus, dt_child_flags,
+                     by.x = c("doc_id", "paragraph_id", "sentence_id", "token_id"),
+                     by.y = c("doc_id", "paragraph_id", "sentence_id", "head_token_id"),
+                     all.x = TRUE)
+  dt_corpus[is.na(has_cn_child), has_cn_child := FALSE]
+  dt_corpus[, is_complex_nominal := upos == "NOUN" & has_cn_child]
+  return(dt_corpus)
+}
+
 extra_syntactic_features <- function(dt) {
   dt_corpus <- setDT(copy(dt))
 
@@ -75,47 +108,18 @@ extra_syntactic_features <- function(dt) {
                                                      "csubj:pass", "acl:relcl")]
 
   # --- Complex nominals and verbs (Lu 2010) --------------------------------
-  # For each token, inspect the dep_rels of its *children* to decide whether
-  # it qualifies as a CN or CV — rather than checking merely whether it has
-  # any dependent at all.
+  dt_corpus <- add_complex_nominal_flag(dt_corpus)
 
-  # Relations that make a NOUN head "complex" (pre- and post-nominal modifiers).
-  # Coverage: relations marked (EN) fire mainly on English parses; relations
-  # marked (FR) fire mainly on French parses; unmarked fire on both.
-  #   amod        — adjectival modifier         (both)
-  #   nmod        — nominal post-modifier / PP  (both)
-  #   nmod:poss   — possessive "X's N"          (EN; French uses det "son/ma")
-  #   acl         — adnominal clause            (both)
-  #   acl:relcl   — relative clause             (both; French GSD treebank uses this)
-  #   nummod      — numeral modifier            (both)
-  #   appos       — apposition                  (both)
-  #   compound    — noun compound "guard dog"   (EN; rare in French UD)
-  #   det:nummod  — numeral determiner          (EN/FR depending on model)
-  # Language-specific relations that don't appear in a given treebank are
-  # simply never matched and cause no harm.
-  cn_child_rels <- c("amod", "nmod", "nmod:poss", "acl", "acl:relcl",
-                     "nummod", "appos", "compound", "det:nummod")
-  # Relations that make a VERB head "complex" (auxiliaries).
-  # aux and aux:pass are used consistently across English and French UD models.
   cv_child_rels <- c("aux", "aux:pass")
-
-  dt_child_flags <- dt_corpus[, .(
-    has_cn_child = any(dep_rel %in% cn_child_rels),
-    has_cv_child = any(dep_rel %in% cv_child_rels)
-  ), by = .(doc_id, paragraph_id, sentence_id, head_token_id)]
-
-  for (col in c("has_cn_child", "has_cv_child")) {
-    if (col %in% names(dt_corpus)) dt_corpus[, (col) := NULL]
-  }
-  dt_corpus <- merge(dt_corpus, dt_child_flags,
+  dt_cv_flags <- dt_corpus[, .(has_cv_child = any(dep_rel %in% cv_child_rels)),
+                             by = .(doc_id, paragraph_id, sentence_id, head_token_id)]
+  if ("has_cv_child" %in% names(dt_corpus)) dt_corpus[, has_cv_child := NULL]
+  dt_corpus <- merge(dt_corpus, dt_cv_flags,
                      by.x = c("doc_id", "paragraph_id", "sentence_id", "token_id"),
                      by.y = c("doc_id", "paragraph_id", "sentence_id", "head_token_id"),
                      all.x = TRUE)
-  dt_corpus[is.na(has_cn_child), has_cn_child := FALSE]
   dt_corpus[is.na(has_cv_child), has_cv_child := FALSE]
-
-  dt_corpus[, is_complex_nominal := upos == "NOUN" & has_cn_child]
-  dt_corpus[, is_complex_verb    := upos == "VERB" & has_cv_child]
+  dt_corpus[, is_complex_verb := upos == "VERB" & has_cv_child]
   
   
   sum_extra_syn_features <- dt_corpus |>

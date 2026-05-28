@@ -4,6 +4,7 @@ library(tidyverse)
 library(utf8)
 library(udpipe)
 
+
 #' Build a Corpus from Text Files
 #'
 #' Reads text files from a directory or a single file path and returns a
@@ -186,14 +187,60 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
 #'
 #' @param txt Either a data.frame with columns \code{doc_id} and \code{text},
 #'   or a character vector of texts.
+#' @param backend One of \code{"udpipe"} (default), \code{"spacy"}, or
+#'   \code{"trankit"}. The trankit backend requires Python and will download
+#'   XLM-RoBERTa base (~1.1 GB) on first use.
 #' @param ud_model Path to a UDPipe \code{.udpipe} model file.
-#' @param n_cores Number of parallel workers (1 = sequential).
+#'   Ignored when \code{backend != "udpipe"}.
+#' @param trankit_model Path to the Trankit model directory (the folder
+#'   containing \code{xlm-roberta-base/}). Ignored when
+#'   \code{backend != "trankit"}.
+#' @param trankit_category Category name used when training the Trankit model.
+#'   Default \code{"customized-mwt"}.
+#' @param trankit_gpu Logical; use GPU for Trankit inference. Default FALSE.
+#' @param n_cores Number of parallel workers (1 = sequential, udpipe only).
 #' @param chunk_size Number of documents per chunk when parallelising.
 #' @param show_progress Logical; if TRUE, shows a progress bar or messages.
 #' @param future_plan Optional \pkg{future} plan. If NULL, uses the current
 #'   plan or falls back to sequential.
 #' @returns A \code{data.table} in CoNLL-U format (one row per token).
-parse_text <- function(txt, ud_model = "models/french_gsd-remix_3.udpipe", n_cores = 1, chunk_size = 10, show_progress = TRUE, future_plan = NULL, parser = "default", reparse_copulas = TRUE) {
+parse_text <- function(txt,
+                       backend          = c("udpipe", "spacy", "trankit"),
+                       ud_model         = "models/french_gsd-remix_3.udpipe",
+                       spacy_model      = "models/spacy_fr_gsd_alsi_v1",
+                       trankit_model    = NULL,
+                       trankit_category = "customized-mwt",
+                       trankit_gpu      = FALSE,
+                       n_cores          = 1,
+                       chunk_size       = 10,
+                       show_progress    = TRUE,
+                       future_plan      = NULL,
+                       parser           = "default",
+                       reparse_copulas  = TRUE) {
+
+  backend <- match.arg(backend)
+
+  if (backend == "trankit") {
+    return(.parse_text_trankit(
+      txt              = txt,
+      trankit_model    = trankit_model,
+      trankit_category = trankit_category,
+      trankit_gpu      = trankit_gpu,
+      show_progress    = show_progress,
+      chunk_size       = chunk_size
+    ))
+  }
+
+  if (backend == "spacy") {
+    return(.parse_text_spacy(
+      txt           = txt,
+      spacy_model   = spacy_model,
+      show_progress = show_progress,
+      chunk_size    = chunk_size
+    ))
+  }
+
+  # ── UDPipe backend (original implementation) ─────────────────────────────────
 
   # Check if the model file exists
   if (!file.exists(ud_model)) {
@@ -205,10 +252,23 @@ parse_text <- function(txt, ud_model = "models/french_gsd-remix_3.udpipe", n_cor
       if (!all(c("doc_id", "text") %in% names(x))) {
         stop("parse_text | data.frame must contain columns: doc_id, text")
       }
-      return(as.data.table(x[, c("doc_id", "text")]))
+      dt <- as.data.table(x[, c("doc_id", "text")])
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
     }
     if (is.character(x)) {
-      return(data.table(doc_id = paste0("doc_", seq_along(x)), text = x))
+      ids <- if (!is.null(names(x))) names(x) else paste0("doc_", seq_along(x))
+      dt  <- data.table(doc_id = ids, text = unname(x))
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
     }
     stop("parse_text | txt must be a data.frame with doc_id/text or a character vector")
   }
@@ -330,6 +390,206 @@ parse_text <- function(txt, ud_model = "models/french_gsd-remix_3.udpipe", n_cor
   }
 
   result
+}
+
+# ── spaCy backend ─────────────────────────────────────────────────────────────
+
+.parse_text_spacy <- function(txt, spacy_model, show_progress, chunk_size = 50L) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
+  }
+
+  reticulate::py_require(c("spacy>=3.8.14,<3.9.0", "click"))
+
+  reticulate::source_python(
+    system.file("py/spacy_backend.py", package = "ALSI", mustWork = FALSE) |>
+      (\(p) if (nzchar(p)) p else here::here("py/spacy_backend.py"))()
+  )
+
+  normalize_input <- function(x) {
+    if (is.data.frame(x)) {
+      if (!all(c("doc_id", "text") %in% names(x)))
+        stop("parse_text | data.frame must contain columns: doc_id, text")
+      dt <- as.data.table(x[, c("doc_id", "text")])
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
+    }
+    if (is.character(x)) {
+      ids <- if (!is.null(names(x))) names(x) else paste0("doc_", seq_along(x))
+      dt  <- data.table(doc_id = ids, text = unname(x))
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
+    }
+    stop("parse_text | txt must be a data.frame with doc_id/text or a character vector")
+  }
+
+  txt_dt <- normalize_input(txt)
+
+  if (!dir.exists(spacy_model)) {
+    stop("parse_text | spaCy model not found at: ", spacy_model,
+         "\nPlace the model folder under models/ or pass spacy_model = <path>.")
+  }
+
+  n <- nrow(txt_dt)
+  if (show_progress)
+    message("parse_text (spacy) | ", n, " text(s) to process")
+
+  chunks <- split(seq_len(n), ceiling(seq_len(n) / chunk_size))
+  pb <- if (show_progress && n > 1L)
+    utils::txtProgressBar(min = 0, max = n, style = 3)
+  else
+    NULL
+  on.exit(if (!is.null(pb)) close(pb), add = TRUE)
+
+  rows <- vector("list", length(chunks))
+  for (i in seq_along(chunks)) {
+    idx <- chunks[[i]]
+    rows[[i]] <- reticulate::py$spacy_parse_texts(
+      texts      = as.list(txt_dt$text[idx]),
+      doc_ids    = as.list(txt_dt$doc_id[idx]),
+      model_path = spacy_model
+    )
+    if (!is.null(pb)) utils::setTxtProgressBar(pb, idx[length(idx)])
+  }
+  rows <- unlist(rows, recursive = FALSE)
+
+  if (length(rows) == 0L) return(data.table())
+
+  dt <- data.table::rbindlist(lapply(rows, as.list), use.names = TRUE, fill = TRUE)
+
+  dt[, token_id      := as.integer(token_id)]
+  dt[, head_token_id := as.integer(head_token_id)]
+  dt[, feats         := ifelse(feats == "NA", NA_character_, feats)]
+  dt[, paragraph_id  := 1L]
+  dt[, term_id       := .I]
+
+  data.table::setcolorder(dt, intersect(
+    c("doc_id", "paragraph_id", "sentence_id", "term_id",
+      "token_id", "token", "lemma", "upos", "xpos", "feats",
+      "head_token_id", "dep_rel"),
+    names(dt)
+  ))
+
+  return(dt)
+}
+
+# ── Trankit backend ────────────────────────────────────────────────────────────
+
+.trankit_ensure_model <- function(model_dir) {
+  default <- "models/trankit_fr_v1"
+  path <- if (!is.null(model_dir)) model_dir else default
+  if (!dir.exists(path)) {
+    stop(
+      "parse_text | Trankit model not found at: ", path, "\n",
+      "Place the trankit_fr_v1 folder under models/ or pass trankit_model = <path>."
+    )
+  }
+  path
+}
+
+.parse_text_trankit <- function(txt, trankit_model, trankit_category,
+                                trankit_gpu, show_progress,
+                                chunk_size = 50L) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
+  }
+
+  # trankit requires Python 3.10 — pin the interpreter before py_require()
+  # so reticulate doesn't default to a newer system Python.
+  reticulate::py_require(
+    packages    = c("trankit==1.1.2", "adapters==1.0.0",
+                    "transformers>=4.40,<4.44", "huggingface_hub<0.26",
+                    "numpy<2"),
+    python_version = "3.10"
+  )
+
+  reticulate::source_python(
+    system.file("py/trankit_backend.py", package = "ALSI", mustWork = FALSE) |>
+      (\(p) if (nzchar(p)) p else here::here("py/trankit_backend.py"))()
+  )
+
+  normalize_input <- function(x) {
+    if (is.data.frame(x)) {
+      if (!all(c("doc_id", "text") %in% names(x)))
+        stop("parse_text | data.frame must contain columns: doc_id, text")
+      dt <- as.data.table(x[, c("doc_id", "text")])
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
+    }
+    if (is.character(x)) {
+      ids <- if (!is.null(names(x))) names(x) else paste0("doc_", seq_along(x))
+      dt  <- data.table(doc_id = ids, text = unname(x))
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
+    }
+    stop("parse_text | txt must be a data.frame with doc_id/text or a character vector")
+  }
+
+  txt_dt    <- normalize_input(txt)
+  model_dir <- .trankit_ensure_model(trankit_model)
+  n         <- nrow(txt_dt)
+
+  # Warm up the model before the progress bar so loading messages appear first.
+  reticulate::py$trankit_load(model_dir, trankit_category, trankit_gpu)
+
+  if (show_progress)
+    message("parse_text (trankit) | ", n, " text(s) to process")
+
+  chunks <- split(seq_len(n), ceiling(seq_len(n) / chunk_size))
+  pb <- if (show_progress && n > 1L)
+    utils::txtProgressBar(min = 0, max = n, style = 3)
+  else
+    NULL
+  on.exit(if (!is.null(pb)) close(pb), add = TRUE)
+
+  rows <- vector("list", length(chunks))
+  for (i in seq_along(chunks)) {
+    idx <- chunks[[i]]
+    rows[[i]] <- reticulate::py$trankit_parse_texts(
+      texts     = as.list(txt_dt$text[idx]),
+      doc_ids   = as.list(txt_dt$doc_id[idx]),
+      model_dir = model_dir,
+      category  = trankit_category,
+      gpu       = trankit_gpu
+    )
+    if (!is.null(pb)) utils::setTxtProgressBar(pb, idx[length(idx)])
+  }
+  rows <- unlist(rows, recursive = FALSE)
+
+  if (length(rows) == 0L) return(data.table())
+
+  dt <- data.table::rbindlist(lapply(rows, as.list), use.names = TRUE, fill = TRUE)
+
+  dt[, token_id      := as.integer(token_id)]
+  dt[, head_token_id := as.integer(head_token_id)]
+  dt[, feats         := ifelse(feats == "NA", NA_character_, feats)]
+  dt[, paragraph_id  := 1L]
+  dt[, term_id       := .I]
+
+  data.table::setcolorder(dt, intersect(
+    c("doc_id", "paragraph_id", "sentence_id", "term_id",
+      "token_id", "token", "lemma", "upos", "xpos", "feats",
+      "head_token_id", "dep_rel"),
+    names(dt)
+  ))
+
+  return(dt)
 }
 
 #' Reparse Sentences Containing Copular Être
@@ -529,10 +789,23 @@ segment_sentences_syntok <- function(txt,
       if (!all(c("doc_id", "text") %in% names(x))) {
         stop("segment_sentences_syntok | data.frame must have columns: doc_id, text")
       }
-      return(as.data.table(x[, c("doc_id", "text")]))
+      dt <- as.data.table(x[, c("doc_id", "text")])
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
     }
     if (is.character(x)) {
-      return(data.table(doc_id = paste0("doc_", seq_along(x)), text = x))
+      ids <- if (!is.null(names(x))) names(x) else paste0("doc_", seq_along(x))
+      dt  <- data.table(doc_id = ids, text = unname(x))
+      dups <- dt$doc_id[duplicated(dt$doc_id)]
+      if (length(dups) > 0)
+        stop("parse_text | duplicate doc_id values: ",
+             paste(unique(dups), collapse = ", "),
+             "\nEach document must have a unique doc_id.")
+      return(dt)
     }
     stop("segment_sentences_syntok | txt must be a data.frame with doc_id/text or a character vector")
   }
