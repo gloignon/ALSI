@@ -53,13 +53,13 @@ The ALSI French models are trained on French-GSD (UD 2.16) with copular AUX→VE
 
 | Model | Sent | Tok | UPOS | Lemma | UAS | LAS |
 |---|---:|---:|---:|---:|---:|---:|
-| **ALSI Trankit v1** (XLM-RoBERTa) | 99.6 | — | 98.32 | 97.01 | 94.68 | 92.19 |
+| **ALSI Trankit v1** (XLM-RoBERTa) | 100 | 96.29 | 98.32 | 97.01 | 94.68 | 92.19 |
 | **ALSI spaCy v1** (CNN tok2vec) | 99.64 | — | 95.64 | 93.99 | 90.52 | 85.94 |
 | **ALSI french_gsd-remix_3** (UDPipe) | 95.27 | 98.83 | 96.31 | 97.21 | 87.80 | 84.75 |
 | UDPipe 1 official (french-gsd-ud-2.5) | 93.59 | 98.71 | 95.45 | 93.68 | 86.56 | 83.22 |
 
 
-All ALSI models use the same custom AUX→VERB tagging convention for copular être. Test on your own data and judge for yourself. For official UDPipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
+All ALSI French models use the same custom AUX→VERB tagging convention for copular être. Test on your own data and judge for yourself. For official UDPipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
 
 # Bibliography
 
