@@ -27,9 +27,9 @@
 #'       main clauses.}
 #'     \item{prop_coord_sent}{Proportion of sentences containing more than one
 #'       T-unit (i.e. at least one predicate-level coordination).}
-#'     \item{c_t}{Clauses per T-unit (Hunt 1965 C/T). Total clauses (root
-#'       clause + all finite dependent clauses) divided by total T-units.
-#'       Measures subordination depth within each T-unit.}
+#'     \item{c_t}{Clauses per T-unit (Hunt 1965 C/T): \code{1 + dc_t}. Each
+#'       T-unit contributes one root clause plus any finite dependent clauses
+#'       embedded in it. Always >= 1; increases with subordination depth.}
 #'     \item{dc_t}{Dependent clauses per T-unit (Lu 2010 DC/T). Finite
 #'       subordinate clause heads (\code{ccomp}, \code{advcl}, \code{acl},
 #'       \code{acl:relcl}) per T-unit. Non-finite complements (\code{xcomp})
@@ -161,7 +161,7 @@ tunit_features <- function(dt) {
     mlt             = sum(n_tokens) / sum(n_tunits),
     t_s             = mean(n_tunits),
     prop_coord_sent = mean(n_tunits > 1L),
-    c_t             = (sum(n_dc) + .N) / sum(n_tunits),
+    c_t             = 1 + sum(n_dc) / sum(n_tunits),
     dc_t            = sum(n_dc)  / sum(n_tunits),
     ct_t            = sum(n_dc > 0L) / sum(n_tunits),
     vp_t            = sum(n_vp)  / sum(n_tunits),

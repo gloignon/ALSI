@@ -3,6 +3,7 @@
 Scope: features produced by the current pipeline in `R/main.R`.
 
 Scripts covered:
+- `R/fnt_tunits.R`
 - `R/fnt_counters.R`
 - `R/fnt_lexical.R`
 - `R/fnt_burstiness.R`
@@ -393,6 +394,32 @@ in the lexicon — the feature set is dynamic. All raw counts are also provided 
 
 See `demos/demo_mwe_matching.R` for a worked example with LEXCONN on Vikidia/Wikipedia
 and ALECTOR corpora.
+
+## 20) `features$tunits`
+Produced in: `R/fnt_tunits.R` (`tunit_features`)
+
+Operationalized following Hunt (1965) and Lu (2010). T-unit boundaries are detected
+from UD dependency parses: the sentence root anchors the first T-unit; each predicate
+(VERB, AUX, or ADJ-with-cop) reachable from the root via a chain of `conj` arcs
+starts an additional T-unit. Complex nominal detection reuses `add_complex_nominal_flag()`
+from `fnt_extra_syntax.R`, ensuring identical operationalization across feature sets.
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `n_tunits` | `R/fnt_tunits.R` | Total T-units in the document. | document |
+| `n_sentences` | `R/fnt_tunits.R` | Total orthographic sentences. | document |
+| `mlt` | `R/fnt_tunits.R` | Mean Length of T-unit in tokens, PUNCT excluded (Hunt 1965 MLT). | document |
+| `t_s` | `R/fnt_tunits.R` | T-units per sentence — coordination index (Bardovi-Harlig 1992). Values > 1 indicate sentences with multiple coordinated main clauses. | document |
+| `prop_coord_sent` | `R/fnt_tunits.R` | Proportion of sentences containing more than one T-unit. | document |
+| `c_t` | `R/fnt_tunits.R` | Clauses per T-unit (Hunt 1965 C/T): (n\_sentences + n\_dependent\_clauses) / n\_tunits. Measures subordination depth within each T-unit. | document |
+| `dc_t` | `R/fnt_tunits.R` | Dependent clauses per T-unit (Lu 2010 DC/T). Finite subordinate clause heads (`ccomp`, `advcl`, `acl`, `acl:relcl`) per T-unit. Non-finite `xcomp` excluded per Lu's DC definition. | document |
+| `ct_t` | `R/fnt_tunits.R` | Complex T-unit ratio (Lu 2010 CT/T): proportion of T-units containing ≥ 1 dependent clause. | document |
+| `vp_t` | `R/fnt_tunits.R` | Verb phrases per T-unit (Lu 2010 VP/T): total VERB + AUX tokens / n\_tunits. | document |
+| `cp_t` | `R/fnt_tunits.R` | Coordinate phrases per T-unit (Lu 2010 CP/T): `conj` arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination within a T-unit, not clausal). | document |
+| `cn_t` | `R/fnt_tunits.R` | Complex nominals per T-unit (Lu 2010 CN/T, type i): NOUN tokens with ≥ 1 substantive modifier child. Uses same relation set as `complex_nom_per_sent` in `fnt_extra_syntax.R`. | document |
+
+References: Hunt (1965) NCTE Research Report No. 3; Lu (2010) *IJCL* 15(4);
+Bardovi-Harlig (1992) *TESOL Quarterly* 26(2).
 
 ## Maintenance notes
 - If `n_sent_context` changes in `simple_lexical_cohesion`, overlap feature names change accordingly (`...prevK`).
