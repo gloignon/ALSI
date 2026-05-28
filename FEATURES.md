@@ -408,15 +408,21 @@ from `fnt_extra_syntax.R`, ensuring identical operationalization across feature 
 |---|---|---|---|
 | `n_tunits` | `R/fnt_tunits.R` | Total T-units in the document. | document |
 | `n_sentences` | `R/fnt_tunits.R` | Total orthographic sentences. | document |
-| `mlt` | `R/fnt_tunits.R` | Mean Length of T-unit in tokens, PUNCT excluded (Hunt 1965 MLT). | document |
-| `t_s` | `R/fnt_tunits.R` | T-units per sentence — coordination index (Bardovi-Harlig 1992). Values > 1 indicate sentences with multiple coordinated main clauses. | document |
-| `prop_coord_sent` | `R/fnt_tunits.R` | Proportion of sentences containing more than one T-unit. | document |
-| `c_t` | `R/fnt_tunits.R` | Clauses per T-unit (Hunt 1965 C/T): (n\_sentences + n\_dependent\_clauses) / n\_tunits. Measures subordination depth within each T-unit. | document |
-| `dc_t` | `R/fnt_tunits.R` | Dependent clauses per T-unit (Lu 2010 DC/T). Finite subordinate clause heads (`ccomp`, `advcl`, `acl`, `acl:relcl`) per T-unit. Non-finite `xcomp` excluded per Lu's DC definition. | document |
+| `mls` | `R/fnt_tunits.R` | Mean Length of Sentence in tokens, PUNCT excluded (Lu 2010 MLS). | document |
+| `mlt` | `R/fnt_tunits.R` | Mean Length of T-unit in tokens, PUNCT excluded (Hunt 1965 / Lu 2010 MLT). | document |
+| `mlc` | `R/fnt_tunits.R` | Mean Length of Clause in tokens, PUNCT excluded (Lu 2010 MLC). Denominator = T-units + dependent clauses. | document |
+| `c_s` | `R/fnt_tunits.R` | Clauses per sentence (Lu 2010 C/S). | document |
+| `t_s` | `R/fnt_tunits.R` | T-units per sentence — coordination index (Lu 2010 T/S; Bardovi-Harlig 1992). Values > 1 indicate sentences with multiple coordinated main clauses. | document |
+| `c_t` | `R/fnt_tunits.R` | Clauses per T-unit (Hunt 1965 / Lu 2010 C/T). Always ≥ 1; increases with subordination depth. | document |
+| `dc_c` | `R/fnt_tunits.R` | Dependent clauses per clause (Lu 2010 DC/C). Finite subordinate heads (`ccomp`, `advcl`, `acl`, `acl:relcl`) / total clauses. | document |
+| `dc_t` | `R/fnt_tunits.R` | Dependent clauses per T-unit (Lu 2010 DC/T). Same DC definition; denominator is T-units. | document |
 | `ct_t` | `R/fnt_tunits.R` | Complex T-unit ratio (Lu 2010 CT/T): proportion of T-units containing ≥ 1 dependent clause. | document |
 | `vp_t` | `R/fnt_tunits.R` | Verb phrases per T-unit (Lu 2010 VP/T): total VERB + AUX tokens / n\_tunits. | document |
 | `cp_t` | `R/fnt_tunits.R` | Coordinate phrases per T-unit (Lu 2010 CP/T): `conj` arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination within a T-unit, not clausal). | document |
-| `cn_t` | `R/fnt_tunits.R` | Complex nominals per T-unit (Lu 2010 CN/T, type i): NOUN tokens with ≥ 1 substantive modifier child. Uses same relation set as `complex_nom_per_sent` in `fnt_extra_syntax.R`. | document |
+| `cp_c` | `R/fnt_tunits.R` | Coordinate phrases per clause (Lu 2010 CP/C). Same CP definition; denominator is total clauses. | document |
+| `cn_t` | `R/fnt_tunits.R` | Complex nominals per T-unit (Lu 2010 CN/T): NOUN tokens with ≥ 1 substantive modifier child. Uses same relation set as `add_complex_nominal_flag()` in `fnt_extra_syntax.R`. | document |
+| `cn_c` | `R/fnt_tunits.R` | Complex nominals per clause (Lu 2010 CN/C). Same CN definition; denominator is total clauses. | document |
+| `prop_coord_sent` | `R/fnt_tunits.R` | Proportion of sentences containing more than one T-unit (ALSI addition). | document |
 
 References: Hunt (1965) NCTE Research Report No. 3; Lu (2010) *IJCL* 15(4);
 Bardovi-Harlig (1992) *TESOL Quarterly* 26(2).

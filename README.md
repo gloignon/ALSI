@@ -29,6 +29,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Lexical diversity** — TTR, Maas, MATTR, and Simpson's D, computed on full vocabulary, content words, and verbs separately.
 - **Dependency / syntactic complexity** — dependency depth, branching factor, head distance, Gibson (1998) DLT integration cost, and head-final/head-initial ratios.
 - **Clausal complexity** — clausal density, mean clause length, complex nominals, and complex verbs, operationalized from Universal Dependency relations following Lu (2010); mean dependency distance following Liu (2008).
+- **T-unit complexity** — the full Lu (2010) 14-measure battery, plus Hunt's (1965) MLT and a coordination-sentence proportion index (Bardovi-Harlig, 1992).
 - **Lexical cohesion** — token and lemma overlap across sentence windows, argument overlap, and cosine similarity between adjacent sentences.
 - **Semantic embeddings and coherence** — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
 - **POS surprisal** — token-, sentence-, and document-level surprisal and entropy from a UPOS trigram model. Includes Stupid Backoff (Brants et al. 2007) for unseen trigrams, optional sentence-boundary padding, and SD of surprisal as a Uniform Information Density proxy (Jaeger 2010).
@@ -65,6 +66,8 @@ All ALSI French models use the same custom AUX→VERB tagging convention for cop
 
 Altmann, E. G., Pierrehumbert, J. B., & Motter, A. E. (2009). Beyond word frequency: Bursts, lulls, and scaling in the temporal distributions of words. PLoS ONE, 4(11), e7678. <https://doi.org/10.1371/journal.pone.0007678>
 
+Bardovi-Harlig, K. (1992). A second look at T-unit analysis. *TESOL Quarterly*, *26*(2), 390–395. <https://doi.org/10.2307/3587016>
+
 Brants, T., Popat, A. C., Xu, P., Och, F. J., & Dean, J. (2007). Large language models in machine translation. *Proceedings of EMNLP-CoNLL*, 858–867.
 
 Church, K. W., & Gale, W. A. (1995). Poisson mixtures. Natural Language Engineering, 1(2), 163–190. <https://doi.org/10.1017/S1351324900000139>
@@ -76,6 +79,8 @@ François, T., Gala, N., Watrin, P., & Fairon, C. (2014, May). FLELex: a graded 
 Gibson, E. (1998). Linguistic complexity: Locality of syntactic dependencies. Cognition, 68(1), 1–76. <https://doi.org/10.1016/S0010-0277(98)00034-1>
 
 Grave, E., Bojanowski, P., Gupta, P., Joulin, A., & Mikolov, T. (2018). Learning word vectors for 157 languages. In *Proceedings of the Eleventh International Conference on Language Resources and Evaluation (LREC 2018)*. European Language Resources Association. <https://aclanthology.org/L18-1550/>
+
+Hunt, K. W. (1965). *Grammatical structures written at three grade levels* (NCTE Research Report No. 3). National Council of Teachers of English.
 
 Jaeger, T. F. (2010). Redundancy and reduction: Speakers manage syntactic information density. *Cognitive Psychology*, 61(1), 23–62. <https://doi.org/10.1016/j.cogpsych.2010.02.002>
 

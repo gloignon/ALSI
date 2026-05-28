@@ -171,15 +171,22 @@ print(dt_tu)
 # adults (complex). We expect Wikipedia documents to have higher MLT.
 
 dt_tu_grp <- dt_tu |>
-  mutate(source = if_else(str_starts(doc_id, "viki"), "Vikidia", "Wikipedia"))
+  mutate(source = factor(
+    if_else(str_starts(doc_id, "viki"), "Vikidia", "Wikipedia"),
+    levels = c("Vikidia", "Wikipedia")
+  ))
 
 dt_summary <- dt_tu_grp |>
   group_by(source) |>
   summarise(
     mean_mlt  = mean(mlt,  na.rm = TRUE),
+    mean_mlc  = mean(mlc,  na.rm = TRUE),
     mean_t_s  = mean(t_s,  na.rm = TRUE),
     mean_c_t  = mean(c_t,  na.rm = TRUE),
     mean_dc_t = mean(dc_t, na.rm = TRUE),
+    mean_ct_t = mean(ct_t, na.rm = TRUE),
+    mean_vp_t = mean(vp_t, na.rm = TRUE),
+    mean_cn_t = mean(cn_t, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -216,7 +223,10 @@ message("ALECTOR: ", nrow(dt_alector), " tokens, ",
 
 dt_tu_alector <- tunit_features(dt_alector) |>
   mutate(
-    version = if_else(grepl("_source", doc_id), "original", "simplified"),
+    version = factor(
+      if_else(grepl("_source", doc_id), "original", "simplified"),
+      levels = c("simplified", "original")
+    ),
     pair_id = sub("^(\\d+)_.*", "\\1", doc_id)
   )
 
@@ -224,9 +234,13 @@ dt_summary_alector <- dt_tu_alector |>
   group_by(version) |>
   summarise(
     mean_mlt  = mean(mlt,  na.rm = TRUE),
+    mean_mlc  = mean(mlc,  na.rm = TRUE),
     mean_t_s  = mean(t_s,  na.rm = TRUE),
     mean_c_t  = mean(c_t,  na.rm = TRUE),
     mean_dc_t = mean(dc_t, na.rm = TRUE),
+    mean_ct_t = mean(ct_t, na.rm = TRUE),
+    mean_vp_t = mean(vp_t, na.rm = TRUE),
+    mean_cn_t = mean(cn_t, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -236,44 +250,45 @@ print(dt_summary_alector)
 
 # 8) Visualisation ----
 
+# Column renaming: full Lu (2010) 14-measure battery + prop_coord_sent.
+# We rename to human-readable labels for the plot facets.
+lu_renames <- c(
+  "MLS (tokens/sentence)"       = "mls",
+  "MLT (tokens/T-unit)"         = "mlt",
+  "MLC (tokens/clause)"         = "mlc",
+  "C/S (clauses/sentence)"      = "c_s",
+  "T/S (T-units/sentence)"      = "t_s",
+  "C/T (clauses/T-unit)"        = "c_t",
+  "DC/C (dep. clauses/clause)"  = "dc_c",
+  "DC/T (dep. clauses/T-unit)"  = "dc_t",
+  "CT/T (complex T-unit ratio)" = "ct_t",
+  "VP/T (verb phrases/T-unit)"  = "vp_t",
+  "CP/T (coord. phrases/T-unit)"= "cp_t",
+  "CP/C (coord. phrases/clause)"= "cp_c",
+  "CN/T (complex noms/T-unit)"  = "cn_t",
+  "CN/C (complex noms/clause)"  = "cn_c",
+  "% coord. sentences"          = "prop_coord_sent"
+)
+lu_labels <- names(lu_renames)
+
 # Vikidia vs Wikipedia (unpaired — different articles, not matched)
 dt_tu_grp |>
-  rename(
-    "MLT (tokens/T-unit)" = mlt,
-    "C/T (clauses/T-unit)" = c_t,
-    "DC/T (dep. clauses/T-unit)" = dc_t,
-    "CT/T (complex T-unit ratio)" = ct_t,
-    "VP/T (verb phrases/T-unit)" = vp_t,
-    "CP/T (coord. phrases/T-unit)" = cp_t,
-    "CN/T (complex nominals/T-unit)" = cn_t
-  ) |>
+  rename(all_of(lu_renames)) |>
   plot_faceted_boxplot(
     source,
-    c("MLT (tokens/T-unit)", "C/T (clauses/T-unit)", "DC/T (dep. clauses/T-unit)",
-      "CT/T (complex T-unit ratio)", "VP/T (verb phrases/T-unit)",
-      "CP/T (coord. phrases/T-unit)", "CN/T (complex nominals/T-unit)"),
+    lu_labels,
     title = "T-unit features: Vikidia vs Wikipedia",
     y_lab = NULL
   ) |> print()
 
 # ALECTOR original vs simplified (paired by text)
 dt_tu_alector |>
-  rename(
-    "MLT (tokens/T-unit)" = mlt,
-    "C/T (clauses/T-unit)" = c_t,
-    "DC/T (dep. clauses/T-unit)" = dc_t,
-    "CT/T (complex T-unit ratio)" = ct_t,
-    "VP/T (verb phrases/T-unit)" = vp_t,
-    "CP/T (coord. phrases/T-unit)" = cp_t,
-    "CN/T (complex nominals/T-unit)" = cn_t
-  ) |>
+  rename(all_of(lu_renames)) |>
   plot_faceted_boxplot(
     version,
-    c("MLT (tokens/T-unit)", "C/T (clauses/T-unit)", "DC/T (dep. clauses/T-unit)",
-      "CT/T (complex T-unit ratio)", "VP/T (verb phrases/T-unit)",
-      "CP/T (coord. phrases/T-unit)", "CN/T (complex nominals/T-unit)"),
-    title  = "T-unit features: ALECTOR original vs simplified",
-    y_lab  = NULL,
+    lu_labels,
+    title    = "T-unit features: ALECTOR original vs simplified",
+    y_lab    = NULL,
     paired   = TRUE,
     pair_col = "pair_id"
   ) |> print()
