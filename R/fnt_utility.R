@@ -71,10 +71,11 @@ split_sentences <- function(text) {
 #'   Must have exactly two levels.
 #' @param feature_cols A \code{<tidy-select>} expression for the feature columns
 #'   to plot (e.g. \code{ends_with("_per100w")} or \code{c(feat_a, feat_b)}).
+#'   If \code{NULL} (default), all numeric columns except \code{group_col} and
+#'   \code{pair_col} are used.
 #' @param title Plot title passed to \code{labs()}.
 #' @param x_lab,y_lab Axis labels (default \code{NULL} suppresses the label).
-#' @param ncol Number of columns in \code{facet_wrap()} (default \code{NULL}
-#'   lets ggplot choose).
+#' @param ncol Number of columns in \code{facet_wrap()} (default \code{3}).
 #' @param notch Logical; whether to draw notched boxplots (default \code{FALSE}).
 #' @param show_d Logical; whether to annotate each facet with Cohen's \emph{d}
 #'   (default \code{TRUE}).
@@ -89,11 +90,11 @@ split_sentences <- function(text) {
 #' @returns A \code{ggplot} object.
 plot_faceted_boxplot <- function(df,
                                  group_col,
-                                 feature_cols,
+                                 feature_cols = NULL,
                                  title    = NULL,
                                  x_lab    = NULL,
                                  y_lab    = "Value",
-                                 ncol     = NULL,
+                                 ncol     = 3,
                                  notch    = FALSE,
                                  show_d   = TRUE,
                                  d_size   = 2.8,
@@ -101,13 +102,25 @@ plot_faceted_boxplot <- function(df,
                                  pair_col = NULL) {
   group_col <- rlang::ensym(group_col)
 
+  exclude_cols <- c(as.character(group_col), pair_col)
+  if (is.null(feature_cols)) {
+    feat_names <- df |>
+      select(-any_of(exclude_cols)) |>
+      select(where(is.numeric)) |>
+      names()
+  } else {
+    feat_names <- df |>
+      select({{ feature_cols }}) |>
+      names()
+  }
+
   if (paired && is.null(pair_col)) {
     stop("`pair_col` must be supplied when `paired = TRUE`.")
   }
 
   df_long <- df |>
-    select(!!group_col, {{ feature_cols }}, any_of(as.character(pair_col))) |>
-    pivot_longer({{ feature_cols }}, names_to = "feature", values_to = "value") |>
+    select(!!group_col, any_of(feat_names), any_of(as.character(pair_col))) |>
+    pivot_longer(any_of(feat_names), names_to = "feature", values_to = "value") |>
     mutate(group = as.factor(!!group_col))
 
   p <- ggplot(df_long, aes(x = group, y = value, fill = group)) +
@@ -227,4 +240,110 @@ read_sentences <- function(path, doc_id) {
   tibble::tibble(doc_id = doc_id,
                  sentence_id = seq_along(sents),
                  sentence = sents)
+}
+
+
+#' Cohen's kappa for two binary raters
+#'
+#' General-purpose intercoder reliability for any long-format coding table with
+#' a grouping variable (e.g. code category). Commonly used to validate
+#' LLM-assigned codes against a human gold standard; see also
+#' \code{\link{code_corpus}} in \file{fnt_qualitative_coding.R}.
+#'
+#' @param dt_rater1 \code{data.table} with columns \code{item_id},
+#'   \code{group} (e.g. code name), and \code{applies} (logical or 0/1).
+#' @param dt_rater2 \code{data.table} with the same columns, representing the
+#'   second rater (e.g. human gold standard).
+#' @param item_col  Name of the item identifier column (default \code{"passage_id"}).
+#' @param group_col Name of the grouping column (default \code{"code"}).
+#' @param value_col Name of the binary rating column (default \code{"applies"}).
+#' @returns A \code{data.table} with columns \code{group}, \code{kappa},
+#'   \code{p_observed}, and \code{n}, sorted by descending kappa.
+compute_kappa <- function(dt_rater1, dt_rater2,
+                          item_col  = "passage_id",
+                          group_col = "code",
+                          value_col = "applies") {
+  r1 <- data.table::copy(data.table::as.data.table(dt_rater1))
+  r2 <- data.table::copy(data.table::as.data.table(dt_rater2))
+
+  data.table::setnames(r1, c(item_col, group_col, value_col), c("item", "group", "r1"))
+  data.table::setnames(r2, c(item_col, group_col, value_col), c("item", "group", "r2"))
+
+  merged <- data.table::merge.data.table(
+    r1[!is.na(r1), .(item, group, r1 = as.integer(r1))],
+    r2[!is.na(r2), .(item, group, r2 = as.integer(r2))],
+    by = c("item", "group")
+  )
+
+  result <- merged[
+    , {
+        n   <- .N
+        p_o <- sum(r1 == r2) / n
+        p_e <- (sum(r1) / n) * (sum(r2) / n) +
+               (sum(!r1) / n) * (sum(!r2) / n)
+        k   <- if (p_e == 1) NA_real_ else (p_o - p_e) / (1 - p_e)
+        .(kappa = k, p_observed = p_o, n = n)
+      },
+    by = group
+  ]
+
+  data.table::setnames(result, "group", group_col)
+  return(result[order(-kappa)])
+}
+
+
+#' Stratified k-fold cross-validation
+#'
+#' Assigns documents to folds (stratified by \code{strata_col} so each fold
+#' contains a proportional mix of groups), then calls \code{fit_fn} and
+#' \code{predict_fn} on each train/test split and returns the pooled
+#' out-of-fold predictions.
+#'
+#' @param df A data frame with one row per document.
+#' @param strata_col Name of the column to stratify on (character).
+#' @param k Number of folds (default 5).
+#' @param fit_fn A function \code{function(train_df)} that returns a fitted
+#'   model object.
+#' @param predict_fn A function \code{function(model, test_df)} that returns
+#'   a vector of predictions, one per row of \code{test_df}.
+#' @param seed Integer random seed for reproducibility (default 42).
+#' @returns A tibble with one row per document containing \code{.row_id}
+#'   (original row index), \code{.fold}, and \code{.pred} (the out-of-fold
+#'   prediction).
+cv_predict <- function(df, strata_col, k = 5L,
+                       fit_fn, predict_fn, seed = 42L) {
+  set.seed(seed)
+  df <- df |>
+    dplyr::mutate(.row_id = dplyr::row_number()) |>
+    dplyr::group_by(.data[[strata_col]]) |>
+    dplyr::mutate(.fold = sample(rep(seq_len(k), length.out = dplyr::n()))) |>
+    dplyr::ungroup()
+
+  purrr::map_dfr(seq_len(k), function(fold_k) {
+    train <- dplyr::filter(df, .fold != fold_k)
+    test  <- dplyr::filter(df, .fold == fold_k)
+    model <- fit_fn(train)
+    preds <- predict_fn(model, test)
+    tibble::tibble(.row_id = test$.row_id, .fold = fold_k, .pred = preds)
+  })
+}
+
+
+#' Quadratic Weighted Kappa
+#'
+#' Computes QWK between two integer vectors of ordinal ratings. Disagreements
+#' are penalised quadratically: being off by 2 levels costs four times as much
+#' as being off by 1. Used in automated essay scoring to evaluate how well a
+#' predicted ordering matches human-assigned levels.
+#'
+#' @param true Integer vector of true labels in \code{[1, n_levels]}.
+#' @param pred Integer vector of predicted labels in \code{[1, n_levels]}.
+#' @param n_levels Number of ordinal levels (default 5).
+#' @returns A single numeric value in \code{(-Inf, 1]}.
+qwk <- function(true, pred, n_levels = 5L) {
+  wt    <- outer(seq_len(n_levels), seq_len(n_levels),
+                 function(i, j) (i - j)^2 / (n_levels - 1)^2)
+  tab_o <- table(factor(true, seq_len(n_levels)), factor(pred, seq_len(n_levels)))
+  tab_e <- outer(rowSums(tab_o), colSums(tab_o)) / sum(tab_o)
+  return(1 - sum(wt * tab_o) / sum(wt * tab_e))
 }
