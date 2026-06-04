@@ -42,11 +42,13 @@ ALSI extracts many types of features ([see the full feature list](https://github
 
 `build_corpus()` reads UTF-8 by default, but also supports Latin-1 (`encoding = "latin1"`) and Windows-1252 (`encoding = "windows-1252"`). Use `encoding = "auto"` to let the function detect each file's encoding automatically — if a directory contains files with different encodings, they will all be read correctly and you will get a warning listing what was found. See `demos/demo_corpus_read.R` for examples.
 
-## Parser/tagger
+## Parser/taggers
 
-ALSI uses a Universal Dependency based model, with a custom model of the French language by default. Our French model was trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). It will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
+By default, ALSI uses a Universal Dependency based model, with a custom model of the French language. spaCy and trankit are also available. Our custom French models are trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). They will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
 -    ALSI/ISLA custom model: "Le (DET) chat (NOUN) est (VERB) gris (ADJ). Il (PRON) est (AUX) parti (VERB)." The copula "est" is tagged as VERB. The auxiliary "est" in the second sentence is also correctly tagged as AUX.
--    UDPipe model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
+-    Official model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
+
+Note that you can swap our models with the official ones or with your own. This enables to use the toolkit for English, for which most features will work natively.
 
 ## Model benchmarks
 
