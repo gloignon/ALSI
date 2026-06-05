@@ -2,7 +2,7 @@
 
 ILSA: Integrated Lexico-Syntactic Analyzer
 
-Produces classic readability features, more advanced psycholinguistic features, and LLM-based features.
+Produces classic readability features, more advanced psycholinguistic features, and LLM-based features such as surprisal, entropy and embeddings.
 
 This is a complete re-write of the pipeline described Loignon (2021). Please cite the 2021 paper if you use ALSI/ILSA (see bibliography at the end of this page)as no other papers have been published yet presenting this toolkit.
 
