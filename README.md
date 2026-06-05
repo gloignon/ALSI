@@ -64,7 +64,7 @@ Note that you can swap our models with the official ones or with your own. This 
 | **ALSI french_gsd-remix_3** (UDPipe) | 95.27 | 98.83 | 96.31 | 97.21 | 87.80 | 84.75 |
 | UDPipe 1 official (french-gsd-ud-2.5) | 93.59 | 98.71 | 95.45 | 93.68 | 86.56 | 83.22 |
 
-All metrics are end-to-end from raw text on the French-GSD UD 2.16 test set. Test on your own data and judge for yourself. For official UDPipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
+All metrics are end-to-end from raw text on a slighlty corrected French-GSD UD 2.16 test set (sentences with clear lemmatization or sentence tokenization errors were removed from train, dev and test set). Test on your own data and judge for yourself. For official UDPipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
 
 # Bibliography
 
