@@ -55,8 +55,7 @@ By default, ALSI uses a Universal Dependency based model, with a custom model of
 
 Note that you can swap our models with the official ones or with your own. This enables to use the toolkit for English, for which most features will work natively.
 
-## Model benchmarks
-
+## French model benchmarks
 
 | Model | Sent | Tok | UPOS | Lemma | UAS | LAS |
 |---|---:|---:|---:|---:|---:|---:|
