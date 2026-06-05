@@ -29,7 +29,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Lexical diversity** — TTR, Maas, MATTR, and Simpson's D, computed on full vocabulary, content words, and verbs separately.
 - **Dependency / syntactic complexity** — dependency depth, branching factor, head distance, Gibson (1998) DLT integration cost, and head-final/head-initial ratios.
 - **Clausal complexity** — clausal density, mean clause length, complex nominals, and complex verbs, operationalized from Universal Dependency relations following Lu (2010); mean dependency distance following Liu (2008).
-- **T-unit complexity** — the full Lu (2010) 14-measure battery, plus Hunt's (1965) MLT and a coordination-sentence proportion index (Bardovi-Harlig, 1992).
+- **T-unit complexity** — the full Lu (2010) 14-measure battery, plus Hunt's (1965) MLT and a coordination-sentence proportion index (Bardovi-Harlig, 1992). Note that this is based on dependency parsing, not s-bar plots.
 - **Lexical cohesion** — token and lemma overlap across sentence windows, argument overlap, and cosine similarity between adjacent sentences.
 - **Semantic embeddings and coherence** — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
 - **POS surprisal** — token-, sentence-, and document-level surprisal and entropy from a UPOS trigram model. Includes Stupid Backoff (Brants et al. 2007) for unseen trigrams, optional sentence-boundary padding, and SD of surprisal as a Uniform Information Density proxy (Jaeger 2010).
