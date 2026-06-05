@@ -6,19 +6,8 @@ Produces classic readability features, more advanced psycholinguistic features, 
 
 This is a complete re-write of the pipeline described Loignon (2021). Please cite the 2021 paper if you use ALSI/ILSA (see bibliography at the end of this page)as no other papers have been published yet presenting this toolkit.
 
-Included French lexical frequency databases:
-
--   Manulex (Lété et al, 2004)
-
--   ÉQOL (Stanké et al, 2019)
-
--   flelex (François et al., 2014)
-
--   Quebec's Ministry of education vocabulary list. We also include the yet unpublished frequencies, scraped from the Franqus (USITO) website: <https://franqus.ca/liste_orthographique/outil_de_recherche/>
-
--   LexConn (Roze, Danlos & Muller, 2012) — a lexicon of French discourse connectives used for multi-word expression matching.
-
-Please cite the relevant papers if you use the lexical databases included in the ALSI/ILSA tool.
+[LTRC conference 2026 attendees? The presentation on surprisal is right here](
+https://github.com/gloignon/ALSI/blob/main/Loignon%20LTRC2026%20Surprisal%20%20v2.pdf)
 
 ## Many features, for real
 
@@ -37,6 +26,22 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Word burstiness** — Weibull β scores (Altmann, Pierrehumbert & Motter, 2009) and negative-binomial adaptation scores (Church & Gale, 1995) measuring how clustered each word's occurrences are across documents.
 - **Multi-word expression (MWE) matching** — density features for any user-supplied MWE lexicon, broken down by relation group and category. Demonstrated with LEXCONN (Roze, Danlos & Muller, 2012), a French discourse-connective lexicon.
 - **Ollama LLM querying** — general-purpose row-by-row querying of a locally-run LLM (via [Ollama](https://ollama.com/)) for annotation, classification, paraphrase, or any templated task.
+- **Lexical database features** (see below)
+
+## Included French lexical frequency databases:
+
+-   Manulex (Lété et al, 2004)
+
+-   ÉQOL (Stanké et al, 2019)
+
+-   flelex (François et al., 2014)
+
+-   Quebec's Ministry of education vocabulary list. We also include the yet unpublished frequencies, scraped from the Franqus (USITO) website: <https://franqus.ca/liste_orthographique/outil_de_recherche/>
+
+-   LexConn (Roze, Danlos & Muller, 2012) — a lexicon of French discourse connectives used for multi-word expression matching.
+
+Please cite the relevant papers if you use the lexical databases included in the ALSI/ILSA tool.
+
 
 ## Encoding support
 
@@ -52,7 +57,6 @@ Note that you can swap our models with the official ones or with your own. This 
 
 ## Model benchmarks
 
-The ALSI French models are trained on French-GSD (UD 2.16) with copular AUX→VERB retagging, erroneous training data filtering (e.g. lemmatization errors in the treebank), data augmentation ("silver" label sentences targeting weak areas of our previous model), fastText embeddings (Grave et al., 2018), and Lefff UPOS dictionary (Sagot, 2010). Three backends are available: UDPipe (fast, no GPU required), spaCy (CNN-based, best sentence segmentation), and Trankit (XLM-RoBERTa transformer, highest accuracy). All metrics are end-to-end from raw text on the French-GSD UD 2.16 test set.
 
 | Model | Sent | Tok | UPOS | Lemma | UAS | LAS |
 |---|---:|---:|---:|---:|---:|---:|
@@ -61,8 +65,7 @@ The ALSI French models are trained on French-GSD (UD 2.16) with copular AUX→VE
 | **ALSI french_gsd-remix_3** (UDPipe) | 95.27 | 98.83 | 96.31 | 97.21 | 87.80 | 84.75 |
 | UDPipe 1 official (french-gsd-ud-2.5) | 93.59 | 98.71 | 95.45 | 93.68 | 86.56 | 83.22 |
 
-
-All ALSI French models use the same custom AUX→VERB tagging convention for copular être. Test on your own data and judge for yourself. For official UDPipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
+All metrics are end-to-end from raw text on the French-GSD UD 2.16 test set. Test on your own data and judge for yourself. For official UDPipe benchmarks see: https://ufal.mff.cuni.cz/udpipe/1/models
 
 # Bibliography
 
