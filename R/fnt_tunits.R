@@ -95,42 +95,8 @@
 tunit_features <- function(dt) {
   dt_corpus <- setDT(copy(dt))
 
-  # --- Mark predicates: VERB, AUX, or ADJ with a cop child -----------------
-  dt_cop <- dt_corpus[dep_rel == "cop",
-                      .(has_cop = TRUE),
-                      by = .(doc_id, paragraph_id, sentence_id, head_token_id)]
-
-  if ("has_cop" %in% names(dt_corpus)) dt_corpus[, has_cop := NULL]
-  dt_corpus <- merge(
-    dt_corpus, dt_cop,
-    by.x = c("doc_id", "paragraph_id", "sentence_id", "token_id"),
-    by.y = c("doc_id", "paragraph_id", "sentence_id", "head_token_id"),
-    all.x = TRUE
-  )
-  dt_corpus[is.na(has_cop), has_cop := FALSE]
-  dt_corpus[, is_predicate := upos %in% c("VERB", "AUX") | (upos == "ADJ" & has_cop)]
-
-  # --- BFS over conj arcs from root to find T-unit starters ----------------
-  count_tunits_in_sent <- function(token_ids, head_token_ids, dep_rels, is_pred) {
-    root_tok <- token_ids[dep_rels == "root"]
-    if (length(root_tok) == 0L) return(1L)
-    root_tok <- root_tok[[1L]]
-
-    visited  <- root_tok
-    frontier <- root_tok
-    while (length(frontier) > 0L) {
-      conj_mask <- dep_rels == "conj" & head_token_ids %in% frontier
-      children  <- setdiff(token_ids[conj_mask], visited)
-      visited   <- c(visited, children)
-      frontier  <- children
-    }
-
-    non_root_reachable <- visited[visited != root_tok]
-    if (length(non_root_reachable) == 0L) return(1L)
-
-    pred_flags <- is_pred[match(non_root_reachable, token_ids)]
-    return(1L + sum(pred_flags, na.rm = TRUE))
-  }
+  # --- Mark predicates and find T-unit starters (shared with fnt_extra_syntax.R) ---
+  dt_corpus <- add_predicate_flag(dt_corpus)
 
   sent_keys <- c("doc_id", "paragraph_id", "sentence_id")
 
