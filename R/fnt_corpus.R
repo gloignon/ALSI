@@ -392,6 +392,32 @@ parse_text <- function(txt,
   result
 }
 
+# ── Shared Python setup ───────────────────────────────────────────────────────
+#
+# reticulate::py_require() can only set `python_version` (and the package
+# list as a whole) BEFORE Python initializes; once a backend has triggered
+# initialization (e.g. via source_python()), later calls may only `action =
+# "add"` new packages — passing `python_version` again throws, even with an
+# identical value. Since spaCy and Trankit can both run in the same session
+# and Trankit needs Python 3.10, we declare the full combined requirement
+# exactly once, on whichever backend initializes Python first.
+.alsi_py_state <- new.env(parent = emptyenv())
+.alsi_py_state$declared <- FALSE
+
+.alsi_py_require <- function() {
+  if (!isTRUE(.alsi_py_state$declared)) {
+    reticulate::py_require(
+      packages = c("spacy>=3.8.14,<3.9.0", "click",
+                   "trankit==1.1.2", "adapters==1.0.0",
+                   "transformers>=4.40,<4.44", "huggingface_hub<0.26",
+                   "numpy<2", "syntok"),
+      python_version = "3.10"
+    )
+    .alsi_py_state$declared <- TRUE
+  }
+  return(invisible(NULL))
+}
+
 # ── spaCy backend ─────────────────────────────────────────────────────────────
 
 .parse_text_spacy <- function(txt, spacy_model, show_progress, chunk_size = 50L) {
@@ -399,11 +425,7 @@ parse_text <- function(txt,
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
 
-  # Pin to the same Python version as the Trankit backend (see below): once
-  # Python initializes in a session, reticulate cannot change its version, so
-  # running spaCy before Trankit would otherwise lock in a newer interpreter
-  # and make the Trankit py_require() call fail.
-  reticulate::py_require(c("spacy>=3.8.14,<3.9.0", "click"), python_version = "3.10")
+  .alsi_py_require()
 
   reticulate::source_python(
     system.file("py/spacy_backend.py", package = "ALSI", mustWork = FALSE) |>
@@ -506,14 +528,7 @@ parse_text <- function(txt,
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
 
-  # trankit requires Python 3.10 — pin the interpreter before py_require()
-  # so reticulate doesn't default to a newer system Python.
-  reticulate::py_require(
-    packages    = c("trankit==1.1.2", "adapters==1.0.0",
-                    "transformers>=4.40,<4.44", "huggingface_hub<0.26",
-                    "numpy<2"),
-    python_version = "3.10"
-  )
+  .alsi_py_require()
 
   reticulate::source_python(
     system.file("py/trankit_backend.py", package = "ALSI", mustWork = FALSE) |>
@@ -781,7 +796,7 @@ segment_sentences_syntok <- function(txt,
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
-  reticulate::py_require("syntok")
+  .alsi_py_require()
   reticulate::source_python(
     system.file("py/segment_sentences.py", package = "ALSI",
                 mustWork = FALSE) |>

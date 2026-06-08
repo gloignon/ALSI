@@ -107,15 +107,17 @@ plot_faceted_boxplot <- function(df,
                                  pair_col = NULL) {
   group_col <- rlang::ensym(group_col)
 
-  exclude_cols <- c(as.character(group_col), pair_col)
-  if (is.null(feature_cols)) {
+  exclude_cols  <- c(as.character(group_col), pair_col)
+  feature_cols_quo <- rlang::enquo(feature_cols)
+
+  if (rlang::quo_is_null(feature_cols_quo)) {
     feat_names <- df |>
       select(-any_of(exclude_cols)) |>
       select(where(is.numeric)) |>
       names()
   } else {
     feat_names <- df |>
-      select({{ feature_cols }}) |>
+      select(!!feature_cols_quo) |>
       names()
   }
 
