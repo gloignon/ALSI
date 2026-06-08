@@ -44,8 +44,9 @@ udmodel_french <- udpipe_load_model("models/french_gsd-remix_3.udpipe")
 # Helper: parse one sentence and add the 'compte' column the function needs.
 # compte == TRUE marks tokens that count toward length (excludes PUNCT, SYM).
 parse_sentence <- function(text, model) {
-  dt <- udpipe(text, object = model) |> as.data.table()
-  dt[, compte := !upos %in% c("PUNCT", "SYM")]
+  dt <- udpipe(text, object = model) |>
+    as_tibble() |>
+    mutate(compte = !upos %in% c("PUNCT", "SYM"))
   return(dt)
 }
 
@@ -214,9 +215,11 @@ if (file.exists(alector_cache)) {
   saveRDS(dt_alector, alector_cache)
 }
 
-dt_alector[, compte  := !upos %in% c("PUNCT", "SYM")]
-dt_alector[, version := fifelse(grepl("_source", doc_id), "original", "simplified")]
-dt_alector[, pair_id := sub("^(\\d+)_.*", "\\1", doc_id)]
+dt_alector <- dt_alector |> mutate(
+  compte  = !upos %in% c("PUNCT", "SYM"),
+  version = if_else(grepl("_source", doc_id), "original", "simplified"),
+  pair_id = sub("^(\\d+)_.*", "\\1", doc_id)
+)
 
 message("ALECTOR: ", nrow(dt_alector), " tokens, ",
         uniqueN(dt_alector$doc_id), " documents.")

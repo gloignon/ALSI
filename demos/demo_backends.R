@@ -22,9 +22,6 @@
 #   - models/trankit_fr_v1/               — Trankit model
 #   (spaCy and Trankit Python packages are installed automatically on first use)
 #
-#     If you're not careful and you noclip out of reality in the wrong areas, you'll 
-#     end up in the Backends.
-#
 # Last update: 2026-05-27
 #
 library(data.table)
@@ -105,9 +102,9 @@ print(dt_trankit[, .(doc_id, token_id, token, lemma, upos, dep_rel, head_token_i
 # Drop those span rows before joining — the individual sub-tokens follow immediately.
 # spaCy and Trankit never produce MWT rows.
 
-dt_udpipe  <- dt_udpipe [!grepl("-", token_id, fixed = TRUE)]
-dt_udpipe [, token_id := as.integer(token_id)]
-dt_trankit[, token_id := as.integer(token_id)]
+dt_udpipe  <- dt_udpipe |> filter(!grepl("-", token_id, fixed = TRUE))
+dt_udpipe  <- dt_udpipe |> mutate(token_id = as.integer(token_id))
+dt_trankit <- dt_trankit |> mutate(token_id = as.integer(token_id))
 # dt_spacy token_id is already integer, no need to convert.
 
 dt_compare <- merge(
@@ -131,8 +128,10 @@ dt_compare <- merge(
 )
 
 # Flag tokens where any two backends disagree on UPOS or lemma.
-dt_compare[, upos_agree  := (upos_udpipe  == upos_spacy)  & (upos_spacy  == upos_trankit)]
-dt_compare[, lemma_agree := (lemma_udpipe == lemma_spacy) & (lemma_spacy == lemma_trankit)]
+dt_compare <- dt_compare |> mutate(
+  upos_agree  = (upos_udpipe  == upos_spacy)  & (upos_spacy  == upos_trankit),
+  lemma_agree = (lemma_udpipe == lemma_spacy) & (lemma_spacy == lemma_trankit)
+)
 
 print(dt_compare[, .(doc_id, token_id, token,
                      upos_udpipe, upos_spacy, upos_trankit, upos_agree,

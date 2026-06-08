@@ -399,7 +399,11 @@ parse_text <- function(txt,
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
 
-  reticulate::py_require(c("spacy>=3.8.14,<3.9.0", "click"))
+  # Pin to the same Python version as the Trankit backend (see below): once
+  # Python initializes in a session, reticulate cannot change its version, so
+  # running spaCy before Trankit would otherwise lock in a newer interpreter
+  # and make the Trankit py_require() call fail.
+  reticulate::py_require(c("spacy>=3.8.14,<3.9.0", "click"), python_version = "3.10")
 
   reticulate::source_python(
     system.file("py/spacy_backend.py", package = "ALSI", mustWork = FALSE) |>

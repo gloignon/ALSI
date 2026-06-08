@@ -133,7 +133,7 @@ cohesion_effect_sizes <- function(dt_cohesion, dt_corpus, label) {
   non_features <- c("doc_id", "class", "word_count")
   features     <- setdiff(names(dt_cohesion), non_features)
 
-  dt_word_counts <- dt_corpus[compte == TRUE, .(word_count = .N), by = doc_id]
+  dt_word_counts <- dt_corpus |> filter(compte == TRUE) |> group_by(doc_id) |> summarise(word_count = n(), .groups = 'drop')
   dt_cohesion    <- merge(dt_cohesion, dt_word_counts, by = "doc_id")
 
   df_effect_sizes <- data.frame(
