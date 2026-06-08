@@ -88,7 +88,7 @@ if (using_defaults) {
 udmodel <- udpipe_load_model("models/fr_gsd_alsi_20260524_122826.udpipe")
 
 parse_one <- function(text) {
-  setDT(as.data.table(udpipe_annotate(udmodel, x = text)))
+  as_tibble(udpipe_annotate(udmodel, x = text))
 }
 
 # ── 3a. A syntactically predictable sentence ─────────────────────────────────
@@ -148,7 +148,7 @@ print(res_nom$token_surprisal |>
 # 4) Full corpus scoring (on Viki-Wiki) ----
 
 message("Loading parsed corpus...")
-dt_corpus <- readRDS("out/demo_parsed_tagged.Rds") |> as_tibble() |> setDT()
+dt_corpus <- readRDS("out/demo_parsed_tagged.Rds") |> as_tibble()
 
 message("Scoring POS surprisal on full corpus...")
 corpus_res <- pos_surprisal(dt_corpus, pos_model, exclude_pos = EXCLUDE_POS,
