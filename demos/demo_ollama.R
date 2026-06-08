@@ -24,6 +24,15 @@
 #       ollama pull gemma3:4b
 #     (run this once in a terminal — downloads ~3 GB)
 #   - demo_corpus/   — any folder with .txt files; wiki_ prefix docs are used
+#
+#
+# Using a non-Ollama backend (openai protocol)
+#   set OLLAMA_ENDPOINT to your server's address and api to "openai",
+#   and model to the name of the model as defined in your config.
+#   e.g. if your LM Studio is at http://localhost:8080, set:
+#       OLLAMA_ENDPOINT <- "http://localhost:8080"
+#       api = "openai"
+#       model = "gemma3-4b"
 
 
 # 0) Setup ----
@@ -32,6 +41,11 @@ library(data.table)
 
 source("R/fnt_corpus.R",  encoding = "UTF-8")
 source("R/fnt_ollama.R",  encoding = "UTF-8")
+
+# Address (IP/hostname + port) of the Ollama server. Change this if Ollama
+# is running on a nonstandard port or on a different machine than the one
+# running this script.
+OLLAMA_ENDPOINT <- "http://localhost:11434"
 
 
 # 1) Smoke test — verify Ollama is responding ----
@@ -47,7 +61,8 @@ dt_test  <- ollama_generate(
   model                = "gemma3:4b",
   temperature          = 0,
   num_ctx              = 256,
-  force_restart        = TRUE
+  force_restart        = TRUE,
+  endpoint             = OLLAMA_ENDPOINT
 )
 
 message("Smoke test:")
@@ -94,14 +109,15 @@ dt_statements <- ollama_generate(
   temperature          = 0.3,    # a little randomness so statements aren't identical
   num_ctx              = 4096,
   output_file          = "out/demo_ollama_statements.csv",
-  force_restart        = TRUE
+  force_restart        = TRUE,
+  endpoint             = OLLAMA_ENDPOINT
 )
 
 # parse_numbered_list() is defined in R/fnt_ollama.R.
 # It extracts items from a numbered list response into a character vector.
 # do.call(rbind, ...) stacks one vector per document into an n_docs × 4 matrix.
 parsed <- do.call(rbind, purrr::map(dt_statements$ollama_response, parse_numbered_list))
-dt_statements[, paste0("statement_", 1:4) := as.data.table(parsed)]
+for (i in 1:4) dt_statements[[paste0("statement_", i)]] <- parsed[, i]
 
 message("Parsed statements:")
 print(dt_statements[, .(doc_id, statement_1, statement_2, statement_3, statement_4)])
@@ -125,7 +141,8 @@ dt_summ <- ollama_generate(
   temperature          = 0.3,
   num_ctx              = 4096,
   output_file          = "out/demo_ollama_summaries.csv",
-  force_restart        = TRUE
+  force_restart        = TRUE,
+  endpoint             = OLLAMA_ENDPOINT
 )
 
 message("Summaries:")
@@ -154,7 +171,7 @@ dt_eval <- melt(
   value.name    = "statement"
 )[!is.na(statement)]
 
-dt_eval[, statement_num := as.integer(gsub("statement_", "", statement_num))]
+dt_eval <- dt_eval |> mutate(statement_num = as.integer(gsub("statement_", "", statement_num)))
 
 # Join summaries onto the evaluation table.
 dt_eval <- merge(dt_eval, dt_summ[, .(doc_id, summary = ollama_response)], by = "doc_id")
@@ -176,7 +193,8 @@ dt_eval <- ollama_generate(
   temperature = 0.0,   # deterministic for verification tasks
   num_ctx     = 4096,
   output_file = "out/demo_ollama_eval.csv",
-  force_restart = TRUE
+  force_restart = TRUE,
+  endpoint    = OLLAMA_ENDPOINT
 )
 
 
@@ -184,11 +202,13 @@ dt_eval <- ollama_generate(
 
 # Parse VRAI / FAUX from the model response.
 # fcase() is data.table's multi-condition if/else (like dplyr's case_when).
-dt_eval[, verdict := fcase(
-  grepl("VRAI", ollama_response, ignore.case = TRUE), "VRAI",
-  grepl("FAUX", ollama_response, ignore.case = TRUE), "FAUX",
-  default = "UNCLEAR"
-)]
+dt_eval <- dt_eval |> mutate(
+  verdict = case_when(
+    grepl("VRAI", ollama_response, ignore.case = TRUE) ~ "VRAI",
+    grepl("FAUX", ollama_response, ignore.case = TRUE) ~ "FAUX",
+    TRUE ~ "UNCLEAR"
+  )
+)
 
 message("Evaluation results (statements vs summaries):")
 print(dt_eval[, .(doc_id, statement_num, statement, verdict)])

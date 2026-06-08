@@ -1,6 +1,13 @@
 # fnt_ollama.R
-# Query a local Ollama API row-by-row from a data frame.
-# Uses /api/chat with system prompt per request (stateless, no conversation memory).
+# Query a local Ollama (or Ollama-compatible) API row-by-row from a data frame.
+# Uses a chat endpoint with system prompt per request (stateless, no conversation memory).
+#
+# Two API flavours are supported via the `api` argument of ollama_generate():
+#   - "ollama" (default): native Ollama /api/chat, response in $message$content.
+#     Connectivity is checked via /api/version.
+#   - "openai": OpenAI-compatible /v1/chat/completions (e.g. llama.cpp server,
+#     vLLM, LM Studio), response in $choices[[1]]$message$content.
+#     Connectivity is checked via /v1/models.
 
 #' Fill a prompt template with column values from one row (internal)
 #'
@@ -22,30 +29,47 @@
   out
 }
 
-#' Send a single stateless chat request to Ollama (internal)
+#' Send a single stateless chat request to an LLM server (internal)
 #'
-#' Posts a system + user message pair to the Ollama \code{/api/chat} endpoint
-#' and returns the assistant response content.
+#' Posts a system + user message pair to either a native Ollama
+#' \code{/api/chat} endpoint or an OpenAI-compatible \code{/v1/chat/completions}
+#' endpoint, and returns the assistant response content.
 #'
-#' @param model Ollama model name.
+#' @param model Model name.
 #' @param system_prompt System prompt string.
 #' @param user_prompt User prompt string.
 #' @param options Named list of model options (temperature, top_p, num_ctx).
-#' @param endpoint Ollama API base URL.
+#' @param endpoint API base URL.
+#' @param api Either "ollama" (native API) or "openai" (OpenAI-compatible API).
 #' @returns A character string: the model response.
 #' @keywords internal
-.ollama_chat <- function(model, system_prompt, user_prompt, options, endpoint) {
-  body <- list(
-    model    = model,
-    messages = list(
-      list(role = "system",  content = system_prompt),
-      list(role = "user",    content = user_prompt)
-    ),
-    stream  = FALSE,
-    options = options
+.ollama_chat <- function(model, system_prompt, user_prompt, options, endpoint, api = "ollama") {
+  messages <- list(
+    list(role = "system",  content = system_prompt),
+    list(role = "user",    content = user_prompt)
   )
+
+  if (api == "openai") {
+    body <- list(
+      model       = model,
+      messages    = messages,
+      stream      = FALSE,
+      temperature = options$temperature,
+      top_p       = options$top_p
+    )
+    url <- paste0(endpoint, "/v1/chat/completions")
+  } else {
+    body <- list(
+      model    = model,
+      messages = messages,
+      stream   = FALSE,
+      options  = options
+    )
+    url <- paste0(endpoint, "/api/chat")
+  }
+
   res <- httr::POST(
-    paste0(endpoint, "/api/chat"),
+    url,
     body = jsonlite::toJSON(body, auto_unbox = TRUE),
     encode = "raw",
     httr::content_type_json(),
@@ -57,7 +81,11 @@
   }
   parsed <- jsonlite::fromJSON(httr::content(res, as = "text", encoding = "UTF-8"),
                                simplifyVector = FALSE)
-  parsed$message$content
+
+  if (api == "openai") {
+    return(parsed$choices[[1]]$message$content)
+  }
+  return(parsed$message$content)
 }
 
 
@@ -72,7 +100,10 @@
 #' @param num_ctx             Context window in tokens (default 4096).
 #' @param output_file         Path for incremental CSV output (also used for resuming).
 #' @param force_restart       If TRUE, ignore existing output file and start from row 1.
-#' @param endpoint            Ollama API base URL.
+#' @param endpoint            API base URL (Ollama server, or any Ollama-compatible server).
+#' @param api                 Either "ollama" (native Ollama API, default) or "openai"
+#'                            (OpenAI-compatible API, e.g. llama.cpp server, vLLM, LM Studio).
+#'                            Use "openai" when \code{endpoint} is not a real Ollama server.
 #' @returns A data.table: all original columns plus \code{ollama_response}.
 ollama_generate <- function(data,
                             user_prompt_template,
@@ -83,7 +114,10 @@ ollama_generate <- function(data,
                             num_ctx = 4096,
                             output_file = NULL,
                             force_restart = FALSE,
-                            endpoint = "http://localhost:11434") {
+                            endpoint = "http://localhost:11434",
+                            api = c("ollama", "openai")) {
+
+  api <- match.arg(api)
 
   dt <- as.data.table(data)
   n <- nrow(dt)
@@ -122,11 +156,12 @@ ollama_generate <- function(data,
 
   options <- list(temperature = temperature, top_p = top_p, num_ctx = num_ctx)
 
-  # Check connectivity
-  ping <- tryCatch(httr::GET(paste0(endpoint, "/api/version"), httr::timeout(5)),
+  # Check connectivity (probe path differs by API flavour)
+  ping_path <- if (api == "openai") "/v1/models" else "/api/version"
+  ping <- tryCatch(httr::GET(paste0(endpoint, ping_path), httr::timeout(5)),
                    error = function(e) NULL)
   if (is.null(ping) || httr::status_code(ping) != 200) {
-    stop(sprintf("[ollama] Cannot reach Ollama at %s. Is it running?", endpoint))
+    stop(sprintf("[ollama] Cannot reach %s server at %s. Is it running?", api, endpoint))
   }
 
   message(sprintf("[ollama] Querying model '%s' on %d row(s)...", model, n - start_row + 1L))
@@ -140,7 +175,7 @@ ollama_generate <- function(data,
     prompt_i <- .fill_template(user_prompt_template, dt[i])
 
     result <- tryCatch(
-      .ollama_chat(model, system_prompt, prompt_i, options, endpoint),
+      .ollama_chat(model, system_prompt, prompt_i, options, endpoint, api),
       error = function(e) e
     )
 
