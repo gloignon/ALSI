@@ -37,12 +37,15 @@ library(udpipe)
 
 # py_require() automatically installs the listed Python packages if they are
 # not already present. You do not need to manage a virtual environment manually.
+# action = "add" is required (rather than the default "set") because Python
+# may already be initialised by a prior demo in the same R session — the
+# default action is only allowed before initialisation.
 py_require(c(
   "transformers>=4.41,<5",
   "torch",
   "tokenizers",
   "numpy"
-))
+), action = "add")
 
 source("R/fnt_surprisal.R", encoding = "UTF-8")
 source("R/fnt_corpus.R",    encoding = "UTF-8")
@@ -105,7 +108,7 @@ if (file.exists(cache_alector_parsed)) {
     mutate(text = paste(readLines(dest, encoding = "UTF-8", warn = FALSE), collapse = " ")) |>
     ungroup() |>
     select(doc_id, text) |>
-    as.data.table()
+    as_tibble()
 
   message(nrow(dt_alector_txt), " documents loaded")
 

@@ -26,7 +26,7 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
   message(sprintf("Loading %s LLM model '%s' (this may take a while on first run)...", mode, model_name))
-  reticulate::py_require(c("torch", "transformers"))
+  reticulate::py_require(c("torch", "transformers"), action = "add")
   reticulate::source_python("py/llm_scoring.py")
   load_llm_model(
     model_name,
@@ -326,7 +326,7 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
   dt <- data.table::as.data.table(data.table::copy(dt_sentences))
   data.table::setorderv(dt, c("doc_id", "sentence_id"))
 
-  reticulate::py_require(c("torch", "transformers"))
+  reticulate::py_require(c("torch", "transformers"), action = "add")
   reticulate::source_python("py/llm_scoring.py")
   py_state <- tryCatch(get_llm_state(), error = function(e) NULL)
   py_model <- if (!is.null(py_state)) py_state$model_name else NULL
