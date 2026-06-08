@@ -41,8 +41,13 @@
 #'       definition; denominator is T-units rather than clauses.}
 #'     \item{ct_t}{Complex T-unit ratio (Lu 2010 CT/T). Proportion of T-units
 #'       that contain at least one dependent clause. Ranges from 0 to 1.}
-#'     \item{vp_t}{Verb phrases per T-unit (Lu 2010 VP/T). Total VERB and AUX
-#'       tokens divided by total T-units.}
+#'     \item{vp_t}{Verb phrases per T-unit (Lu 2010 VP/T). One verb phrase per
+#'       predicate head — VERB tokens, plus AUX tokens that are not themselves
+#'       \code{aux}/\code{aux:pass} dependents (e.g. copulas, modal heads) —
+#'       divided by total T-units. Auxiliary chains attached via \code{aux}/
+#'       \code{aux:pass} are folded into their governing verb's count, matching
+#'       Lu's VP1 pattern (a periphrastic form like "has been running" is one
+#'       VP, not three).}
 #'     \item{cp_t}{Coordinate phrases per T-unit (Lu 2010 CP/T). \code{conj}
 #'       arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination,
 #'       not clausal).}
@@ -116,8 +121,18 @@ tunit_features <- function(dt) {
   # (phrasal coordination within a T-unit, not clausal T-unit boundaries).
   cp_head_upos <- c("NOUN", "PROPN", "ADJ", "ADV")
 
+  # Verb phrases (Lu VP1: "a VP directly dominated by a clause node"). In a
+  # constituency tree, periphrastic forms ("has been running") nest VPs inside
+  # VPs, so VP1 fires once for the whole auxiliary chain — not once per
+  # auxiliary. The dependency equivalent is one count per predicate head, with
+  # its `aux`/`aux:pass` dependents folded into that same head (mirrors the
+  # has_cv_child grouping used for is_complex_verb in fnt_extra_syntax.R).
+  # Counting raw VERB+AUX tokens would inflate vp_t for every periphrastic
+  # tense, passive, and modal construction.
+  aux_dep_rels <- c("aux", "aux:pass")
+
   dt_sent_vocab <- dt_corpus[compte == TRUE, .(
-    n_vp = sum(upos %in% c("VERB", "AUX")),
+    n_vp = sum(upos == "VERB" | (upos == "AUX" & !dep_rel %in% aux_dep_rels)),
     n_dc = sum(dep_rel %in% dc_rels),
     n_cp = sum(dep_rel == "conj" & upos[match(head_token_id, token_id)] %in% cp_head_upos,
                na.rm = TRUE)

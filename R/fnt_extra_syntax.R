@@ -45,9 +45,14 @@
 #'   \code{appos}, \code{compound}, \code{det:nummod}. Bare nouns with only
 #'   \code{det}/\code{case}/\code{punct} dependents are excluded.
 #'
-#'   \strong{Complex verbs} (CV): a VERB token that has at least one \code{aux}
-#'   or \code{aux:pass} child. This captures modals, passives, and periphrastic
-#'   tenses (perfect, progressive).
+#'   \strong{Complex verbs} (CV): a VERB token that has at least one
+#'   \code{aux}, \code{aux:pass}, \code{aux:tense}, or \code{aux:caus} child.
+#'   This captures passives, periphrastic compound tenses (e.g. French passé
+#'   composé "a mangé"), and causative constructions ("faire chanter"). The
+#'   French GSD model never emits a bare \code{aux}; its periphrastic
+#'   auxiliaries surface via the \code{aux:tense}/\code{aux:caus}/\code{aux:pass}
+#'   subtypes, so all three must be checked alongside \code{aux} for the flag
+#'   to fire on French compound tenses.
 #'
 #'   \strong{Dependency distance}: mean \eqn{|\text{pos(head)} -
 #'   \text{pos(dependent)}|} over non-PUNCT tokens with non-NA features,
@@ -178,7 +183,12 @@ extra_syntactic_features <- function(dt,
   # --- Complex nominals and verbs (Lu 2010) --------------------------------
   dt_corpus <- add_complex_nominal_flag(dt_corpus)
 
-  cv_child_rels <- c("aux", "aux:pass")
+  # The French GSD model never emits a bare "aux" — periphrastic auxiliaries
+  # surface with language-specific subtypes: aux:tense (compound past tenses,
+  # e.g. "a mangé", "est allé" — the bulk of periphrastic forms), aux:pass
+  # (passives), and aux:caus (causative "faire" constructions). Restricting
+  # to c("aux", "aux:pass") silently misses aux:tense/aux:caus entirely.
+  cv_child_rels <- c("aux", "aux:pass", "aux:tense", "aux:caus")
   dt_cv_flags <- dt_corpus[, .(has_cv_child = any(dep_rel %in% cv_child_rels)),
                              by = .(doc_id, paragraph_id, sentence_id, head_token_id)]
   if ("has_cv_child" %in% names(dt_corpus)) dt_corpus[, has_cv_child := NULL]
