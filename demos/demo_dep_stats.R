@@ -103,75 +103,66 @@ print(batch_graph_stats(dt_sentence_long, include_punct_in_metrics = FALSE))  # 
 dt_parsed_corpus <- readRDS("out/demo_parsed_tagged.Rds")
 message("Loaded corpus: ", uniqueN(dt_parsed_corpus$doc_id), " documents")
 
-# Label each document: Vikidia = 1, Wikipedia = 2
-# (doc_id starts with "viki_" for Vikidia documents)
-dt_doc_classes <- unique(data.table(
-  doc_id = dt_parsed_corpus$doc_id,
-  class  = ifelse(grepl("^viki_", dt_parsed_corpus$doc_id), 1L, 2L)
-))
-
 # This call may take a minute on a large corpus.
-dt_heights <- docwise_graph_stats(dt_parsed_corpus)
-dt_heights  <- merge(dt_heights, dt_doc_classes, by = "doc_id")
+# Label each document by source (doc_id starts with "viki_" for Vikidia)
+# and add the average sentence length (total tokens / number of sentences),
+# a potential confounder for syntactic complexity measures.
+dt_heights <- docwise_graph_stats(dt_parsed_corpus) |>
+  as_tibble() |>
+  mutate(
+    source = if_else(str_detect(doc_id, "^viki_"), "Vikidia", "Wikipedia"),
+    doc_sentence_length = n / pmax(s, 1L)
+  )
 
 
 # 4) Effect sizes + sentence-length correlation ----
 #
 # Cohen's d measures how well each feature separates the two groups.
 # d = 0.2 is small, d = 0.5 medium, d = 0.8 large.
-# A negative d here means the feature is lower for Vikidia (class 1) than
-# for Wikipedia (class 2) — i.e., Vikidia is simpler on that metric.
+# A negative d here means the feature is lower for Vikidia than for
+# Wikipedia — i.e., Vikidia is simpler on that metric.
 #
 # We also compute the Pearson correlation with average sentence length,
 # because many syntactic complexity features are confounded by sentence
 # length. A high correlation means the feature mostly tracks length,
 # not true structural complexity.
 
-non_features <- c("doc_id", "n", "s", "total_paths", "class")
+non_features <- c("doc_id", "n", "s", "total_paths", "source",
+                  "doc_sentence_length")
 features <- setdiff(names(dt_heights), non_features)
 
 df_effect_sizes <- data.frame(
   feature = features,
   cohen_d = purrr::map_dbl(features, function(f) {
-    cohen.d(dt_heights[[f]][dt_heights$class == 1],
-            dt_heights[[f]][dt_heights$class == 2])$estimate
+    cohen.d(dt_heights[[f]][dt_heights$source == "Vikidia"],
+            dt_heights[[f]][dt_heights$source == "Wikipedia"])$estimate
+  }),
+  corr_sentence_length = purrr::map_dbl(features, function(f) {
+    cor(dt_heights[[f]], dt_heights$doc_sentence_length, use = "complete.obs")
   })
 )
-
-# Add average sentence length (total tokens / number of sentences) as a
-# potential confounder to check correlation against.
-dt_heights <- dt_heights |>
-  mutate(doc_sentence_length = n / pmax(s, 1L))
-
-df_effect_sizes$corr_sentence_length <- purrr::map_dbl(features, function(f) {
-  cor(dt_heights[[f]], dt_heights$doc_sentence_length, use = "complete.obs")
-})
 
 # Print sorted by absolute effect size — largest effects at the top.
 print(
   df_effect_sizes |>
     arrange(desc(abs(cohen_d))) |>
-    mutate(across(where(is.numeric), ~round(.x, 2)))
+    mutate(across(where(is.numeric), ~ round(.x, 2)))
 )
 
 
 # 5) Faceted boxplots ----
 #
 # Focus on features with at least a medium effect size (|d| > 0.4) to keep
-# the plot readable. Each panel shows one feature; x-axis is class label.
+# the plot readable. plot_faceted_boxplot() facets one panel per feature
+# and annotates each with Cohen's d for the Vikidia vs Wikipedia contrast.
 
-df_heights_long <- dt_heights |>
-  select(doc_id, class, all_of(features)) |>
-  pivot_longer(cols = all_of(features), names_to = "feature", values_to = "value")
+features_to_plot <- df_effect_sizes$feature[abs(df_effect_sizes$cohen_d) > 0.4]
 
-df_heights_long |>
-  filter(feature %in% df_effect_sizes$feature[abs(df_effect_sizes$cohen_d) > 0.4]) |>
-  ggplot(aes(x = factor(class), y = value)) +
-  geom_boxplot(position = position_dodge(width = 0.75)) +
-  facet_wrap(~feature, scales = "free_y") +
-  labs(
-    title = "Distribution of Dependency Features by Class",
-    x     = "Class (1 = Vikidia, 2 = Wikipedia)",
-    y     = "Feature value"
-  ) +
-  theme_minimal()
+dt_heights |>
+  plot_faceted_boxplot(
+    source,
+    all_of(features_to_plot),
+    title = "Distribution of Dependency Features by Source",
+    y_lab = NULL
+  ) |>
+  print()
