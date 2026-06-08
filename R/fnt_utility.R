@@ -73,6 +73,10 @@ split_sentences <- function(text) {
 #'   to plot (e.g. \code{ends_with("_per100w")} or \code{c(feat_a, feat_b)}).
 #'   If \code{NULL} (default), all numeric columns except \code{group_col} and
 #'   \code{pair_col} are used.
+#' @param feature_labels Optional named character vector mapping feature column
+#'   names to human-readable facet titles (e.g.
+#'   \code{c(mean_beta = "Mean β (all)")}). Columns absent from the vector keep
+#'   their raw name. Default \code{NULL} uses raw column names as facet titles.
 #' @param title Plot title passed to \code{labs()}.
 #' @param x_lab,y_lab Axis labels (default \code{NULL} suppresses the label).
 #' @param ncol Number of columns in \code{facet_wrap()} (default \code{3}).
@@ -90,7 +94,8 @@ split_sentences <- function(text) {
 #' @returns A \code{ggplot} object.
 plot_faceted_boxplot <- function(df,
                                  group_col,
-                                 feature_cols = NULL,
+                                 feature_cols   = NULL,
+                                 feature_labels = NULL,
                                  title    = NULL,
                                  x_lab    = NULL,
                                  y_lab    = "Value",
@@ -123,9 +128,16 @@ plot_faceted_boxplot <- function(df,
     pivot_longer(any_of(feat_names), names_to = "feature", values_to = "value") |>
     mutate(group = as.factor(!!group_col))
 
+  facet_labeller <- if (is.null(feature_labels)) {
+    ggplot2::label_value
+  } else {
+    ggplot2::as_labeller(feature_labels)
+  }
+
   p <- ggplot(df_long, aes(x = group, y = value, fill = group)) +
     geom_boxplot(notch = notch, outlier.size = 0.8) +
-    facet_wrap(~ feature, scales = "free_y", ncol = ncol) +
+    facet_wrap(~ feature, scales = "free_y", ncol = ncol,
+               labeller = facet_labeller) +
     labs(title = title, x = x_lab, y = y_lab) +
     theme_minimal() +
     theme(legend.position = "none")
@@ -346,4 +358,72 @@ qwk <- function(true, pred, n_levels = 5L) {
   tab_o <- table(factor(true, seq_len(n_levels)), factor(pred, seq_len(n_levels)))
   tab_e <- outer(rowSums(tab_o), colSums(tab_o)) / sum(tab_o)
   return(1 - sum(wt * tab_o) / sum(wt * tab_e))
+}
+
+
+#' Find parent tokens that have a qualifying child dependency.
+#'
+#' Scans \code{dep_rel} in a parsed corpus for children matching \code{dep_rels}
+#' (and optionally \code{lemma_filter} / \code{child_upos}), then returns the
+#' unique sentence-scoped identifiers of their head tokens. Callers join the
+#' result back to flag or filter specific tokens.
+#'
+#' The sentence key is built from all of \code{doc_id}, \code{paragraph_id},
+#' \code{sentence_id} that are present in \code{dt_corpus}.
+#'
+#' @param dt_corpus Parsed data.table (UDPipe output after post-processing).
+#'   Required columns: \code{doc_id}, \code{sentence_id}, \code{token_id},
+#'   \code{head_token_id}, \code{dep_rel}, \code{compte}.
+#' @param dep_rels Character vector of \code{dep_rel} values to match on
+#'   children (e.g. \code{c("aux", "aux:pass")}).
+#' @param lemma_filter Optional character vector. When supplied and a
+#'   \code{lemma} column is present, only children whose lowercased lemma is
+#'   in \code{lemma_filter} are considered.
+#' @param child_upos Optional character vector of UPOS values; only children
+#'   with matching UPOS are considered.
+#' @param only_counted Logical; if \code{TRUE} (default) only children where
+#'   \code{compte == TRUE} are considered.
+#'
+#' @returns A data.table keyed on the sentence-key columns plus \code{token_id},
+#'   containing one row per unique parent token that has at least one qualifying
+#'   child. Merge this back onto your token table to flag or filter parents.
+#'
+#' @examples
+#' \dontrun{
+#' # Flag VERB tokens that govern an être/avoir auxiliary child.
+#' aux_heads <- dep_child_flags(
+#'   dt_corpus,
+#'   dep_rels     = c("aux", "aux:tense", "aux:pass"),
+#'   lemma_filter = c("être", "etre", "avoir")
+#' )
+#' setkeyv(dt_verbs, c("doc_id", "sentence_id", "token_id"))
+#' dt_verbs[aux_heads, is_compound_head := TRUE]
+#' }
+dep_child_flags <- function(dt_corpus,
+                             dep_rels,
+                             lemma_filter = NULL,
+                             child_upos   = NULL,
+                             only_counted = TRUE) {
+  dt <- as.data.table(dt_corpus)
+
+  required <- c("doc_id", "sentence_id", "token_id", "head_token_id",
+                "dep_rel", "compte")
+  if (!all(required %in% names(dt)))
+    stop("dt_corpus missing columns: ",
+         paste(setdiff(required, names(dt)), collapse = ", "))
+
+  dt_ch <- if (only_counted) dt[compte == TRUE] else dt
+  dt_ch <- dt_ch[dep_rel %in% dep_rels]
+
+  if (!is.null(lemma_filter) && "lemma" %in% names(dt_ch))
+    dt_ch <- dt_ch[tolower(lemma) %in% tolower(lemma_filter)]
+
+  if (!is.null(child_upos))
+    dt_ch <- dt_ch[upos %in% child_upos]
+
+  sent_cols <- intersect(c("doc_id", "paragraph_id", "sentence_id"), names(dt))
+  result    <- unique(dt_ch[, c(sent_cols, "head_token_id"), with = FALSE])
+  setnames(result, "head_token_id", "token_id")
+  setkeyv(result, c(sent_cols, "token_id"))
+  return(result)
 }
