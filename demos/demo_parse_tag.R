@@ -56,9 +56,9 @@ example_sentence <- "Je crois que 80% des statistiques sont inventées."
 
 dt_example_raw <- udpipe_annotate(udmodel_french, x = example_sentence) |>
   as.data.frame() |>
-  as.data.table()
+  as_tibble()
 
-print(dt_example_raw[, .(token, lemma, upos, dep_rel, head_token_id)])
+print(dt_example_raw |> dplyr::select(token, lemma, upos, dep_rel, head_token_id))
 
 
 # 2) Parse a single text file ----

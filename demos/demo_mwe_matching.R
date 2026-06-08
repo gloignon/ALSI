@@ -75,10 +75,7 @@ matches_vw |> count(relation_group, sort = TRUE) |> print()
 
 # Compare connective density between Vikidia and Wikipedia, using the matched connectives.
   # this will get us the doc_id and class of each document
-dt_classes_vw <- unique(data.table(
-  doc_id = dt_parsed_corpus$doc_id,
-  class  = ifelse(grepl("^viki", dt_parsed_corpus$doc_id), 1L, 2L)
-))
+dt_classes_vw <- dt_parsed_corpus |> distinct(doc_id, class = if_else(grepl("^viki", doc_id), 1L, 2L))
 
 # now we can merge the class info with the features, and report effect sizes per feature.
 connective_density_features(dt_parsed_corpus, matches_vw) |>
@@ -89,11 +86,10 @@ connective_density_features(dt_parsed_corpus, matches_vw) |>
 # 4) LEXCONN on ALECTOR corpus: source vs target ----
 
 dt_alector <- readRDS("out/alector_parsed.Rds")
-cat("\nALECTOR corpus:", nrow(dt_alector), "tokens,",
-    uniqueN(dt_alector$doc_id), "documents\n")
+message("ALECTOR corpus: ", nrow(dt_alector), " tokens, ", n_distinct(dt_alector$doc_id), " documents")
 
 matches_alector <- match_multiword_sequences(dt_alector, dt_lexconn)
-cat("Matches:", nrow(matches_alector), "\n")
+message("Matches: ", nrow(matches_alector))
 
 dt_classes_al <- unique(data.table(
   doc_id = dt_alector$doc_id,

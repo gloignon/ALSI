@@ -2,14 +2,17 @@
 #
 # Scores Alector (79 original/simplified French text pairs) against
 # pre-built wikiviki burstiness norms. Run R/artefact_builders/build_wikiviki_norms.R
-# once before running this demo.
+# once before running this demo. Reuses the parsed ALECTOR corpus cached at
+# out/alector_parsed.Rds by demo_surprisal.R (parses it if not yet cached).
 #
 # References:
 #   Altmann, Pierrehumbert & Motter (2009), PLoS ONE 4(11): e7678
 #   Church & Gale (1995), Natural Language Engineering 1(2): 163-190
+#   Goh & Barabási (2008), Europhys Lett 81: 48002 (within-document B statistic)
 #
 library(data.table)
 library(udpipe)
+library(tidyverse)
 
 source("R/fnt_corpus.R",     encoding = "UTF-8")
 source("R/fnt_burstiness.R", encoding = "UTF-8")
@@ -28,20 +31,27 @@ message(sprintf("Norms: %d words with beta, %d with adaptation score",
                 sum(!is.na(beta_ref$beta)), sum(!is.na(adapt_ref$adaptation))))
 
 
-# ── 2. Parse Alector ──────────────────────────────────────────────────────────
+# ── 2. Load parsed Alector ────────────────────────────────────────────────────
 
-cache <- "out/demo_burstiness_alector_parsed.Rds"
+# Several demos (demo_surprisal.R, demo_cohesion.R, demo_mwe_matching.R) parse
+# and cache the same ALECTOR corpus to out/alector_parsed.Rds. Reuse it here
+# rather than parsing (and caching) our own copy.
+cache_alector_parsed <- "out/alector_parsed.Rds"
 
-if (file.exists(cache)) {
-  dt_alector <- readRDS(cache)
+if (file.exists(cache_alector_parsed)) {
+  message("Loading cached ALECTOR parsed corpus")
+  dt_alector <- readRDS(cache_alector_parsed)
 } else {
   message("Parsing Alector with UDPipe...")
-  dt_alector <- parse_text(build_corpus("demo_corpora/alector/"),
-                            n_cores = max(1L, parallel::detectCores() - 1L))
-  saveRDS(dt_alector, cache)
+  dt_alector_raw <- parse_text(build_corpus("demo_corpora/alector/"),
+                               n_cores = max(1L, parallel::detectCores() - 1L))
+  dt_alector     <- post_process_lexicon(dt_alector_raw)
+  saveRDS(dt_alector, cache_alector_parsed)
+  message("Saved to ", cache_alector_parsed)
 }
 
-dt_alector[, version := fifelse(grepl("_source", doc_id), "original", "simplified")]
+dt_alector <- dt_alector |>
+  mutate(version = if_else(grepl("_source", doc_id), "original", "simplified"))
 message(sprintf("Alector: %d tokens, %d documents", nrow(dt_alector), uniqueN(dt_alector$doc_id)))
 
 
@@ -73,10 +83,20 @@ doc_burst <- merge(doc_burst,
   by = "doc_id", all.x = TRUE)
 
 
-# ── 4. Compare original vs simplified (paired by text pair) ──────────────────
+# ── 4. Within-document burstiness (no reference norms needed) ────────────────
+
+# burstiness_within_doc() derives the Goh-Barabási B statistic for each word
+# from its own gap sequence inside each document — unlike mean_beta and
+# mean_adaptation above, it needs no wikiviki reference norms at all.
+doc_burst_B <- burstiness_within_doc(dt_alector, content_upos = content_upos)
+
+doc_burst <- merge(doc_burst, doc_burst_B, by = "doc_id", all.x = TRUE)
+
+
+# ── 5. Compare original vs simplified (paired by text pair) ──────────────────
 
 # Extract pair index from doc_id (e.g. "alector_source_03" -> "03")
-doc_burst[, pair_id := sub("^(\\d+)_.*", "\\1", doc_id)]
+doc_burst <- doc_burst |> mutate(pair_id = sub(".*_(\\d+)$", "\\1", doc_id))
 
 # Paired rank-biserial r: effect size for paired Wilcoxon
 paired_r_rb <- function(d) {
@@ -85,7 +105,8 @@ paired_r_rb <- function(d) {
   1 - 2 * w / (n * (n + 1) / 2)
 }
 
-metrics <- c(
+# Metrics computed against the wikiviki reference norms (need beta_ref/adapt_ref).
+metrics_norm <- c(
   mean_beta               = "Mean β (all)",
   prop_bursty             = "Prop. bursty (all)",
   mean_adaptation         = "Mean adaptation (all)",
@@ -93,6 +114,14 @@ metrics <- c(
   prop_bursty_content     = "Prop. bursty (content)",
   mean_adaptation_content = "Mean adaptation (content)"
 )
+
+# Metrics computed purely within each document (no reference norms needed).
+metrics_within <- c(
+  mean_B         = "Mean B, within-doc (all)",
+  mean_B_content = "Mean B, within-doc (content)"
+)
+
+metrics <- c(metrics_norm, metrics_within)
 
 results <- doc_burst |>
   as_tibble() |>
@@ -113,14 +142,26 @@ results <- doc_burst |>
 print(results)
 
 
-# ── 5. Faceted boxplot ────────────────────────────────────────────────────────
+# ── 6. Faceted boxplots ───────────────────────────────────────────────────────
 
-library(tidyverse)
+# Plot the two metric families separately, with feature_labels giving each
+# facet a human-readable title — this makes it unambiguous which features
+# rely on the wikiviki reference norms and which are computed within-document.
 
 doc_burst |>
   as_tibble() |>
-  select(version, all_of(names(metrics))) |>
-  plot_faceted_boxplot(version, all_of(names(metrics)),
-    title = "Burstiness: Alector original vs simplified (wikiviki norms)",
+  select(version, all_of(names(metrics_norm))) |>
+  plot_faceted_boxplot(version, all_of(names(metrics_norm)),
+    feature_labels = metrics_norm,
+    title = "Burstiness vs wikiviki reference norms: Alector original vs simplified",
     y_lab = NULL, ncol = 3, notch = TRUE
+  )
+
+doc_burst |>
+  as_tibble() |>
+  select(version, all_of(names(metrics_within))) |>
+  plot_faceted_boxplot(version, all_of(names(metrics_within)),
+    feature_labels = metrics_within,
+    title = "Within-document burstiness, no reference norms: Alector original vs simplified",
+    y_lab = NULL, ncol = 2, notch = TRUE
   )
