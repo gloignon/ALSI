@@ -164,11 +164,15 @@ def _empty_result() -> Dict:
         "word_entropies": [],
         "word_token_counts": [],
         "word_tokens": [],
+        "word_oov": [],
         "subword_surprisals": [],
         "subword_entropies": [],
         "subword_word_ids": [],
         "subword_tokens": [],
     }
+
+
+_UNK_STRINGS = {"[UNK]", "<unk>"}
 
 
 def _extract_word_tokens(
@@ -177,28 +181,61 @@ def _extract_word_tokens(
     word_ids,
     sentence_ids,
     n_words: int,
-) -> List[str]:
-    """Return one string per word. If pretokenized, that's the input list;
-    otherwise reconstruct each word from its subword group via the tokenizer."""
+) -> tuple:
+    """Return (tokens, oov_flags) — one entry per word.
+
+    When a word maps entirely to UNK subwords the original surface form is
+    kept in `tokens` instead of '[UNK]', and the corresponding `oov_flags`
+    entry is set to True.
+    """
+    oov_template = [False] * n_words
+
     if is_split_into_words:
-        return list(input_obj)
+        words = list(input_obj)
+        # Check each word: if its tokenization is a single UNK, flag it.
+        oov = list(oov_template)
+        for i, w in enumerate(words):
+            ids = _tokenizer(w, add_special_tokens=False)["input_ids"]
+            toks = _tokenizer.convert_ids_to_tokens(ids)
+            if toks and all(t in _UNK_STRINGS for t in toks):
+                oov[i] = True
+        return words, oov
+
     if word_ids is None or n_words == 0:
-        return []
+        return [], []
+
     subword_tokens = _tokenizer.convert_ids_to_tokens(sentence_ids.tolist())
     groups: Dict[int, List[int]] = {}
     for pos, wid in enumerate(word_ids):
         if wid is None:
             continue
         groups.setdefault(wid, []).append(pos)
+
+    # Build original-word lookup when input_obj is a string
+    original_words: Dict[int, str] = {}
+    if not is_split_into_words and isinstance(input_obj, str):
+        for pos, wid in enumerate(word_ids):
+            if wid is None or wid in original_words:
+                continue
+            original_words[wid] = ""  # placeholder; filled below via token string
+
     out = [""] * n_words
+    oov = list(oov_template)
     for wid, positions in groups.items():
         if 0 <= wid < n_words:
             subs = [subword_tokens[p] for p in positions]
+            all_unk = all(t in _UNK_STRINGS for t in subs)
             try:
-                out[wid] = _tokenizer.convert_tokens_to_string(subs).strip()
+                reconstructed = _tokenizer.convert_tokens_to_string(subs).strip()
             except Exception:
-                out[wid] = "".join(subs)
-    return out
+                reconstructed = "".join(subs)
+            if all_unk and wid in original_words:
+                out[wid] = original_words[wid] if original_words[wid] else reconstructed
+            else:
+                out[wid] = reconstructed
+            oov[wid] = all_unk
+
+    return out, oov
 
 
 def _build_input_ids(context_ids: list, sentence_ids) -> torch.Tensor:
@@ -308,7 +345,7 @@ def score_masked_lm_tokens(
                                               result["subword_surprisals"], result["subword_entropies"]))
         else:
             result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
-        result["word_tokens"] = _extract_word_tokens(
+        result["word_tokens"], result["word_oov"] = _extract_word_tokens(
             is_split_into_words, tokens, word_ids, sentence_ids, n_words
         )
         return result
@@ -378,7 +415,7 @@ def score_masked_lm_tokens(
                                           subword_surprisals, subword_entropies))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
-    result["word_tokens"] = _extract_word_tokens(
+    result["word_tokens"], result["word_oov"] = _extract_word_tokens(
         is_split_into_words, tokens, word_ids, sentence_ids, n_words
     )
 
@@ -475,7 +512,7 @@ def score_autoregressive_tokens(
                                           subword_surprisals, subword_entropies))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
-    result["word_tokens"] = _extract_word_tokens(
+    result["word_tokens"], result["word_oov"] = _extract_word_tokens(
         is_split_into_words, tokens, word_ids, sentence_ids, n_words
     )
 
