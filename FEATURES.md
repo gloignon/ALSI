@@ -218,6 +218,9 @@ Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 | `max_head_distance_adj` | `R/fnt_heights.R` | Maximum normalized dependency distance (`head_distance / (sentence_length - 1)`), bounded in `[0, 1]`. | document |
 | `dependency_direction_index` | `R/fnt_heights.R` | Mean signed direction of dependencies (left vs right). | document |
 | `avg_integration_cost` | `R/fnt_heights.R` | Mean Gibson DLT integration cost: intervening discourse referents (NOUN, PROPN, VERB) per dependency arc. | document |
+| `avg_yngve` | `R/fnt_heights.R` | Mean Yngve depth per sentence, averaged over the document. Yngve depth of a word = number of right-sibling co-dependents at each ancestor level; reflects mean left-embedding processing load. (Yngve 1960) | document |
+| `avg_max_yngve` | `R/fnt_heights.R` | Mean of per-sentence maximum Yngve depth; captures peak embedding load. (Yngve 1960) | document |
+| `avg_sd_yngve` | `R/fnt_heights.R` | Mean of per-sentence SD of Yngve depths; captures heterogeneity (mix of shallow and deeply embedded words within sentences). (Yngve 1960) | document |
 
 
 ## 8) `features$syntactic`
