@@ -56,9 +56,31 @@ dir.create("out", showWarnings = FALSE)
 # Levels A–D are L2 (second-language learners at increasing CEFR stages);
 # level E is the native-speaker (L1) baseline. The corpus was collected at
 # Lund University as part of the CEFLE project.
+#
+# ALSI does not redistribute CEFLE (ELRA license prohibits redistribution).
+# On first run the fetcher script downloads it directly from Lund University.
+
+cefle_csv <- "demo_corpora/cefle_corpus_texts.csv"
+
+if (!file.exists(cefle_csv)) {
+  message(
+    "\n--- CEFLE corpus not found — fetching from source ---\n",
+    "\n",
+    "The CEFLE transversal corpus is hosted by Lund University:\n",
+    "  https://projekt.ht.lu.se/cefle/\n",
+    "\n",
+    "ALSI does not bundle this corpus. Each user must fetch it directly\n",
+    "from Lund's servers. The corpus is for academic, non-commercial use\n",
+    "only (ELRA standard license terms apply).\n",
+    "\n",
+    "By continuing you confirm that your use is non-commercial and academic.\n",
+    "Fetching now..."
+  )
+  source("R/artefact_builders/fetch_cefle_transversal.R", encoding = "UTF-8")
+}
 
 df_cefle <- read_csv(
-  "demo_corpora/cefle_corpus_texts.csv",
+  cefle_csv,
   col_types = cols(
     level  = col_character(),
     doc_id = col_character(),
