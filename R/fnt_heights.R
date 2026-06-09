@@ -157,7 +157,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       max_incomplete_deps = 0L,
       avg_incomplete_deps = 0,
       max_incomplete_deps_adj = 0,
-      avg_incomplete_deps_adj = 0
+      avg_incomplete_deps_adj = 0,
+      yngve = 0,
+      max_yngve = 0L,
+      sd_yngve = 0
     ))
   }
 
@@ -186,6 +189,32 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     dt_sentence[fill, depth := new_depth[!is.na(new_depth)]]
   }
 
+  # Yngve depth: right_siblings(w) + Yngve(parent(w)), root = 0.
+  # right_siblings(w) = co-dependents of same head that appear to the right of w.
+  dt_sentence[head_token_id == 0L, right_siblings := 0L]
+  dt_sentence[head_token_id > 0L, right_siblings := {
+    k <- .N
+    k - frank(token_id, ties.method = "first")
+  }, by = head_token_id]
+  dt_sentence[is.na(right_siblings), right_siblings := 0L]
+
+  dt_sentence[, yngve := fifelse(head_token_id == 0L, 0L, NA_integer_)]
+  for (i in seq_len(200L)) {
+    missing_rows <- dt_sentence[is.na(yngve), row_id]
+    if (length(missing_rows) == 0L) break
+
+    parents <- dt_sentence[!is.na(yngve), .(token_id, parent_yngve = yngve)]
+    children <- dt_sentence[is.na(yngve), .(row_id, head_token_id, right_siblings)]
+
+    joined <- parents[children, on = .(token_id = head_token_id)]
+    new_yngve <- joined$parent_yngve + children$right_siblings
+    fill <- children$row_id[!is.na(joined$parent_yngve)]
+    nv <- new_yngve[!is.na(joined$parent_yngve)]
+
+    if (length(fill) == 0L) break
+    dt_sentence[fill, yngve := nv]
+  }
+
   metric_rows <- if (isTRUE(include_punct_in_metrics)) {
     !is.na(dt_sentence$depth)
   } else {
@@ -205,7 +234,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       max_incomplete_deps = 0L,
       avg_incomplete_deps = 0,
       max_incomplete_deps_adj = 0,
-      avg_incomplete_deps_adj = 0
+      avg_incomplete_deps_adj = 0,
+      yngve = 0,
+      max_yngve = 0L,
+      sd_yngve = 0
     ))
   }
 
@@ -215,6 +247,11 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   avg_dependency_depth <- mean(valid_depth)
   avg_dependency_depth_adj <- if (n > 1L) count_path / (n - 1L) else 0
   sd_depth <- if (n > 1L) sd(valid_depth) else 0
+
+  valid_yngve <- dt_sentence[metric_rows & !is.na(yngve), yngve]
+  yngve_score <- if (length(valid_yngve) > 0L) mean(valid_yngve) else 0
+  max_yngve   <- if (length(valid_yngve) > 0L) max(valid_yngve) else 0L
+  sd_yngve    <- if (length(valid_yngve) > 1L) sd(valid_yngve) else 0
 
   # Branching factor: average number of dependents per internal (non-leaf) node
   metric_tokens <- dt_sentence[metric_rows]
@@ -254,6 +291,9 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     message("Max incomplete dependencies (Gibson DLT): ", max_incomplete_deps)
     message("Max incomplete deps (adjusted): ", round(max_incomplete_deps / pmax(n, 1L), 3))
     message("Avg incomplete dependencies: ", round(avg_incomplete_deps, 2))
+    message("Yngve depth (mean): ", round(yngve_score, 3))
+    message("Yngve depth (max):  ", max_yngve)
+    message("Yngve depth (sd):   ", round(sd_yngve, 3))
   }
 
   list(
@@ -267,7 +307,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     max_incomplete_deps = max_incomplete_deps,
     avg_incomplete_deps = avg_incomplete_deps,
     max_incomplete_deps_adj = max_incomplete_deps / pmax(n, 1L),
-    avg_incomplete_deps_adj = avg_incomplete_deps / pmax(n, 1L)
+    avg_incomplete_deps_adj = avg_incomplete_deps / pmax(n, 1L),
+    yngve = yngve_score,
+    max_yngve = max_yngve,
+    sd_yngve = sd_yngve
   )
 }
 
@@ -435,7 +478,10 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       max_incomplete_deps = integer(),
       avg_incomplete_deps = numeric(),
       max_incomplete_deps_adj = numeric(),
-      avg_incomplete_deps_adj = numeric()
+      avg_incomplete_deps_adj = numeric(),
+      yngve = numeric(),
+      max_yngve = integer(),
+      sd_yngve = numeric()
     ), by = .(doc_id, paragraph_id, sentence_id)])
   }
 
@@ -476,6 +522,32 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
     )
   }
 
+  # Yngve depth: right_siblings(w) + Yngve(parent(w)), root = 0.
+  # right_siblings(w) = co-dependents of same head that appear to the right of w.
+  dt[head_token_id == 0L, right_siblings := 0L]
+  dt[head_token_id > 0L, right_siblings := {
+    k <- .N
+    k - frank(token_id, ties.method = "first")
+  }, by = .(sent_key, head_token_id)]
+  dt[is.na(right_siblings), right_siblings := 0L]
+
+  dt[, yngve := fifelse(head_token_id == 0L, 0L, NA_integer_)]
+  for (i in seq_len(200L)) {
+    missing_rows <- dt[is.na(yngve), row_id]
+    if (length(missing_rows) == 0L) break
+
+    parents <- dt[!is.na(yngve), .(sent_key, token_id, parent_yngve = yngve)]
+    children <- dt[is.na(yngve), .(row_id, sent_key, head_token_id, right_siblings)]
+
+    joined <- parents[children, on = .(sent_key, token_id = head_token_id)]
+    new_yngve <- joined$parent_yngve + children$right_siblings
+    fill <- children$row_id[!is.na(joined$parent_yngve)]
+    nv <- new_yngve[!is.na(joined$parent_yngve)]
+
+    if (length(fill) == 0L) break
+    dt[fill, yngve := nv]
+  }
+
   dt[, {
     metric_depth <- if (isTRUE(include_punct_in_metrics)) {
       depth[!is.na(depth)]
@@ -496,7 +568,10 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         max_incomplete_deps = 0L,
         avg_incomplete_deps = 0,
         max_incomplete_deps_adj = 0,
-        avg_incomplete_deps_adj = 0
+        avg_incomplete_deps_adj = 0,
+        yngve = 0,
+        max_yngve = 0L,
+        sd_yngve = 0
       )
     } else {
       mp <- max(metric_depth)
@@ -541,6 +616,11 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         avg_inc <- 0
       }
 
+      valid_yngve <- yngve[m_mask & !is.na(yngve)]
+      vy <- if (length(valid_yngve) > 0L) mean(valid_yngve) else 0
+      mxy <- if (length(valid_yngve) > 0L) max(valid_yngve) else 0L
+      sdy <- if (length(valid_yngve) > 1L) sd(valid_yngve) else 0
+
       .(
         max_path = mp,
         avg_dependency_depth = ap,
@@ -552,7 +632,10 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         max_incomplete_deps = max_inc,
         avg_incomplete_deps = avg_inc,
         max_incomplete_deps_adj = max_inc / pmax(n, 1L),
-        avg_incomplete_deps_adj = avg_inc / pmax(n, 1L)
+        avg_incomplete_deps_adj = avg_inc / pmax(n, 1L),
+        yngve = vy,
+        max_yngve = mxy,
+        sd_yngve = sdy
       )
     }
   }, by = .(doc_id, paragraph_id, sentence_id)]
@@ -614,6 +697,9 @@ docwise_graph_stats <- function(df_corpus) {
       avg_max_incomplete_deps_adj = mean(max_incomplete_deps_adj, na.rm = TRUE),
       avg_incomplete_deps = mean(avg_incomplete_deps, na.rm = TRUE),
       avg_incomplete_deps_adj = mean(avg_incomplete_deps_adj, na.rm = TRUE),
+      avg_yngve = mean(yngve, na.rm = TRUE),
+      avg_max_yngve = mean(max_yngve, na.rm = TRUE),
+      avg_sd_yngve = mean(sd_yngve, na.rm = TRUE),
       n = sum(sentence_length),
       s = n(),
       total_paths = sum(count_path, na.rm = TRUE)
@@ -638,6 +724,33 @@ docwise_graph_stats <- function(df_corpus) {
 #' @param suffix String appended to calibrated column names (default
 #'   \code{"_resid"}).
 #' @returns A copy of \code{dt_sent} with additional \code{*_resid} columns.
+#' [EXPERIMENTAL] Sentence-depth variability within documents
+#'
+#' Computes the mean absolute difference between consecutive sentence tree
+#' heights (\code{max_path}) within each document. Simplified texts show
+#' smoother depth rhythm than originals (Alector corpus, d ≈ 0.65, p ≈ 0.04
+#' controlling for sentence length and average height). No signal on grade-level
+#' corpora (Wikiviki, d ≈ 0.15).
+#'
+#' @param sent_stats A \code{data.table} returned by \code{batch_graph_stats},
+#'   with columns \code{doc_id}, \code{sentence_id}, and \code{max_path}.
+#' @returns A \code{data.table} keyed by \code{doc_id} with columns
+#'   \code{avg_sent_height} and \code{depth_delta}.
+#' @export
+sent_depth_variability <- function(sent_stats) {
+  dt <- as.data.table(sent_stats)[order(doc_id, sentence_id)]
+
+  result <- dt[, {
+    n     <- .N
+    avg_h <- mean(max_path, na.rm = TRUE)
+    delta <- if (n > 1L) mean(abs(diff(max_path)), na.rm = TRUE) else NA_real_
+    .(avg_sent_height = avg_h, depth_delta = delta)
+  }, by = doc_id]
+
+  setkey(result, doc_id)
+  return(result)
+}
+
 apply_calibration <- function(dt_sent, gam_models, suffix = "_resid") {
 
   if (is.character(gam_models) && length(gam_models) == 1L) {

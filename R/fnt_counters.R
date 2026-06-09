@@ -156,6 +156,49 @@ verb_tense_features <- function(parsed_corpus, counts) {
   
   # we no longer need the word_count column in results_p
   results_p[, word_count := NULL]
-  
+
   return(list(counts = results_n, proportions = results_p))
+}
+
+#' Sentence-length variability within documents
+#'
+#' Measures how much sentence length varies across sentences in each document.
+#' Four complementary metrics:
+#' \itemize{
+#'   \item \code{sent_length_sd}: standard deviation of per-sentence word counts.
+#'   \item \code{sent_length_cv}: coefficient of variation (SD / mean), scale-free.
+#'   \item \code{sent_length_delta}: mean absolute difference between consecutive
+#'     sentence lengths — captures sequential rhythm rather than global spread.
+#'   \item \code{sent_length_autocor}: lag-1 autocorrelation of sentence lengths —
+#'     how strongly each sentence's length predicts the next one's.
+#' }
+#' Documents with fewer than 2 sentences return \code{NA} for all metrics.
+#' Documents with fewer than 3 sentences return \code{NA} for \code{sent_length_autocor}
+#' (cor() is undefined on length-2 vectors with zero variance).
+#'
+#' @param parsed_corpus A \code{data.table} from \code{post_process_lexicon}
+#'   with columns \code{doc_id}, \code{sentence_id}, and \code{compte}.
+#' @returns A \code{data.table} keyed by \code{doc_id} with columns
+#'   \code{sent_length_sd}, \code{sent_length_cv}, \code{sent_length_delta},
+#'   \code{sent_length_autocor}.
+#' @export
+sent_length_variability <- function(parsed_corpus) {
+  # Sentence-level word counts (countable tokens only)
+  sent_wc <- parsed_corpus[compte == TRUE,
+    .(n_words = .N),
+    by = .(doc_id, sentence_id)]
+
+  result <- sent_wc[, {
+    n    <- .N
+    mu   <- mean(n_words)
+    sdev <- if (n > 1) sd(n_words) else NA_real_
+    cv   <- if (n > 1 && mu > 0) sdev / mu else NA_real_
+    delta   <- if (n > 1) mean(abs(diff(n_words))) else NA_real_
+    autocor <- if (n > 2) suppressWarnings(cor(n_words[-n], n_words[-1])) else NA_real_
+    .(sent_length_sd = sdev, sent_length_cv = cv,
+      sent_length_delta = delta, sent_length_autocor = autocor)
+  }, by = doc_id]
+
+  setkey(result, doc_id)
+  return(result)
 }
