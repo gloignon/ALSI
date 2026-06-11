@@ -28,7 +28,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Ollama LLM querying** — general-purpose row-by-row querying of a locally-run LLM (via [Ollama](https://ollama.com/)) for annotation, classification, paraphrase, or any templated task.
 - **Lexical database features** (see below)
 
-## Included French lexical frequency databases:
+## Works with several French lexical frequency databases:
 
 -   Manulex (Lété et al, 2004)
 
@@ -40,8 +40,9 @@ ALSI extracts many types of features ([see the full feature list](https://github
 
 -   LexConn (Roze, Danlos & Muller, 2012) — a lexicon of French discourse connectives used for multi-word expression matching.
 
-Please cite the relevant papers if you use the lexical databases included in the ALSI/ILSA tool.
+-   Lexique3
 
+We do not redistribute these databases; they will be downloaded on first run. You are responsible for respecting their respective user licenses and cite the relevant papers if you use them.
 
 ## Encoding support
 
