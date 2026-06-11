@@ -40,7 +40,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 
 -   LexConn (Roze, Danlos & Muller, 2012) — a lexicon of French discourse connectives used for multi-word expression matching.
 
--   Lexique3
+-   Lexique3 (New et al., 2004)
 
 We do not redistribute these databases; they will be downloaded on first run. You are responsible for respecting their respective user licenses and cite the relevant papers if you use them.
 
@@ -96,6 +96,8 @@ Liu, H. (2008). Dependency distance as a metric of language comprehension diffic
 Loignon, G. (2021). ILSA: an automated language complexity analysis tool for French. Mesure et évaluation en éducation, 44, 61-88. <https://doi.org/10.7202/1095682ar>
 
 Lu, X. (2010). Automatic analysis of syntactic complexity in second language writing. International Journal of Corpus Linguistics, 15(4), 474–496. <https://doi.org/10.1075/ijcl.15.4.02lu>
+
+New, B., Pallier, C., Brysbaert, M., & Ferrand, L. (2004). Lexique 2: A new French lexical database. Behavior Research Methods, Instruments, & Computers, 36(3), 516-524.
 
 Roze, C., Danlos, L., & Muller, P. (2012). LEXCONN: A French lexicon of discourse connectives. Discours, 10. <https://doi.org/10.4000/discours.8645>
 
