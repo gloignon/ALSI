@@ -39,7 +39,22 @@ trankit_model_path <- "models/trankit_fr_v1"
 
 # Load the UDPipe model into memory (needed only for the udpipe backend).
 # spaCy and Trankit load lazily on first parse_text() call.
+if (!file.exists(udpipe_model_path)) {
+  message("French UDPipe model not found — downloading from GitHub (one-time, ~50 MB)...")
+  source("R/artefact_builders/fetch_udpipe_models.R")
+}
 udmodel_french <- udpipe_load_model(file = udpipe_model_path)
+
+# spaCy and Trankit models are also too large for regular git history and are
+# fetched from GitHub on first use if missing.
+if (!dir.exists(spacy_model_path)) {
+  message("French spaCy model not found — downloading from GitHub (one-time, ~8 MB)...")
+  source("R/artefact_builders/fetch_spacy_models.R")
+}
+if (!dir.exists(file.path(trankit_model_path, "xlm-roberta-base", "customized-mwt"))) {
+  message("French Trankit model not found — downloading from GitHub (one-time, ~34 MB)...")
+  source("R/artefact_builders/fetch_trankit_models.R")
+}
 
 # Three sentences that exercise different linguistic features:
 #   - copular être ("est heureuse") — our custom VERB tagging for the copula

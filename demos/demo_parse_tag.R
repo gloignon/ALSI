@@ -113,8 +113,28 @@ message("Saved to out/demo_parsed_tagged.Rds")
 # parse_text() accepts a data.frame directly — the only requirement is
 # that it has columns named doc_id and text. If your CSV uses different
 # column names, rename them first (as shown below).
+#
+# ALSI ships the Alector corpus as unmodified .txt files in alector.zip
+# (allowed under CC BY-NC-ND 4.0 "Share"). The CSV below is a derived
+# artefact built locally on first run — do not redistribute it.
 
-dt_alector <- fread("demo_corpora/alector_corpus.csv", encoding = "UTF-8")
+alector_csv <- "demo_corpora/alector_corpus.csv"
+
+if (!file.exists(alector_csv)) {
+  message(
+    "\n--- Alector corpus CSV not found — building from bundled zip ---\n",
+    "\n",
+    "The Alector corpus (Gala et al., 2020) is included as unmodified source\n",
+    "files under CC BY-NC-ND 4.0. ALSI does not redistribute derived artefacts;\n",
+    "the CSV is built locally on first run.\n",
+    "\n",
+    "By continuing you confirm that your use is non-commercial.\n",
+    "Building now..."
+  )
+  source("R/artefact_builders/build_alector_corpus.R", encoding = "UTF-8")
+}
+
+dt_alector <- fread(alector_csv, encoding = "UTF-8")
 
 # Rename the id column to doc_id so parse_text() recognises it.
 setnames(dt_alector, "id", "doc_id")
