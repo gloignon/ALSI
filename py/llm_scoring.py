@@ -1,5 +1,6 @@
 import math
 import os
+import warnings
 from typing import List, Dict, Optional
 
 import torch
@@ -30,10 +31,18 @@ def load_llm_model(
     mode: str = "mlm",
     use_fast: bool = True,
     trust_remote_code: bool = True,
-    add_prefix_space: bool = False,
+    add_prefix_space: Optional[bool] = None,
     force_fast: bool = False,
 ):
     """Load tokenizer + model.
+
+    `add_prefix_space=None` (default) resolves to `True` for `mode="ar"` and
+    `False` for `mode="mlm"`. Byte-level BPE tokenizers (GPT-2-family, used by
+    most French AR models) require `add_prefix_space=True` when called with
+    `is_split_into_words=True`, otherwise pre-split words are encoded without
+    their leading-space marker and land on the wrong sub-distribution (e.g.
+    "chat" vs "Ġchat"). SentencePiece tokenizers (CamemBERT/Flaubert) are
+    unaffected by this flag.
 
     `force_fast=True` bypasses AutoTokenizer entirely and loads
     PreTrainedTokenizerFast directly from tokenizer.json. Use this when a
@@ -49,12 +58,13 @@ def load_llm_model(
     """
     global _tokenizer, _model, _device, _mode, _model_name, _add_prefix_space
     _device = _best_device()
+    if add_prefix_space is None:
+        add_prefix_space = (mode == "ar")
     tokenizer_kwargs = {
         "trust_remote_code": trust_remote_code,
         "use_fast": use_fast,
+        "add_prefix_space": add_prefix_space,
     }
-    if add_prefix_space:
-        tokenizer_kwargs["add_prefix_space"] = True
 
     if force_fast:
         from transformers import PreTrainedTokenizerFast
@@ -123,30 +133,62 @@ def _get_word_ids(encoding) -> Optional[List]:
     return None
 
 
+_ENTROPY_AGG_MODES = ("mean", "sum", "onset", "successor")
+
+
 def _aggregate_to_words(
     word_ids: List, n_words: int, context_len: int,
     subword_surprisals: List[float], subword_entropies: List[float],
+    entropy_agg: str = "mean",
 ) -> Dict[str, List]:
-    """Aggregate subword scores to word level using word_ids mapping."""
+    """Aggregate subword scores to word level using word_ids mapping.
+
+    `entropy_agg` controls how a multi-subword word's entropy is summarized:
+      - "mean": mean of subword entropies (default; prior behaviour).
+      - "sum": sum of subword entropies.
+      - "onset": entropy of the word's first subtoken.
+      - "successor": entropy of the word's last subtoken.
+    """
     word_surps = [0.0] * n_words
     word_ents = [0.0] * n_words
+    word_onset_ents = [float("nan")] * n_words
+    word_successor_ents = [float("nan")] * n_words
     word_counts = [0] * n_words
+    word_has_nan = [False] * n_words
 
     for pos, wid in enumerate(word_ids):
         if wid is None:
             continue
         if 0 <= wid < n_words:
             sub_pos = context_len + pos
-            if not math.isnan(subword_surprisals[sub_pos]):
-                word_surps[wid] += subword_surprisals[sub_pos]
-            if not math.isnan(subword_entropies[sub_pos]):
-                word_ents[wid] += subword_entropies[sub_pos]
+            surp = subword_surprisals[sub_pos]
+            ent = subword_entropies[sub_pos]
+            if math.isnan(surp) or math.isnan(ent):
+                word_has_nan[wid] = True
+            else:
+                word_surps[wid] += surp
+                word_ents[wid] += ent
+                if word_counts[wid] == 0:
+                    word_onset_ents[wid] = ent
+                word_successor_ents[wid] = ent
             word_counts[wid] += 1
 
-    # Entropy: mean per word; surprisal: sum per word
+    # Surprisal: sum of subword surprisals (chain rule of probability).
+    # Entropy: summarized across subwords according to `entropy_agg` — a
+    # heuristic, not the entropy of any single distribution, but a useful
+    # per-word summary.
+    # A word with any NaN subword is reported as NaN rather than a partial
+    # sum/mean over only its valid subwords, which would understate its score.
     for i in range(n_words):
-        if word_counts[i] > 0:
-            word_ents[i] = word_ents[i] / word_counts[i]
+        if word_counts[i] > 0 and not word_has_nan[i]:
+            if entropy_agg == "onset":
+                word_ents[i] = word_onset_ents[i]
+            elif entropy_agg == "successor":
+                word_ents[i] = word_successor_ents[i]
+            elif entropy_agg == "sum":
+                pass  # word_ents[i] already holds the sum
+            else:
+                word_ents[i] = word_ents[i] / word_counts[i]
         else:
             word_surps[i] = float("nan")
             word_ents[i] = float("nan")
@@ -178,15 +220,18 @@ _UNK_STRINGS = {"[UNK]", "<unk>"}
 def _extract_word_tokens(
     is_split_into_words: bool,
     input_obj,
+    encoding,
     word_ids,
     sentence_ids,
     n_words: int,
 ) -> tuple:
     """Return (tokens, oov_flags) — one entry per word.
 
-    When a word maps entirely to UNK subwords the original surface form is
-    kept in `tokens` instead of '[UNK]', and the corresponding `oov_flags`
-    entry is set to True.
+    When a word maps entirely to UNK subwords, the original surface form is
+    recovered instead of '[UNK]' and the corresponding `oov_flags` entry is
+    set to True. For pre-split input the original word string is used
+    directly; for raw-string input the word's character span is recovered via
+    `encoding.token_to_chars()` and sliced from `input_obj`.
     """
     oov_template = [False] * n_words
 
@@ -211,43 +256,88 @@ def _extract_word_tokens(
             continue
         groups.setdefault(wid, []).append(pos)
 
-    # Build original-word lookup when input_obj is a string
-    original_words: Dict[int, str] = {}
-    if not is_split_into_words and isinstance(input_obj, str):
-        for pos, wid in enumerate(word_ids):
-            if wid is None or wid in original_words:
-                continue
-            original_words[wid] = ""  # placeholder; filled below via token string
-
     out = [""] * n_words
     oov = list(oov_template)
     for wid, positions in groups.items():
         if 0 <= wid < n_words:
             subs = [subword_tokens[p] for p in positions]
             all_unk = all(t in _UNK_STRINGS for t in subs)
-            try:
-                reconstructed = _tokenizer.convert_tokens_to_string(subs).strip()
-            except Exception:
-                reconstructed = "".join(subs)
-            if all_unk and wid in original_words:
-                out[wid] = original_words[wid] if original_words[wid] else reconstructed
+            if all_unk and isinstance(input_obj, str):
+                spans = [encoding.token_to_chars(p) for p in positions]
+                spans = [s for s in spans if s is not None]
+                if spans:
+                    out[wid] = input_obj[min(s.start for s in spans):max(s.end for s in spans)]
+                else:
+                    out[wid] = "".join(subs)
             else:
-                out[wid] = reconstructed
+                try:
+                    out[wid] = _tokenizer.convert_tokens_to_string(subs).strip()
+                except Exception:
+                    out[wid] = "".join(subs)
             oov[wid] = all_unk
 
     return out, oov
 
 
-def _build_input_ids(context_ids: list, sentence_ids) -> torch.Tensor:
+def _has_leading_special(sentence_ids) -> bool:
+    """True if position 0 of `sentence_ids` is a special token (e.g. RoBERTa-
+    family <s>/BOS, which must stay at position 0)."""
+    sent_list = sentence_ids.tolist()
+    return bool(sent_list) and sent_list[0] in _tokenizer.all_special_ids
+
+
+def _get_max_positions() -> Optional[int]:
+    """Best-effort lookup of the model's maximum sequence length."""
+    cfg = getattr(_model, "config", None)
+    if cfg is None:
+        return None
+    for attr in ("max_position_embeddings", "n_positions", "n_ctx"):
+        val = getattr(cfg, attr, None)
+        if val is not None:
+            return int(val)
+    return None
+
+
+def _truncate_context(context_ids: list, sentence_len: int) -> list:
+    """Drop the oldest (leftmost) context tokens so that
+    `len(context_ids) + sentence_len` fits within the model's max length."""
+    if not context_ids:
+        return context_ids
+    max_len = _get_max_positions()
+    if max_len is None:
+        return context_ids
+    budget = max(max_len - sentence_len, 0)
+    if len(context_ids) > budget:
+        warnings.warn(
+            f"context_text truncated from {len(context_ids)} to {budget} tokens "
+            f"to fit within the model's max length ({max_len})."
+        )
+        context_ids = context_ids[len(context_ids) - budget:] if budget > 0 else []
+    return context_ids
+
+
+def _build_input_ids(context_ids: list, sentence_ids, has_leading_special: bool) -> torch.Tensor:
     """Concatenate context and sentence ids, keeping any leading special token
     at position 0 (RoBERTa-family models expect BOS/<s> at position 0)."""
     if not context_ids:
         return sentence_ids
     sent_list = sentence_ids.tolist()
-    has_leading_special = sent_list and sent_list[0] in _tokenizer.all_special_ids
     if has_leading_special:
         return torch.tensor(sent_list[:1] + context_ids + sent_list[1:], dtype=torch.long)
     return torch.tensor(context_ids + sent_list, dtype=torch.long)
+
+
+def _sentence_subword_positions(n_sentence: int, context_len: int, has_leading_special: bool) -> List[int]:
+    """Map sentence-relative subword positions (0..n_sentence-1, matching
+    `subword_tokens`/`subword_word_ids`) to their indices in the full
+    `input_ids` (= context + sentence) sequence, so that
+    `subword_surprisals`/`subword_entropies` can be sliced to align with
+    `subword_tokens`."""
+    if context_len == 0:
+        return list(range(n_sentence))
+    if has_leading_special:
+        return [0] + [context_len + i for i in range(1, n_sentence)]
+    return [context_len + i for i in range(n_sentence)]
 
 
 def score_masked_lm_tokens(
@@ -257,6 +347,7 @@ def score_masked_lm_tokens(
     context_text: str = None,
     is_split_into_words: bool = True,
     pll_mode: str = "original",
+    entropy_agg: str = "mean",
 ) -> Dict[str, List]:
     """Score a single sentence under an MLM.
 
@@ -273,6 +364,13 @@ def score_masked_lm_tokens(
       - "within_word_l2r": when scoring subword k of a word, also mask all
         later subwords of that same word (Kauf & Ivanova 2023). Falls back to
         "original" when word_ids is unavailable.
+
+    `entropy_agg` controls how a multi-subword word's `word_entropies` value
+    is derived from its subword entropies:
+      - "mean" (default): mean across all subwords of the word.
+      - "sum": sum across all subwords of the word.
+      - "onset": entropy of the word's first subtoken.
+      - "successor": entropy of the word's last subtoken.
     """
     global _tokenizer, _model, _device
 
@@ -281,6 +379,9 @@ def score_masked_lm_tokens(
 
     if pll_mode not in ("original", "within_word_l2r"):
         raise ValueError("pll_mode must be one of: 'original', 'within_word_l2r'")
+
+    if entropy_agg not in _ENTROPY_AGG_MODES:
+        raise ValueError(f"entropy_agg must be one of: {_ENTROPY_AGG_MODES}")
 
     if is_split_into_words:
         if tokens is None or len(tokens) == 0:
@@ -308,9 +409,12 @@ def score_masked_lm_tokens(
         ctx = _tokenizer(context_text, add_special_tokens=False, return_tensors="pt")
         context_ids = ctx["input_ids"][0].tolist()
 
-    input_ids = _build_input_ids(context_ids, sentence_ids)
+    has_leading_special = _has_leading_special(sentence_ids)
+    context_ids = _truncate_context(context_ids, len(sentence_ids))
+    input_ids = _build_input_ids(context_ids, sentence_ids, has_leading_special)
     context_len = len(context_ids)
     seq_len = input_ids.shape[0]
+    sub_positions = _sentence_subword_positions(len(sentence_ids), context_len, has_leading_special)
 
     if is_split_into_words:
         n_words = len(tokens)
@@ -334,19 +438,22 @@ def score_masked_lm_tokens(
         ]
 
     if not positions:
+        full_surprisals = [float("nan")] * seq_len
+        full_entropies = [float("nan")] * seq_len
         result = {
-            "subword_surprisals": [float("nan")] * seq_len,
-            "subword_entropies": [float("nan")] * seq_len,
+            "subword_surprisals": [full_surprisals[p] for p in sub_positions],
+            "subword_entropies": [full_entropies[p] for p in sub_positions],
             "subword_word_ids": word_ids if word_ids is not None else [],
             "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
         }
         if word_ids is not None:
             result.update(_aggregate_to_words(word_ids, n_words, context_len,
-                                              result["subword_surprisals"], result["subword_entropies"]))
+                                              full_surprisals, full_entropies,
+                                              entropy_agg=entropy_agg))
         else:
             result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
         result["word_tokens"], result["word_oov"] = _extract_word_tokens(
-            is_split_into_words, tokens, word_ids, sentence_ids, n_words
+            is_split_into_words, tokens, encoding, word_ids, sentence_ids, n_words
         )
         return result
 
@@ -404,19 +511,20 @@ def score_masked_lm_tokens(
             subword_entropies[target_pos] = ent
 
     result = {
-        "subword_surprisals": subword_surprisals,
-        "subword_entropies": subword_entropies,
+        "subword_surprisals": [subword_surprisals[p] for p in sub_positions],
+        "subword_entropies": [subword_entropies[p] for p in sub_positions],
         "subword_word_ids": word_ids if word_ids is not None else [],
         "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
     }
 
     if word_ids is not None:
         result.update(_aggregate_to_words(word_ids, n_words, context_len,
-                                          subword_surprisals, subword_entropies))
+                                          subword_surprisals, subword_entropies,
+                                          entropy_agg=entropy_agg))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
     result["word_tokens"], result["word_oov"] = _extract_word_tokens(
-        is_split_into_words, tokens, word_ids, sentence_ids, n_words
+        is_split_into_words, tokens, encoding, word_ids, sentence_ids, n_words
     )
 
     return result
@@ -427,14 +535,18 @@ def score_autoregressive_tokens(
     temperature: float = 1.0,
     context_text: str = None,
     is_split_into_words: bool = True,
+    entropy_agg: str = "mean",
 ) -> Dict[str, List]:
     """AR counterpart of ``score_masked_lm_tokens``; see that function's
-    docstring for the meaning of ``is_split_into_words``.
+    docstring for the meaning of ``is_split_into_words`` and ``entropy_agg``.
     """
     global _tokenizer, _model, _device, _mode
 
     if _tokenizer is None or _model is None or _mode != "ar":
         raise RuntimeError("Model not loaded in AR mode. Call load_llm_model(mode='ar') first.")
+
+    if entropy_agg not in _ENTROPY_AGG_MODES:
+        raise ValueError(f"entropy_agg must be one of: {_ENTROPY_AGG_MODES}")
 
     if is_split_into_words:
         if tokens is None or len(tokens) == 0:
@@ -468,9 +580,12 @@ def score_autoregressive_tokens(
         ctx = _tokenizer(context_text, add_special_tokens=False, return_tensors="pt")
         context_ids = ctx["input_ids"][0].tolist()
 
-    input_ids = _build_input_ids(context_ids, sentence_ids)
+    has_leading_special = _has_leading_special(sentence_ids)
+    context_ids = _truncate_context(context_ids, len(sentence_ids))
+    input_ids = _build_input_ids(context_ids, sentence_ids, has_leading_special)
     context_len = len(context_ids)
     seq_len = input_ids.shape[0]
+    sub_positions = _sentence_subword_positions(len(sentence_ids), context_len, has_leading_special)
     input_tensor = input_ids.unsqueeze(0).to(_device)
 
     with torch.no_grad():
@@ -501,19 +616,20 @@ def score_autoregressive_tokens(
         subword_entropies[pos] = ent
 
     result = {
-        "subword_surprisals": subword_surprisals,
-        "subword_entropies": subword_entropies,
+        "subword_surprisals": [subword_surprisals[p] for p in sub_positions],
+        "subword_entropies": [subword_entropies[p] for p in sub_positions],
         "subword_word_ids": word_ids if word_ids is not None else [],
         "subword_tokens": _tokenizer.convert_ids_to_tokens(sentence_ids.tolist()),
     }
 
     if word_ids is not None:
         result.update(_aggregate_to_words(word_ids, n_words, context_len,
-                                          subword_surprisals, subword_entropies))
+                                          subword_surprisals, subword_entropies,
+                                          entropy_agg=entropy_agg))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
     result["word_tokens"], result["word_oov"] = _extract_word_tokens(
-        is_split_into_words, tokens, word_ids, sentence_ids, n_words
+        is_split_into_words, tokens, encoding, word_ids, sentence_ids, n_words
     )
 
     return result
