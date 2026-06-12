@@ -41,6 +41,17 @@
                    license = "CC BY-NC-SA 4.0",                    commercial = FALSE)
 )
 
+# Large UDPipe model files are hosted as assets on the "models-v1" GitHub
+# release rather than committed (each is >50 MB). ensure_udpipe_model() pulls
+# them on first use; keep this base URL and asset list as the single source of
+# truth (R/artefact_builders/fetch_udpipe_models.R reuses both).
+.alsi_model_release_base <-
+  "https://github.com/gloignon/ALSI/releases/download/models-v1"
+
+.alsi_udpipe_models <- c(
+  "french_gsd-remix_3.udpipe"
+)
+
 # -- Path resolution ----------------------------------------------------------
 
 #' Directory holding the lexical-database .Rds artefacts.
@@ -303,6 +314,44 @@ ensure_alector_demo_corpus <- function(
   }
 
   return(corpus_dir)
+}
+
+#' Ensure a UDPipe model is present locally, downloading it if missing.
+#'
+#' Large UDPipe model files are hosted as assets on the "models-v1" GitHub
+#' release rather than committed (each is >50 MB). This downloads the requested
+#' model into \code{model_dir} on first use and returns its path; on subsequent
+#' runs it is a no-op. The standalone
+#' \code{R/artefact_builders/fetch_udpipe_models.R} is a thin batch wrapper over
+#' this function. Demos and scripts call it in place of a hard-coded model path:
+#' \code{udpipe_load_model(file = ensure_udpipe_model())}.
+#'
+#' @param model_name Basename of the model file (a known release asset).
+#' @param model_dir Directory the model lives in / is downloaded to.
+#' @return Character scalar: path to the local model file.
+#' @export
+ensure_udpipe_model <- function(model_name = "french_gsd-remix_3.udpipe",
+                                model_dir = "models") {
+  if (!model_name %in% .alsi_udpipe_models) {
+    stop("Unknown UDPipe model '", model_name, "'. Known: ",
+         paste(.alsi_udpipe_models, collapse = ", "), call. = FALSE)
+  }
+
+  local_path <- file.path(model_dir, model_name)
+  if (file.exists(local_path)) {
+    return(local_path)
+  }
+
+  dir.create(model_dir, showWarnings = FALSE, recursive = TRUE)
+  url <- paste(.alsi_model_release_base, model_name, sep = "/")
+  message("Downloading UDPipe model '", model_name, "' from the models-v1 ",
+          "GitHub release (~70 MB, first run only) …")
+  status <- utils::download.file(url, local_path, mode = "wb", quiet = TRUE)
+  if (!identical(status, 0L) || !file.exists(local_path)) {
+    stop("Failed to download UDPipe model from:\n  ", url, call. = FALSE)
+  }
+
+  return(local_path)
 }
 
 #' Load the bundled demo corpus in one call.

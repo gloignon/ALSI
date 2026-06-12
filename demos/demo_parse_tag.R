@@ -33,9 +33,10 @@ source("R/fnt_setup.R", encoding = "UTF-8")
 corpus_dir <- ensure_viki_wiki_demo_corpus()
 
 # Load the French UDPipe model into memory.
-# This only needs to be done once per session — it is slow to load,
-# but fast once loaded.
-udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
+# ensure_udpipe_model() downloads it from the ALSI "models-v1" GitHub release
+# the first time (it is too large to commit), then returns the local path.
+# Loading is slow once per session but fast thereafter.
+udmodel_french <- udpipe_load_model(file = ensure_udpipe_model())
 
 # Detect the number of CPU cores available and reserve one for the OS.
 # parse_text() will spread sentences across cores to speed things up.
