@@ -20,8 +20,9 @@
 #
 # Prerequisites:
 # - out/demo_parsed_tagged.Rds — run demos/demo_parse_tag.R first (section 5).
-# - models/fr_gsd_alsi_20260524_122826.udpipe — ALSI-trained UDPipe model;
-#   downloaded automatically from the GitHub release if missing.
+# - models/french_gsd-remix_3.udpipe — the standard ALSI UDPipe model (same
+#   verb-retagging convention as the POS trigram model); downloaded
+#   automatically from the GitHub release if missing.
 # - corpora/fr_gsd-ud-train_alsi-verbpos.conllu — modified GSD training data;
 #   only needed if you change EXCLUDE_POS / USE_BOUNDARIES to rebuild a custom
 #   POS model (the distributed models/pos_trigram_fr_gsd_alsi.Rds is used by
@@ -89,9 +90,9 @@ if (using_defaults) {
 
 # 3) Score individual sentences ----
 
-alsi_udpipe_path <- "models/fr_gsd_alsi_20260524_122826.udpipe"
+alsi_udpipe_path <- "models/french_gsd-remix_3.udpipe"
 if (!file.exists(alsi_udpipe_path)) {
-  message("ALSI UDPipe model not found — downloading from GitHub (one-time, ~19 MB)...")
+  message("ALSI UDPipe model not found — downloading from GitHub (one-time, ~68 MB)...")
   source("R/artefact_builders/fetch_udpipe_models.R")
 }
 udmodel <- udpipe_load_model(alsi_udpipe_path)
