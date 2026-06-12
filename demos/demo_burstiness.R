@@ -1,9 +1,14 @@
 # Demo: Word burstiness features
 #
 # Scores Alector (79 original/simplified French text pairs) against
-# pre-built wikiviki burstiness norms. Run R/artefact_builders/build_wikiviki_norms.R
-# once before running this demo. Reuses the parsed ALECTOR corpus cached at
-# out/alector_parsed.Rds by demo_surprisal.R (parses it if not yet cached).
+# pre-built wikiviki burstiness norms. Reuses the parsed ALECTOR corpus cached
+# at out/alector_parsed.Rds by demo_surprisal.R (parses it if not yet cached).
+#
+# Prerequisites:
+# - norms/burstiness_viki.Rds — pre-built burstiness norms. Built once with
+#   R/artefact_builders/build_wikiviki_norms.R, which needs the (large,
+#   non-distributed) wikiviki dump; if you don't have the dump, ask the
+#   maintainer for the norms file.
 #
 # References:
 #   Altmann, Pierrehumbert & Motter (2009), PLoS ONE 4(11): e7678
@@ -17,12 +22,21 @@ library(tidyverse)
 source("R/fnt_corpus.R",     encoding = "UTF-8")
 source("R/fnt_burstiness.R", encoding = "UTF-8")
 source("R/fnt_utility.R",    encoding = "UTF-8")
+source("R/fnt_setup.R",      encoding = "UTF-8")  # ensure_alector_demo_corpus()
 
 dir.create("out", showWarnings = FALSE)
 
 
 # ── 1. Load reference norms ───────────────────────────────────────────────────
 
+if (!file.exists("norms/burstiness_viki.Rds")) {
+  stop(
+    "norms/burstiness_viki.Rds not found.\n",
+    "Build it once with R/artefact_builders/build_wikiviki_norms.R ",
+    "(requires the wikiviki dump — see the header of this demo).",
+    call. = FALSE
+  )
+}
 norms     <- readRDS("norms/burstiness_viki.Rds")
 beta_ref  <- norms$beta
 adapt_ref <- norms$adaptation
@@ -43,7 +57,8 @@ if (file.exists(cache_alector_parsed)) {
   dt_alector <- readRDS(cache_alector_parsed)
 } else {
   message("Parsing Alector with UDPipe...")
-  dt_alector_raw <- parse_text(build_corpus("demo_corpora/alector/"),
+  # Unzips the bundled demo_corpora/alector.zip on first run.
+  dt_alector_raw <- parse_text(build_corpus(ensure_alector_demo_corpus()),
                                n_cores = max(1L, parallel::detectCores() - 1L))
   dt_alector     <- post_process_lexicon(dt_alector_raw)
   saveRDS(dt_alector, cache_alector_parsed)

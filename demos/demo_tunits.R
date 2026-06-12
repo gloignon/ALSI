@@ -21,8 +21,9 @@
 # - A UDPipe model at models/french_gsd-remix_3.udpipe (for the toy sentences).
 # - Run demos/demo_parse_tag.R first. It saves out/demo_parsed_tagged.Rds,
 #   the ~400-document Vikidia/Wikipedia paired corpus used in sections 2–3.
-# - demo_corpora/alector/ — 79 paired original/simplified .txt files
-#   (used in section 4; parsed and cached automatically on first run).
+# - demo_corpora/alector.zip — bundled ALECTOR corpus (79 paired
+#   original/simplified texts); unzipped, parsed, and cached automatically
+#   on first run (section 4).
 #
 # Last update: 2026-05-27
 
@@ -36,6 +37,7 @@ source("R/fnt_corpus.R",       encoding = "UTF-8")
 source("R/fnt_extra_syntax.R", encoding = "UTF-8")
 source("R/fnt_tunits.R",       encoding = "UTF-8")
 source("R/fnt_utility.R",      encoding = "UTF-8")
+source("R/fnt_setup.R",        encoding = "UTF-8")  # ensure_alector_demo_corpus()
 
 dir.create("out", showWarnings = FALSE)
 
@@ -207,10 +209,8 @@ alector_cache <- "out/demo_alector_tunits_parsed.Rds"
 if (file.exists(alector_cache)) {
   dt_alector <- readRDS(alector_cache)
 } else {
-  if (!dir.exists("demo_corpora/alector")) {
-    stop("demo_corpora/alector/ not found. Add the ALECTOR .txt files to run this section.")
-  }
-  dt_alector <- parse_text(build_corpus("demo_corpora/alector/"),
+  # Unzips the bundled demo_corpora/alector.zip on first run.
+  dt_alector <- parse_text(build_corpus(ensure_alector_demo_corpus()),
                            n_cores = max(1L, parallel::detectCores() - 1L))
   saveRDS(dt_alector, alector_cache)
 }

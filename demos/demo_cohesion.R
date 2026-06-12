@@ -108,6 +108,10 @@ print(simple_lexical_cohesion(copy(dt_toy), n_sent_context = c(1)))
 # (look back 1 sentence) and a broader window (look back 5 sentences).
 # The broader window captures paragraph-scale coherence.
 
+if (!file.exists("out/demo_parsed_tagged.Rds")) {
+  stop("out/demo_parsed_tagged.Rds not found — run demos/demo_parse_tag.R first.",
+       call. = FALSE)
+}
 dt_parsed_corpus <- readRDS("out/demo_parsed_tagged.Rds")
 message("Loaded corpus: ", uniqueN(dt_parsed_corpus$doc_id), " documents")
 

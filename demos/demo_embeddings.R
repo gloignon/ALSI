@@ -41,6 +41,8 @@ library(reticulate)  # R-Python bridge
 library(effsize)     # for cohen.d()
 
 # py_require() installs Python packages automatically if missing.
+# action = "add" lets this work even when Python was already initialised by
+# another demo earlier in the same R session (the default action errors then).
 py_require(c(
   "transformers>=4.41,<5",
   "torch",
@@ -48,7 +50,7 @@ py_require(c(
   "sentence-transformers",
   "numpy",
   "scipy"
-))
+), action = "add")
 
 source("R/fnt_utility.R",    encoding = "UTF-8")
 source("R/fnt_embeddings.R", encoding = "UTF-8")
@@ -81,6 +83,10 @@ feat_cols <- c(
 # and document-level embedding tables. The sentence-level table is what
 # embedding_coherence() needs to compute structural features.
 
+if (!file.exists("out/demo_parsed_tagged.Rds")) {
+  stop("out/demo_parsed_tagged.Rds not found — run demos/demo_parse_tag.R first.",
+       call. = FALSE)
+}
 dt_parsed_corpus <- readRDS("out/demo_parsed_tagged.Rds")
 message("Viki-Wiki corpus: ", n_distinct(dt_parsed_corpus$doc_id),
         " documents, ", nrow(dt_parsed_corpus), " tokens")

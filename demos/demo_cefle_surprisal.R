@@ -36,12 +36,14 @@ library(reticulate)
 library(nnet)  # multinom() is in base R's nnet package
 
 
+# action = "add" lets this work even when Python was already initialised by
+# another demo earlier in the same R session (the default action errors then).
 py_require(c(
   "transformers>=4.41,<5",
   "torch",
   "tokenizers",
   "numpy"
-))
+), action = "add")
 
 source("R/fnt_surprisal.R", encoding = "UTF-8")
 source("R/fnt_utility.R",   encoding = "UTF-8")

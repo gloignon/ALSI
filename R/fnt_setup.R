@@ -264,6 +264,52 @@ ensure_viki_wiki_demo_corpus <- function(
   return(corpus_dir)
 }
 
+#' Ensure the bundled ALECTOR demo corpus is unzipped; return its directory.
+#'
+#' The ALECTOR corpus (Gala et al., 2020) ships as
+#' \code{demo_corpora/alector.zip}: unmodified source \code{.txt} files,
+#' redistributed under the CC BY-NC-ND 4.0 "Share" grant (see
+#' docs/licensing_and_resource_distribution.md §4.0). The extracted directory
+#' is gitignored and rebuilt from the zip on first use. Derived artefacts
+#' (CSVs, parses) are built locally and never redistributed.
+#'
+#' @param corpus_dir Directory the .txt files are expected in / extracted to.
+#' @param zip_path Bundled zip to extract when the directory is missing.
+#' @return Character scalar: \code{corpus_dir}.
+#' @export
+ensure_alector_demo_corpus <- function(
+  corpus_dir = file.path("demo_corpora", "alector"),
+  zip_path = file.path("demo_corpora", "alector.zip")
+) {
+  txt_files <- list.files(corpus_dir, pattern = "\\.txt$", full.names = TRUE)
+  if (dir.exists(corpus_dir) && length(txt_files) > 0L) {
+    return(corpus_dir)
+  }
+
+  if (!file.exists(zip_path)) {
+    stop(
+      "ALECTOR demo corpus not found. Expected either:\n",
+      "  - ", corpus_dir, "/\n",
+      "  - ", zip_path
+    )
+  }
+
+  message(
+    "Unzipping ALECTOR demo corpus from ", zip_path,
+    " (Gala et al., 2020; CC BY-NC-ND 4.0 — non-commercial use only)"
+  )
+  # Unlike viki_wiki.zip, the .txt files sit at the zip root, so extract
+  # straight into the target directory.
+  unzip(zip_path, exdir = corpus_dir)
+
+  txt_files <- list.files(corpus_dir, pattern = "\\.txt$", full.names = TRUE)
+  if (length(txt_files) == 0L) {
+    stop("Unzipped ALECTOR corpus, but no .txt files were found in ", corpus_dir)
+  }
+
+  return(corpus_dir)
+}
+
 #' Load the bundled demo corpus in one call.
 #'
 #' Convenience entry point for the demos: determines internally whether the
