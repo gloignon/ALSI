@@ -35,6 +35,8 @@ library(effsize)  # for cohen.d()
 
 source("R/fnt_cohesion.R", encoding = "UTF-8")
 source("R/fnt_utility.R",  encoding = "UTF-8")
+source("R/fnt_corpus.R",   encoding = "UTF-8")  # build_corpus(), parse_text()
+source("R/fnt_setup.R",    encoding = "UTF-8")  # ensure_alector_demo_corpus()
 
 
 # 1) Single-sentence inspection on a toy corpus ----
@@ -180,13 +182,27 @@ res_vw <- cohesion_effect_sizes(dt_cohesion, dt_parsed_corpus,
 # ALECTOR pairs each original (source) text with a simplified (target) version.
 # If simplification increases cohesion, target texts should have higher overlap.
 
-dt_alector <- readRDS("out/alector_parsed.Rds")
+# Reuse the cache written by demo_surprisal.R / demo_burstiness.R if present;
+# otherwise parse the bundled zip here (unzipped on first use).
+if (file.exists("out/alector_parsed.Rds")) {
+  dt_alector <- readRDS("out/alector_parsed.Rds")
+} else {
+  message("Parsing ALECTOR with UDPipe (first run — a few minutes)...")
+  library(udpipe)
+  dt_alector <- post_process_lexicon(
+    parse_text(build_corpus(ensure_alector_demo_corpus()),
+               n_cores = max(1L, parallel::detectCores() - 1L))
+  )
+  saveRDS(dt_alector, "out/alector_parsed.Rds")
+}
 message("ALECTOR corpus: ", uniqueN(dt_alector$doc_id), " documents, ",
         nrow(dt_alector), " tokens")
 
 dt_classes_al <- unique(data.table(
   doc_id = dt_alector$doc_id,
-  class  = ifelse(grepl("_target_", dt_alector$doc_id), 1L, 2L)
+  # "_target" matches both doc_id formats: "alector_target_00" (cache from
+  # demo_surprisal.R) and "000_target.txt" (parsed here from the zip).
+  class  = ifelse(grepl("_target", dt_alector$doc_id), 1L, 2L)
 ))
 
 dt_cohesion_al <- simple_lexical_cohesion(dt_alector, n_sent_context = c(1, 5))

@@ -26,6 +26,9 @@
 #   - Python with transformers, torch, tokenizers, numpy (auto-installed via py_require)
 #   - Internet access for first download of corpus and model
 #   - models/french_gsd-remix_3.udpipe
+#   - Best run in a fresh R session: reticulate locks parts of the Python
+#     configuration once Python starts, so a session that already ran another
+#     Python-based demo can fail to add packages.
 #
 # Note: computing surprisal on 158 documents takes several minutes on CPU;
 #   much faster with a GPU. Results are cached in out/ to avoid recomputing.

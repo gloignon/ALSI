@@ -26,6 +26,9 @@
 #
 # Prerequisites:
 #   - Python with transformers, torch, tokenizers, numpy (auto-installed)
+#   - Best run in a fresh R session: reticulate locks parts of the Python
+#     configuration once Python starts, so a session that already ran another
+#     Python-based demo can fail to add packages.
 #
 # Runtime note: scoring 136 documents takes several minutes on CPU.
 #   Results are cached in out/ so subsequent runs are instant.

@@ -157,6 +157,10 @@ print(res_nom$token_surprisal |>
 # 4) Full corpus scoring (on Viki-Wiki) ----
 
 message("Loading parsed corpus...")
+if (!file.exists("out/demo_parsed_tagged.Rds")) {
+  stop("out/demo_parsed_tagged.Rds not found — run demos/demo_parse_tag.R first.",
+       call. = FALSE)
+}
 dt_corpus <- readRDS("out/demo_parsed_tagged.Rds") |> as_tibble()
 
 message("Scoring POS surprisal on full corpus...")

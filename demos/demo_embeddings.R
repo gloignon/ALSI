@@ -31,6 +31,9 @@
 #   - Python with sentence-transformers, transformers, torch, numpy, scipy
 #     (auto-installed via py_require — you do not need to set up a venv)
 #   - Internet access on first run to download the embedding model (~400 MB)
+#   - Best run in a fresh R session: reticulate locks parts of the Python
+#     configuration once Python starts, so a session that already ran another
+#     Python-based demo can fail to add packages.
 
 
 # 0) Setup ----
