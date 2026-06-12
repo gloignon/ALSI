@@ -39,6 +39,8 @@ demo_corpora/alector/
 
 # Viki-Wiki demo corpus — distributed as demo_corpora/viki_wiki.zip
 demo_corpora/viki_wiki/
+# Large derived viki-wiki dump — not redistributable, fetched/built locally
+demo_corpora/wikiviki_dump_*.tsv
 
 # Lexical databases — only Lexique3 (CC license) is redistributable.
 # All other built/raw lexical resources (EQOL, FleLex, Manulex, LexConn,
