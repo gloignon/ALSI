@@ -25,4 +25,36 @@ training/
 /models/trankit_fr_v1/xlm-roberta-base/models--xlm-roberta-base/blobs/
 /models/trankit_fr_v1/xlm-roberta-base/models--xlm-roberta-base/snapshots/*/model.safetensors
 
+# Large UDPipe model — hosted as a GitHub release asset, fetched by
+# R/artefact_builders/fetch_udpipe_models.R
+/models/french_gsd-remix_3.udpipe
+
+# CEFLE — fetched by each user from Lund University; not redistributable (ELRA license)
+demo_corpora/cefle_corpus_texts.csv
+
+# Alector derived artefacts — built locally from bundled zip; not redistributable (CC BY-NC-ND)
+demo_corpora/alector_corpus.csv
+demo_corpora/alector_metadata.csv
+demo_corpora/alector/
+
+# Viki-Wiki demo corpus — distributed as demo_corpora/viki_wiki.zip
+demo_corpora/viki_wiki/
+
+# Lexical databases — only Lexique3 (CC license) is redistributable.
+# All other built/raw lexical resources (EQOL, FleLex, Manulex, LexConn,
+# raw downloads, etc.) are excluded; each user fetches/builds them locally
+# via R/artefact_builders/fetch_*.R.
+lexical_dbs/*
+!lexical_dbs/dt_lexique3.Rds
+
+# Local/downloaded models. Only the small bundled calibration/prototype models
+# below are committed; users fetch the remaining model artefacts locally.
+models/*
+!models/pos_trigram_fr_gsd_alsi.Rds
+!models/gam_sent_length_calibration.Rds
+
+# Stray R/build artifacts
+Rplots.pdf
+index.html
+.DS_Store
 
