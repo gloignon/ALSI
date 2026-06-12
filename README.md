@@ -24,7 +24,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **POS surprisal** — token-, sentence-, and document-level surprisal and entropy from a UPOS trigram model. Includes Stupid Backoff (Brants et al. 2007) for unseen trigrams, optional sentence-boundary padding, and SD of surprisal as a Uniform Information Density proxy (Jaeger 2010).
 - **LLM surprisal** — token-level surprisal and entropy from masked (MLM) or autoregressive (AR) language models.
 - **Word burstiness** — Weibull β scores (Altmann, Pierrehumbert & Motter, 2009) and negative-binomial adaptation scores (Church & Gale, 1995) measuring how clustered each word's occurrences are across documents.
-- **Multi-word expression (MWE) matching** — density features for any user-supplied MWE lexicon, broken down by relation group and category. Demonstrated with LEXCONN (Roze, Danlos & Muller, 2012), a French discourse-connective lexicon.
+- **Multi-word expression (MWE) matching** — density features for any user-supplied MWE lexicon, broken down by relation group and category.
 - **Ollama LLM querying** — general-purpose row-by-row querying of a locally-run LLM (via [Ollama](https://ollama.com/)) for annotation, classification, paraphrase, or any templated task.
 - **Lexical database features** (see below)
 
@@ -98,8 +98,6 @@ Loignon, G. (2021). ILSA: an automated language complexity analysis tool for Fre
 Lu, X. (2010). Automatic analysis of syntactic complexity in second language writing. International Journal of Corpus Linguistics, 15(4), 474–496. <https://doi.org/10.1075/ijcl.15.4.02lu>
 
 New, B., Pallier, C., Brysbaert, M., & Ferrand, L. (2004). Lexique 2: A new French lexical database. Behavior Research Methods, Instruments, & Computers, 36(3), 516-524.
-
-Roze, C., Danlos, L., & Muller, P. (2012). LEXCONN: A French lexicon of discourse connectives. Discours, 10. <https://doi.org/10.4000/discours.8645>
 
 Sagot, B. (2010). The Lefff, a freely available and large-coverage morphological and syntactic lexicon for French. In *Proceedings of the Seventh International Conference on Language Resources and Evaluation (LREC 2010)*. European Language Resources Association.
 
