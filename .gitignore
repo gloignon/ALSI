@@ -55,6 +55,13 @@ models/*
 !models/pos_trigram_fr_gsd_alsi.Rds
 !models/gam_sent_length_calibration.Rds
 
+# Root markdown — only README, FEATURES, LICENSE are distributed.
+# Agent/working docs (AGENTS, CLAUDE, DESLOPPIFY_R, etc.) stay local.
+/*.md
+!/README.md
+!/FEATURES.md
+!/LICENSE.md
+
 # Stray R/build artifacts
 Rplots.pdf
 index.html

@@ -228,14 +228,16 @@ Produced in: `R/fnt_extra_syntax.R` (`extra_syntactic_features`)
 
 Operationalized following Lu (2010, *International Journal of Corpus Linguistics*, 15(4), 474–496), translated from Penn Treebank tregex patterns to Universal Dependencies. Dependency distance follows Liu (2008, *Journal of Cognitive Science*, 9(2), 159–191).
 
+Source split: clause length, clausal density, dependent-clause ratios, and complex nominal measures are Lu (2010)-derived. Mean dependency distance is Liu (2008).
+
 | Feature name | Script | Short description | Level |
 |---|---|---|---|
-| `clausal_density` | `R/fnt_extra_syntax.R` | Mean clauses per sentence (Lu C/S). Clause boundaries identified by UD relations: `ccomp`, `acl`, `advcl`, `xcomp`, `csubj`, `csubj:pass`, `acl:relcl`. Each sentence counts as at least 1. | document |
-| `avg_clause_length` | `R/fnt_extra_syntax.R` | Mean tokens per clause (Lu MLC). | document |
-| `dc_per_clause` | `R/fnt_extra_syntax.R` | Mean proportion of clauses that are dependent clauses (Lu DC/C): mean((n\_clause − 1) / n\_clause) per sentence. | document |
-| `complex_nom_per_sent` | `R/fnt_extra_syntax.R` | Mean complex nominals per sentence. A NOUN head with at least one child bearing `amod`, `nmod`, `nmod:poss`, `acl`, `acl:relcl`, `nummod`, `appos`, `compound`, or `det:nummod`. | document |
+| `clausal_density` | `R/fnt_extra_syntax.R` | Mean clauses per sentence (Lu C/S). Clause count = T-units plus finite dependent-clause heads identified by UD relations `ccomp`, `advcl`, `acl`, `acl:relcl`. | document |
+| `avg_clause_length` | `R/fnt_extra_syntax.R` | Mean tokens per clause (Lu MLC): total counted tokens / total clauses. | document |
+| `dc_per_clause` | `R/fnt_extra_syntax.R` | Mean proportion of clauses that are dependent clauses (Lu DC/C): mean(dependent clauses / total clauses) per sentence. | document |
+| `complex_nom_per_sent` | `R/fnt_extra_syntax.R` | Mean complex nominals per sentence, using Lu (2010)-derived complex nominal detection. A NOUN head with at least one child bearing `amod`, `nmod`, `nmod:poss`, `acl`, `acl:relcl`, `nummod`, `appos`, `compound`, or `det:nummod`. | document |
 | `cn_per_clause` | `R/fnt_extra_syntax.R` | Mean complex nominals per clause (Lu CN/C). | document |
-| `complex_verb_per_sent` | `R/fnt_extra_syntax.R` | Mean complex verbs per sentence. A VERB head with at least one `aux` or `aux:pass` child (captures modals, passives, perfect, progressive). Not one of Lu's 14 indices; added by ALSI. | document |
+| `complex_verb_per_sent` | `R/fnt_extra_syntax.R` | Mean complex verbs per sentence. A VERB head with at least one `aux`, `aux:pass`, `aux:tense`, or `aux:caus` child. Not one of Lu's 14 indices; added by ALSI. | document |
 | `cv_per_clause` | `R/fnt_extra_syntax.R` | Mean complex verbs per clause. Analogous to Lu CN/C but for complex verbs. Not one of Lu's 14 indices; added by ALSI. | document |
 | `avg_dep_dist` | `R/fnt_extra_syntax.R` | Mean Dependency Distance (MDD, Liu 2008): mean \|position(head) − position(dependent)\| over non-PUNCT tokens. | document |
 | `avg_dep_count` | `R/fnt_extra_syntax.R` | Mean number of dependents per token (mean out-degree in the dependency tree). | document |
