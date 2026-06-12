@@ -33,7 +33,7 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
     mode = mode,
     use_fast = use_fast,
     trust_remote_code = trust_remote_code,
-    add_prefix_space = isTRUE(add_prefix_space),
+    add_prefix_space = add_prefix_space,
     force_fast = isTRUE(force_fast)
   )
   invisible(TRUE)
@@ -57,6 +57,11 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
 #' @param pll_mode Character; PLL scoring mode for MLM models. Either
 #'   \code{"original"} (Salazar et al. 2020) or \code{"within_word_l2r"}
 #'   (Kauf & Ivanova 2023). Ignored for AR models.
+#' @param entropy_agg Character; how a multi-subword word's
+#'   \code{llm_entropy} is derived from its subword entropies. One of
+#'   \code{"mean"} (default, mean across subwords), \code{"sum"} (sum across
+#'   subwords), \code{"onset"} (entropy of the word's first subtoken), or
+#'   \code{"successor"} (entropy of the word's last subtoken).
 #' @returns The input \code{data.table} augmented with \code{llm_surprisal},
 #'   \code{llm_entropy}, and \code{llm_subword_n} columns.
 llm_surprisal_entropy <- function(dt_corpus,
@@ -68,7 +73,8 @@ llm_surprisal_entropy <- function(dt_corpus,
                                   use_fast = TRUE,
                                   trust_remote_code = TRUE,
                                   add_prefix_space = NULL,
-                                  pll_mode = "original") {
+                                  pll_mode = "original",
+                                  entropy_agg = "mean") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -94,6 +100,11 @@ llm_surprisal_entropy <- function(dt_corpus,
   data.table::setorderv(dt, c("doc_id", "sentence_id", order_col))
   dt[, token_index := seq_len(.N), by = .(doc_id, sentence_id)]
 
+  # In AR mode without context, the first word of each sentence is scored
+  # from a BOS-only fallback (no left context) and is not comparable to the
+  # rest; report it as NA.
+  no_context <- mode == "ar" && (is.null(context) || !nzchar(context))
+
   # Load Python scoring backend (only if not already loaded)
   reticulate::source_python("py/llm_scoring.py")
   py_state <- tryCatch(get_llm_state(), error = function(e) NULL)
@@ -106,13 +117,13 @@ llm_surprisal_entropy <- function(dt_corpus,
       py_model != model_name ||
       py_mode != mode ||
       is.null(py_prefix_space) ||
-      (!is.null(add_prefix_space) && isTRUE(add_prefix_space) && !isTRUE(py_prefix_space))) {
+      (!is.null(add_prefix_space) && isTRUE(add_prefix_space) != isTRUE(py_prefix_space))) {
     load_llm_model(
       model_name,
       mode = mode,
       use_fast = use_fast,
       trust_remote_code = trust_remote_code,
-      add_prefix_space = isTRUE(add_prefix_space)
+      add_prefix_space = add_prefix_space
     )
   }
 
@@ -147,13 +158,15 @@ llm_surprisal_entropy <- function(dt_corpus,
           temperature = temperature,
           batch_size = batch_size,
           context_text = context,
-          pll_mode = pll_mode
+          pll_mode = pll_mode,
+          entropy_agg = entropy_agg
         )
       } else if (mode == "ar") {
         score_autoregressive_tokens(
           tokens = sent_tokens,
           temperature = temperature,
-          context_text = context
+          context_text = context,
+          entropy_agg = entropy_agg
         )
       } else {
         stop("mode must be one of: 'mlm', 'ar'")
@@ -166,12 +179,18 @@ llm_surprisal_entropy <- function(dt_corpus,
 
     if (!is.null(score)) {
       n_tokens <- length(sent_tokens)
+      llm_surprisal <- unlist(score$word_surprisals)
+      llm_entropy <- unlist(score$word_entropies)
+      if (no_context && n_tokens > 0) {
+        llm_surprisal[1] <- NA_real_
+        llm_entropy[1] <- NA_real_
+      }
       results[[i]] <- data.table::data.table(
         doc_id = doc_id,
         sentence_id = sentence_id,
         token_index = seq_len(n_tokens),
-        llm_surprisal = unlist(score$word_surprisals),
-        llm_entropy = unlist(score$word_entropies),
+        llm_surprisal = llm_surprisal,
+        llm_entropy = llm_entropy,
         llm_subword_n = unlist(score$word_token_counts)
       )
     }
@@ -224,6 +243,8 @@ llm_surprisal_entropy <- function(dt_corpus,
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
 #' @param pll_mode Character; PLL scoring mode. See \code{llm_surprisal_entropy}.
+#' @param entropy_agg Character; entropy aggregation mode. See
+#'   \code{llm_surprisal_entropy}.
 #' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
 #'   \code{sentence}, \code{llm_surprisal}, and \code{llm_entropy}
 #'   (sentence-level means).
@@ -236,7 +257,8 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
                                             use_fast = TRUE,
                                             trust_remote_code = TRUE,
                                             add_prefix_space = NULL,
-                                            pll_mode = "original") {
+                                            pll_mode = "original",
+                                            entropy_agg = "mean") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -261,7 +283,8 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
     use_fast = use_fast,
     trust_remote_code = trust_remote_code,
     add_prefix_space = add_prefix_space,
-    pll_mode = pll_mode
+    pll_mode = pll_mode,
+    entropy_agg = entropy_agg
   )
 
   dt_result <- dt_scored[, .(
@@ -300,6 +323,8 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
 #' @param pll_mode Character; PLL scoring mode. See \code{llm_surprisal_entropy}.
+#' @param entropy_agg Character; entropy aggregation mode. See
+#'   \code{llm_surprisal_entropy}.
 #' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
 #'   \code{token_id} (word index within the sentence), \code{token} (the
 #'   word as the tokenizer sees it), \code{llm_surprisal},
@@ -313,7 +338,8 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
                                       use_fast = TRUE,
                                       trust_remote_code = TRUE,
                                       add_prefix_space = NULL,
-                                      pll_mode = "original") {
+                                      pll_mode = "original",
+                                      entropy_agg = "mean") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -326,6 +352,11 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
   dt <- data.table::as.data.table(data.table::copy(dt_sentences))
   data.table::setorderv(dt, c("doc_id", "sentence_id"))
 
+  # In AR mode without context, the first word of each sentence is scored
+  # from a BOS-only fallback (no left context) and is not comparable to the
+  # rest; report it as NA.
+  no_context <- mode == "ar" && (is.null(context) || !nzchar(context))
+
   reticulate::py_require(c("torch", "transformers"), action = "add")
   reticulate::source_python("py/llm_scoring.py")
   py_state <- tryCatch(get_llm_state(), error = function(e) NULL)
@@ -336,13 +367,13 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
   if (is.null(py_model) || is.null(py_mode) ||
       py_model != model_name || py_mode != mode ||
       is.null(py_prefix_space) ||
-      (!is.null(add_prefix_space) && isTRUE(add_prefix_space) && !isTRUE(py_prefix_space))) {
+      (!is.null(add_prefix_space) && isTRUE(add_prefix_space) != isTRUE(py_prefix_space))) {
     load_llm_model(
       model_name,
       mode = mode,
       use_fast = use_fast,
       trust_remote_code = trust_remote_code,
-      add_prefix_space = isTRUE(add_prefix_space)
+      add_prefix_space = add_prefix_space
     )
   }
 
@@ -363,14 +394,16 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
           batch_size          = batch_size,
           context_text        = context,
           is_split_into_words = FALSE,
-          pll_mode            = pll_mode
+          pll_mode            = pll_mode,
+          entropy_agg         = entropy_agg
         )
       } else if (mode == "ar") {
         score_autoregressive_tokens(
           tokens              = sentence,
           temperature         = temperature,
           context_text        = context,
-          is_split_into_words = FALSE
+          is_split_into_words = FALSE,
+          entropy_agg         = entropy_agg
         )
       } else {
         stop("mode must be one of: 'mlm', 'ar'")
@@ -384,13 +417,19 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
     if (!is.null(score)) {
       n_words <- length(score$word_surprisals)
       if (n_words > 0) {
+        llm_surprisal <- unlist(score$word_surprisals)
+        llm_entropy <- unlist(score$word_entropies)
+        if (no_context) {
+          llm_surprisal[1] <- NA_real_
+          llm_entropy[1] <- NA_real_
+        }
         results[[i]] <- data.table::data.table(
           doc_id        = doc_id,
           sentence_id   = sentence_id,
           token_id      = seq_len(n_words),
           token         = unlist(score$word_tokens),
-          llm_surprisal = unlist(score$word_surprisals),
-          llm_entropy   = unlist(score$word_entropies),
+          llm_surprisal = llm_surprisal,
+          llm_entropy   = llm_entropy,
           llm_subword_n = unlist(score$word_token_counts),
           tokenizer_oov = unlist(score$word_oov)
         )
