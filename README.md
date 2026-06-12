@@ -42,7 +42,7 @@ ALSI extracts many types of features ([see the full feature list](https://github
 
 -   Lexique3 (New et al., 2004)
 
-We do not redistribute these databases; they will be downloaded on first run. You are responsible for respecting their respective user licenses and cite the relevant papers if you use them.
+We do not redistribute these databases. Download your own copy with `alsi_setup_databases()`, which shows each license and asks for confirmation before fetching restricted resources (`alsi_list_databases()` shows what is present). You are responsible for respecting the respective user licenses — several are non-commercial — and for citing the relevant papers if you use them.
 
 ## Encoding support
 

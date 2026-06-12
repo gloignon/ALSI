@@ -20,9 +20,10 @@
 library(readr)  # for read_file() and guess_encoding()
 
 source("R/fnt_corpus.R", encoding = "UTF-8")
+source("R/fnt_setup.R", encoding = "UTF-8")
 
 # Adjust this path to point at a folder containing at least one .txt file.
-corpus_dir <- "demo_corpora/viki_wiki/"
+corpus_dir <- ensure_viki_wiki_demo_corpus()
 
 
 # 1) Standard UTF-8 read ----

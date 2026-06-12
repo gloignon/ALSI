@@ -23,7 +23,7 @@
 #   - Model pulled before running this script:
 #       ollama pull gemma3:4b
 #     (run this once in a terminal — downloads ~3 GB)
-#   - demo_corpus/   — any folder with .txt files; wiki_ prefix docs are used
+#   - demo_corpora/viki_wiki.zip — demo .txt corpus; wiki_ prefix docs are used
 #
 #
 # Using a non-Ollama backend (openai protocol)
@@ -41,6 +41,7 @@ library(data.table)
 
 source("R/fnt_corpus.R",  encoding = "UTF-8")
 source("R/fnt_ollama.R",  encoding = "UTF-8")
+source("R/fnt_setup.R", encoding = "UTF-8")
 
 # Address (IP/hostname + port) of the Ollama server. Change this if Ollama
 # is running on a nonstandard port or on a different machine than the one
@@ -82,7 +83,7 @@ if (is.na(dt_test$ollama_response[1]) || !nzchar(dt_test$ollama_response[1])) {
 
 N_DOCS <- 5
 
-dt_corpus <- build_corpus("demo_corpora/viki_wiki/")
+dt_corpus <- load_demo_corpus()
 dt_wiki   <- dt_corpus[grepl("^wiki_", doc_id)][1:N_DOCS]
 
 message("Demo corpus: ", nrow(dt_wiki), " documents")

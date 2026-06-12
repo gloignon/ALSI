@@ -54,9 +54,6 @@ source("R/fnt_utility.R",       encoding = "UTF-8")
 source("R/fnt_embeddings.R",    encoding = "UTF-8")
 source("R/fnt_burstiness.R",    encoding = "UTF-8")
 source("R/artefact_builders/build_pos_ngrams.R", encoding = "UTF-8")
-source("demos/demo_helpers.R", encoding = "UTF-8")
-
-corpus_dir <- ensure_viki_wiki_demo_corpus()
 
 udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
 
@@ -64,8 +61,8 @@ udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
 # Each block showcases a capability (parsing, counts, lexical enrichment, syntax,
 # surprisal, embeddings, and outputs), with saved artifacts in `out/` folder.
 
-# 1) Read the corpus files
-dt_txt <- build_corpus(corpus_dir)
+# 1) Read the demo corpus (unzips demo_corpora/viki_wiki.zip on first use)
+dt_txt <- load_demo_corpus()
 
 # 2) Parse with UDPipe
 dt_parsed_raw <- parse_text(dt_txt, n_cores = parallel::detectCores() - 1L)

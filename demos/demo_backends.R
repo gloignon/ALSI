@@ -20,6 +20,7 @@
 #   - models/french_gsd-remix_3.udpipe    — UDPipe model
 #   - models/spacy_fr_gsd_alsi_v1/        — spaCy model
 #   - models/trankit_fr_v1/               — Trankit model
+#   - demo_corpora/viki_wiki.zip          — optional full corpus run
 #   (spaCy and Trankit Python packages are installed automatically on first use)
 #
 # Last update: 2026-05-27
@@ -28,6 +29,7 @@ library(data.table)
 library(udpipe)
 
 source("R/fnt_corpus.R", encoding = "UTF-8")
+source("R/fnt_setup.R", encoding = "UTF-8")
 
 
 # 1) Setup ----
@@ -158,10 +160,10 @@ print(dt_compare[, .(doc_id, token_id, token,
 # For a whole corpus, the API is identical to UDPipe — just add backend = "spacy".
 # spaCy is typically faster than Trankit on CPU for large batches.
 
-if (dir.exists("demo_corpora/viki_wiki")) {
-  dt_txt <- build_corpus("demo_corpora/viki_wiki")
+if (file.exists("demo_corpora/viki_wiki.zip") || dir.exists("demo_corpora/viki_wiki")) {
+  dt_txt <- load_demo_corpus()
   message(nrow(dt_txt), " documents loaded — parsing with spaCy...")
   dt_spacy_corpus <- parse_text(dt_txt, backend = "spacy", spacy_model = spacy_model_path)
 } else {
-  message("Place the viki_wiki corpus in demo_corpora/viki_wiki/ for a full corpus run.")
+  message("Place the Viki-Wiki corpus zip at demo_corpora/viki_wiki.zip for a full corpus run.")
 }

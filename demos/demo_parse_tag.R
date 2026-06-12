@@ -10,7 +10,7 @@
 # other demo. Run this script first before running any other demo.
 #
 # Prerequisites:
-#   - demo_corpora/viki_wiki/   — paired Vikidia / Wikipedia plain-text files
+#   - demo_corpora/viki_wiki.zip — paired Vikidia / Wikipedia plain-text files
 #   - demo_corpora/alector_corpus.csv — ALECTOR simplification corpus (optional)
 #   - models/french_gsd-remix_3.udpipe — ALSI French UDPipe model
 #
@@ -24,9 +24,13 @@ library(data.table)  # fast data frames — used throughout ALSI
 library(udpipe)      # interface to the UDPipe parser
 
 source("R/fnt_corpus.R", encoding = "UTF-8")
+source("R/fnt_setup.R", encoding = "UTF-8")
 
-# Where the text files live (one .txt per document)
-corpus_dir <- "demo_corpora/viki_wiki/"
+# Where the text files live after first-run extraction (one .txt per document).
+# ensure_viki_wiki_demo_corpus() unzips demo_corpora/viki_wiki.zip if needed and
+# returns the directory; we keep the path because section 2 reads a single file.
+# (If you just want the whole corpus in one call, use load_demo_corpus() — see 3a.)
+corpus_dir <- ensure_viki_wiki_demo_corpus()
 
 # Load the French UDPipe model into memory.
 # This only needs to be done once per session — it is slow to load,
@@ -72,7 +76,7 @@ print(dt_example_raw |> dplyr::select(token, lemma, upos, dep_rel, head_token_id
 # post_process_lexicon() normalises lemmas and tokens (e.g. lowercases
 # for matching purposes, handles contractions).
 
-dt_single_txt <- build_corpus("demo_corpora/viki_wiki/viki_20729.txt")
+dt_single_txt <- build_corpus(file.path(corpus_dir, "viki_20729.txt"))
 dt_single_raw <- parse_text(dt_single_txt, n_cores = 1)
 dt_single     <- post_process_lexicon(dt_single_raw)
 
@@ -87,8 +91,10 @@ print(dt_single[, .(sentence_id, token, lemma, upos, dep_rel, head_token_id)])
 #
 # For encoding issues (Latin-1, Windows-1252), see demos/demo_corpus_read.R
 
-# 3a) Read all files into a single data.table (one row per document)
-dt_txt <- build_corpus(corpus_dir)
+# 3a) Read all files into a single data.table (one row per document).
+# load_demo_corpus() unzips the bundled demo corpus if needed, then reads it
+# with build_corpus() — one call instead of two.
+dt_txt <- load_demo_corpus()
 message(nrow(dt_txt), " documents loaded from ", corpus_dir)
 
 # 3b) Parse and POS-tag with UDPipe.
