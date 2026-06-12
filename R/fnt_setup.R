@@ -38,10 +38,7 @@
   flp       = list(rds = "dt_flp_words.Rds",    script = "build_flp_words.R",
                    license = "CC BY-SA 4.0",                       commercial = TRUE),
   morpholex = list(rds = "dt_morpholex_fr.Rds", script = "build_morpholex_fr.R",
-                   license = "CC BY-NC-SA 4.0",                    commercial = FALSE),
-  lexconn   = list(rds = "dt_lexconn.Rds",      script = "fetch_lexconn.R",
-                   license = "No confirmed public license",        commercial = FALSE,
-                   disabled = TRUE)
+                   license = "CC BY-NC-SA 4.0",                    commercial = FALSE)
 )
 
 # -- Path resolution ----------------------------------------------------------
@@ -157,9 +154,7 @@ alsi_list_databases <- function() {
 #' Resources are fetched from their original providers by the standalone
 #' \code{R/artefact_builders/} scripts; ALSI never redistributes them. NC and
 #' research-only resources display their license and (in interactive sessions
-#' with \code{ask = TRUE}) require confirmation before download. LexConn has no
-#' confirmed public license and fetching is disabled pending a response from
-#' the author.
+#' with \code{ask = TRUE}) require confirmation before download.
 #'
 #' @param dbs Character vector of registry keys, or "all".
 #' @param ask Logical; show license and confirm before downloading restricted
@@ -190,8 +185,8 @@ alsi_setup_databases <- function(dbs = "all", ask = interactive(),
       next
     }
 
-    # LexConn: fetching disabled pending a license answer from the author —
-    # see docs/licensing_and_resource_distribution.md §4.5.
+    # A registry entry can be parked with disabled = TRUE (e.g. while a
+    # resource's license terms are being clarified).
     if (isTRUE(reg$disabled)) {
       warning("[", name, "] fetching is disabled (", reg$license,
               "). Pending confirmation from the author.",

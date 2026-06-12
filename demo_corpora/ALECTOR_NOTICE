@@ -1,0 +1,27 @@
+ALECTOR demo corpus — attribution and license
+==============================================
+
+The file demo_corpora/alector.zip contains the ALECTOR corpus: 79 French
+texts and their professionally simplified versions (NNN_source.txt /
+NNN_target.txt), shipped as unmodified plain-text files.
+
+Source
+------
+  Gala, N., Tack, A., Javourey-Drevet, L., François, T., & Ziegler, J. C.
+  (2020). Alector: A parallel corpus of simplified French texts with
+  alignments of misreadings by poor and dyslexic readers. Proceedings of
+  the 12th Language Resources and Evaluation Conference (LREC 2020).
+  https://journals.openedition.org/tipa/5763
+
+License
+-------
+ALECTOR is distributed under CC BY-NC-ND 4.0
+(https://creativecommons.org/licenses/by-nc-nd/4.0/).
+
+  - The zip ships the *unmodified* source files, as permitted by the
+    license's Share grant.
+  - NonCommercial: any use of this corpus must be non-commercial.
+  - NoDerivatives: do not redistribute modified or derived versions of
+    these texts. ALSI builds derived artefacts (e.g. a combined CSV)
+    locally on your machine only; they are gitignored and must not be
+    redistributed.

@@ -1,0 +1,38 @@
+Viki-Wiki demo corpus — attribution and license
+================================================
+
+The file demo_corpora/viki_wiki.zip contains 200 pairs of French texts
+(viki_*.txt / wiki_*.txt). Each pair is the same encyclopedic topic at two
+readability levels:
+
+  - viki_*.txt — the "easy" version, from Vikidia (fr.vikidia.org)
+  - wiki_*.txt — the "hard" version, from French Wikipedia (fr.wikipedia.org)
+
+Source dataset
+--------------
+The pairs were randomly sampled from the French portion of WikiReaD
+(Wikipedia Readability Dataset):
+
+  Trokhymovych, M., Sen, I., & Gerlach, M. (2024). WikiReaD (Wikipedia
+  Readability Dataset). Zenodo. https://doi.org/10.5281/zenodo.11371932
+
+  Accompanying paper: Trokhymovych, M., Sen, I., & Gerlach, M. (2024).
+  An Open Multilingual System for Scoring Readability of Wikipedia.
+  Proceedings of the 62nd Annual Meeting of the Association for
+  Computational Linguistics (ACL 2024).
+  https://aclanthology.org/2024.acl-long.342/
+
+The numeric file IDs (e.g. viki_10164 / wiki_10164) are pair identifiers
+from that dataset, not Vikidia/Wikipedia page IDs.
+
+License
+-------
+WikiReaD is distributed under CC BY-SA 4.0
+(https://creativecommons.org/licenses/by-sa/4.0/). The underlying article
+text is by the contributors of French Wikipedia (CC BY-SA 4.0) and Vikidia
+(CC BY-SA 3.0); per-article author lists are available through each
+article's history page on the source wiki.
+
+This demo corpus is therefore redistributed under the same CC BY-SA terms
+(ShareAlike). If you redistribute or adapt these texts, you must keep this
+attribution and license.

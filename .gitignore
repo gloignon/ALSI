@@ -42,6 +42,10 @@ demo_corpora/viki_wiki/
 # Large derived viki-wiki dump — not redistributable, fetched/built locally
 demo_corpora/wikiviki_dump_*.tsv
 
+# LexConn — removed from the public repo until its license is clarified with
+# the author. The fetcher is kept locally only.
+R/artefact_builders/fetch_lexconn.R
+
 # Lexical databases — only Lexique3 (CC license) is redistributable.
 # All other built/raw lexical resources (EQOL, FleLex, Manulex, LexConn,
 # raw downloads, etc.) are excluded; each user fetches/builds them locally
