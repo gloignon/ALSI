@@ -34,7 +34,9 @@ library(data.table)
 #' @param dt_morpholex MorphoLex-FR data.table as produced by
 #'   \code{R/artefact_builders/build_morpholex_fr.R}. Required columns:
 #'   \code{word}, \code{n_morphemes}, \code{root_fam_size},
-#'   \code{pref_fam_size}, \code{suff_fam_size}.
+#'   \code{pref_fam_size}, \code{suff_fam_size}. Defaults to a lazy
+#'   \code{.alsi_load_db("morpholex")}; run \code{alsi_setup_databases("morpholex")}
+#'   first, or pass an already-loaded data.table.
 #' @param content_upos Character vector of UPOS tags counted as content words.
 #'   Default: \code{c("NOUN","VERB","ADJ","ADV")}.
 #'
@@ -66,7 +68,7 @@ library(data.table)
 #'     \emph{Journal of Memory and Language});
 #'     Bertram, Baayen & Schreuder (2000, \emph{Journal of Memory and Language}).
 add_morpholex_features <- function(dt_corpus,
-                                   dt_morpholex,
+                                   dt_morpholex = .alsi_load_db("morpholex"),
                                    content_upos = .norms_content_upos) {
   dt     <- setDT(copy(dt_corpus))
   dt_lex <- setDT(copy(dt_morpholex))
@@ -166,7 +168,9 @@ add_morpholex_features <- function(dt_corpus,
 #'   Required columns: \code{doc_id}, \code{token}, \code{lemma},
 #'   \code{upos}, \code{compte}.
 #' @param lexicon Reference lexicon: a data.table / data.frame, or a file path
-#'   to an \code{.Rds}, \code{.csv}, or \code{.tsv} file.
+#'   to an \code{.Rds}, \code{.csv}, or \code{.tsv} file. Defaults to a lazy
+#'   \code{.alsi_load_db("flp")} (the French Lexicon Project word list); run
+#'   \code{alsi_setup_databases("flp")} first, or pass your own lexicon.
 #' @param word_col Name of the column in \code{lexicon} containing word forms.
 #'   Default: \code{"word"} (matches FLP \code{dt_flp_words.Rds}).
 #' @param content_upos Character vector of UPOS tags treated as content words.
@@ -200,7 +204,7 @@ add_morpholex_features <- function(dt_corpus,
 #'   \doi{10.3758/BF03214334}
 #' @export
 add_oov_edit_features <- function(dt_corpus,
-                                   lexicon,
+                                   lexicon       = .alsi_load_db("flp"),
                                    word_col      = "word",
                                    content_upos  = .norms_content_upos,
                                    max_len_gap   = 3L) {
@@ -230,9 +234,9 @@ add_oov_edit_features <- function(dt_corpus,
     result  <- data.table(
       doc_id                 = doc_ids,
       oov_edit_prop          = 0,
-      oov_edit_mean_dist     = 0,
-      oov_edit_max_dist      = 0,
-      oov_edit_prop_isolated = 0
+      oov_edit_mean_dist     = NA_real_,
+      oov_edit_max_dist      = NA_real_,
+      oov_edit_prop_isolated = NA_real_
     )
     return(as.data.frame(result))
   }
@@ -253,9 +257,9 @@ add_oov_edit_features <- function(dt_corpus,
     oov_dists  <- .min_dist[.is_oov == TRUE]
     .(
       oov_edit_prop          = n_oov / .N,
-      oov_edit_mean_dist     = if (n_oov > 0L) mean(oov_dists)        else 0,
-      oov_edit_max_dist      = if (n_oov > 0L) max(oov_dists)         else 0,
-      oov_edit_prop_isolated = if (n_oov > 0L) mean(oov_dists > 2L)   else 0
+      oov_edit_mean_dist     = if (n_oov > 0L) mean(oov_dists)      else NA_real_,
+      oov_edit_max_dist      = if (n_oov > 0L) max(oov_dists)       else NA_real_,
+      oov_edit_prop_isolated = if (n_oov > 0L) mean(oov_dists > 2L) else NA_real_
     )
   }, by = doc_id]
 

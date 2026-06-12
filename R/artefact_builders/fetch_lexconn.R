@@ -5,6 +5,12 @@
 # Discours: Revue de Linguistique, Psycholinguistique et Informatique
 #
 # Output: lexical_dbs/dt_lexconn.Rds
+#
+# DISABLED: LexConn has no confirmed public license (see
+# docs/licensing_and_resource_distribution.md §4.5). Fetching is paused
+# until we hear back from the author or find an alternative resource.
+stop("fetch_lexconn.R is disabled: LexConn has no confirmed public license. ",
+     "See docs/licensing_and_resource_distribution.md §4.5.")
 
 library(data.table)
 library(xml2)

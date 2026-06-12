@@ -25,8 +25,8 @@
 #   Models     : models/french_gsd-remix_3.udpipe
 #                models/pos_trigram_fr_gsd_alsi.Rds
 #   Lexical DBs: lexical_dbs/dt_eqol.Rds, dt_franqus.Rds,
-#                dt_manulex_token.Rds, dt_corpus_flelex.Rds, dt_lexconn.Rds
-#   Demo corpus: demo_corpora/viki_wiki/   (200 paired Vikidia/Wikipedia docs)
+#                dt_manulex_token.Rds, dt_corpus_flelex.Rds
+#   Demo corpus: demo_corpora/viki_wiki.zip (200 paired Vikidia/Wikipedia docs)
 #
 # Output:
 #   out/demo_corpus_parsed.Rds          — parsed corpus
@@ -42,6 +42,7 @@ library(zoo)
 library(future)
 library(future.apply)
 
+source("R/fnt_setup.R",         encoding = "UTF-8")
 source("R/fnt_corpus.R",        encoding = "UTF-8")
 source("R/fnt_lexical.R",       encoding = "UTF-8")
 source("R/fnt_heights.R",       encoding = "UTF-8")
@@ -52,10 +53,10 @@ source("R/fnt_cohesion.R",      encoding = "UTF-8")
 source("R/fnt_utility.R",       encoding = "UTF-8")
 source("R/fnt_embeddings.R",    encoding = "UTF-8")
 source("R/fnt_burstiness.R",    encoding = "UTF-8")
-source("R/fnt_mwe.R",           encoding = "UTF-8")
 source("R/artefact_builders/build_pos_ngrams.R", encoding = "UTF-8")
+source("demos/demo_helpers.R", encoding = "UTF-8")
 
-corpus_dir <- "demo_corpora/viki_wiki/"
+corpus_dir <- ensure_viki_wiki_demo_corpus()
 
 udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
 
@@ -81,7 +82,6 @@ dt_eqol    <- readRDS("lexical_dbs/dt_eqol.Rds")
 dt_franqus <- readRDS("lexical_dbs/dt_franqus.Rds")
 dt_manulex <- readRDS("lexical_dbs/dt_manulex_token.Rds")
 dt_flelex  <- readRDS("lexical_dbs/dt_corpus_flelex.Rds")
-dt_lexconn <- readRDS("lexical_dbs/dt_lexconn.Rds")
 
 # 5) Simple counts
 features$simple_counts <- simple_count_features(features$parsed_corpus)
@@ -120,25 +120,17 @@ features$pos_surprisal <- pos_surprisal(
 # 12) Lexical cohesion
 features$lexical_cohesion <- simple_lexical_cohesion(features$parsed_corpus)
 
-# 13) Discourse connectives (LEXCONN)
-features$connectives$matches <- match_multiword_sequences(
-  features$parsed_corpus, dt_lexconn, pos_filter = TRUE
-)
-features$connectives$density <- connective_density_features(
-  features$parsed_corpus, features$connectives$matches
-)
-
-# 14) Word burstiness (Altmann et al. 2009; Church & Gale 1995)
+# 13) Word burstiness (Altmann et al. 2009; Church & Gale 1995)
 features$burstiness <- burstiness_doc_features(features$parsed_corpus)
 
-# 15–16) Embeddings and LLM surprisal — require Python ----
+# 14–15) Embeddings and LLM surprisal — require Python ----
 #
 # reticulate::py_require() manages the Python environment automatically.
 # If Python is not installed on this machine these sections are skipped.
 
 if (!reticulate::py_available(initialize = TRUE)) {
   warning(
-    "Python not available — skipping sections 15-16 ",
+    "Python not available — skipping sections 14-15 ",
     "(embeddings and LLM surprisal). ",
     "Install Python and rerun to include these features."
   )
@@ -154,13 +146,13 @@ if (!reticulate::py_available(initialize = TRUE)) {
     "scipy"
   ))
 
-  # 15) Embeddings and embedding coherence ----
+  # 14) Embeddings and embedding coherence ----
   features$embeddings <- corpus_embeddings(
     dt_corpus  = features$parsed_corpus,
     batch_size = 8
   )
 
-  # 16) LLM surprisal and entropy ----
+  # 15) LLM surprisal and entropy ----
   source("R/fnt_surprisal.R", encoding = "UTF-8")
 
   features$surprisal$mlm <- llm_surprisal_entropy(
@@ -180,13 +172,13 @@ if (!reticulate::py_available(initialize = TRUE)) {
 
 }
 
-# 17) Demo labels: Vikidia = 1, Wikipedia = 2
+# 16) Demo labels: Vikidia = 1, Wikipedia = 2
 features$doc_classes <- data.table(
   doc_id = features$simple_counts$doc_level_counts$doc_id,
   class  = ifelse(grepl("^viki_", features$simple_counts$doc_level_counts$doc_id), 1L, 2L)
 )
 
-# 18) Save ----
+# 17) Save ----
 saveRDS(features, "out/demo_corpus_with_features.Rds")
 
 features_without_corpus <- features

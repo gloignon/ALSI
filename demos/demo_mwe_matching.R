@@ -2,22 +2,14 @@
 #
 # In this demo you will:
 # 1) match simple hand-built expressions against a toy corpus;
-# 2) match the LEXCONN connective database against the demo corpus;
-# 3) compute connective density features per document;
-# 4) compare Vikidia vs Wikipedia with effect sizes.
-#
-# Prerequisite:
-# - Run demos/demo_parse_tag.R first (creates out/demo_parsed_tagged.Rds).
-# - Run R/artefact_builders/fetch_lexconn.R first (creates lexical_dbs/dt_lexconn.Rds).
+# 2) verify that matches are isolated per document in a multi-document corpus.
 
 # 0) Setup ----
 
 library(data.table)
 library(tidyverse)
-library(effsize)
 source("R/fnt_corpus.R",  encoding = "UTF-8")
 source("R/fnt_mwe.R",     encoding = "UTF-8")
-source("R/fnt_utility.R", encoding = "UTF-8")
 
 udmodel_path <- "models/french_gsd-remix_3.udpipe"
 
@@ -59,51 +51,3 @@ dt_two_docs <- parse_text(
 
 matches_two <- match_multiword_sequences(dt_two_docs, dt_lex_toy)
 print(matches_two)
-
-
-# 3) LEXCONN on the demo corpus: Vikidia vs Wikipedia ----
-# Prerequisite: run demos/demo_parse_tag.R to create out/demo_parsed_tagged.Rds.
-
-dt_parsed_corpus <- readRDS("out/demo_parsed_tagged.Rds")
-dt_lexconn <- readRDS("lexical_dbs/dt_lexconn.Rds")
-
-matches_vw <- match_multiword_sequences(dt_parsed_corpus, dt_lexconn)
-
-# Most frequent connectives and distribution by relation type
-matches_vw |> count(matched_forme, sort = TRUE) |> slice_head(n = 20) |> print()
-matches_vw |> count(relation_group, sort = TRUE) |> print()
-
-# Compare connective density between Vikidia and Wikipedia, using the matched connectives.
-  # this will get us the doc_id and class of each document
-dt_classes_vw <- dt_parsed_corpus |> distinct(doc_id, class = if_else(grepl("^viki", doc_id), 1L, 2L))
-
-# now we can merge the class info with the features, and report effect sizes per feature.
-connective_density_features(dt_parsed_corpus, matches_vw) |>
-  merge(dt_classes_vw, by = "doc_id") |>
-  report_effects("Vikidia vs Wikipedia")
-
-
-# 4) LEXCONN on ALECTOR corpus: source vs target ----
-
-dt_alector <- readRDS("out/alector_parsed.Rds")
-message("ALECTOR corpus: ", nrow(dt_alector), " tokens, ", n_distinct(dt_alector$doc_id), " documents")
-
-matches_alector <- match_multiword_sequences(dt_alector, dt_lexconn)
-message("Matches: ", nrow(matches_alector))
-
-dt_classes_al <- unique(data.table(
-  doc_id = dt_alector$doc_id,
-  class = ifelse(grepl("_target_", dt_alector$doc_id), 1L, 2L)
-))
-
-dt_features_al <- connective_density_features(dt_alector, matches_alector) |>
-  merge(dt_classes_al, by = "doc_id")
-
-report_effects(dt_features_al, "ALECTOR: target/simplified (1) vs source/original (2)")
-
-# Boxplots (ALECTOR)
-plot_faceted_boxplot(
-  dt_features_al, class, ends_with("_per100w"),
-  title = "Connective Density: ALECTOR target (1) vs source (2)",
-  x_lab = "Class", y_lab = "Per 100 words"
-)
