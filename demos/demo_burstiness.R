@@ -5,10 +5,9 @@
 # at out/alector_parsed.Rds by demo_surprisal.R (parses it if not yet cached).
 #
 # Prerequisites:
-# - norms/burstiness_viki.Rds — pre-built burstiness norms. Built once with
-#   R/artefact_builders/build_wikiviki_norms.R, which needs the (large,
-#   non-distributed) wikiviki dump; if you don't have the dump, ask the
-#   maintainer for the norms file.
+# - norms/burstiness_viki.Rds — pre-built burstiness reference norms, bundled
+#   with ALSI. (They are aggregate per-word statistics fitted on 12,221
+#   Vikidia articles; the underlying corpus is not distributed.)
 #
 # References:
 #   Altmann, Pierrehumbert & Motter (2009), PLoS ONE 4(11): e7678
@@ -31,9 +30,8 @@ dir.create("out", showWarnings = FALSE)
 
 if (!file.exists("norms/burstiness_viki.Rds")) {
   stop(
-    "norms/burstiness_viki.Rds not found.\n",
-    "Build it once with R/artefact_builders/build_wikiviki_norms.R ",
-    "(requires the wikiviki dump — see the header of this demo).",
+    "norms/burstiness_viki.Rds not found. The norms ship with ALSI — ",
+    "your copy of the repository may be incomplete.",
     call. = FALSE
   )
 }

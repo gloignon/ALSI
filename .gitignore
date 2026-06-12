@@ -55,6 +55,26 @@ models/*
 !models/pos_trigram_fr_gsd_alsi.Rds
 !models/gam_sent_length_calibration.Rds
 
+# Burstiness norms — prepared internally (building them needs the
+# non-distributed wikiviki dump) and shipped pre-built. Only the final
+# aggregate .Rds norm tables are tracked; parse caches and the builder
+# script stay local. The norms are aggregate per-word statistics derived
+# from CC BY-SA Wikipedia/Vikidia text.
+/norms/*
+!/norms/burstiness_viki.Rds
+!/norms/burstiness_wiki.Rds
+!/norms/burstiness_wikiviki.Rds
+R/artefact_builders/build_wikiviki_norms.R
+
+# Training data and tooling — maintainer-internal, not user-facing.
+# /corpora/ holds GSD training splits (rebuildable: fetch_verbpos_conllu.R
+# downloads official French-GSD UD r2.16 and applies the ALSI verbpos retag;
+# build_pos_ngrams.R fits the POS trigram model that ships pre-built as
+# models/pos_trigram_fr_gsd_alsi.Rds).
+/corpora/
+R/artefact_builders/fetch_verbpos_conllu.R
+R/artefact_builders/build_pos_ngrams.R
+
 # Root markdown — only README, FEATURES, LICENSE are distributed.
 # Agent/working docs (AGENTS, CLAUDE, DESLOPPIFY_R, etc.) stay local.
 /*.md

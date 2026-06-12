@@ -53,8 +53,6 @@ source("R/fnt_cohesion.R",      encoding = "UTF-8")
 source("R/fnt_utility.R",       encoding = "UTF-8")
 source("R/fnt_embeddings.R",    encoding = "UTF-8")
 source("R/fnt_burstiness.R",    encoding = "UTF-8")
-source("R/artefact_builders/build_pos_ngrams.R", encoding = "UTF-8")
-
 udmodel_french <- udpipe_load_model(file = "models/french_gsd-remix_3.udpipe")
 
 # Demo workflow ----

@@ -23,10 +23,6 @@
 # - models/french_gsd-remix_3.udpipe — the standard ALSI UDPipe model (same
 #   verb-retagging convention as the POS trigram model); downloaded
 #   automatically from the GitHub release if missing.
-# - corpora/fr_gsd-ud-train_alsi-verbpos.conllu — modified GSD training data;
-#   only needed if you change EXCLUDE_POS / USE_BOUNDARIES to rebuild a custom
-#   POS model (the distributed models/pos_trigram_fr_gsd_alsi.Rds is used by
-#   default and ships with ALSI).
 
 # 1) Setup ----
 
@@ -34,58 +30,20 @@ library(tidyverse)
 library(udpipe)
 library(data.table)
 
-source("R/artefact_builders/build_pos_ngrams.R", encoding = "UTF-8")
-source("R/fnt_pos_surprisal.R",                  encoding = "UTF-8")
-source("R/fnt_utility.R",                         encoding = "UTF-8")
+source("R/fnt_pos_surprisal.R", encoding = "UTF-8")
+source("R/fnt_utility.R",       encoding = "UTF-8")
 
-# Default model settings — match the distributed model in models/.
-# Change these only if you want a custom model; a rebuild will be triggered
-# automatically and cached separately.
+# Settings used when the distributed model was built. The same values must be
+# passed to every pos_surprisal() call so scoring matches the model.
 EXCLUDE_POS    <- c("PUNCT", "SYM")
 USE_BOUNDARIES <- TRUE
 
-DISTRIBUTED_MODEL <- "models/pos_trigram_fr_gsd_alsi.Rds"
+# 2) Load the POS trigram model ----
 
-# 2) Load or build the POS trigram model ----
-
-# The distributed model (trained on French GSD, PUNCT/SYM excluded, sentence
-# boundaries enabled) is loaded directly if the settings above match the
-# defaults. Changing EXCLUDE_POS or USE_BOUNDARIES triggers a custom rebuild
-# that is cached under a separate filename in models/.
-
-default_exclude    <- c("PUNCT", "SYM")
-default_boundaries <- TRUE
-
-using_defaults <- identical(EXCLUDE_POS, default_exclude) &&
-                  identical(USE_BOUNDARIES, default_boundaries)
-
-if (using_defaults) {
-  message("Loading distributed POS model...")
-  pos_model <- readRDS(DISTRIBUTED_MODEL)
-} else {
-  cache_model <- sprintf(
-    "models/pos_model_excl%s_bnd%s.Rds",
-    paste(EXCLUDE_POS, collapse = "-"),
-    USE_BOUNDARIES
-  )
-  if (file.exists(cache_model)) {
-    message("Loading cached custom POS model...")
-    pos_model <- readRDS(cache_model)
-  } else {
-    message("Building custom POS trigram model...")
-    ngrams <- build_pos_ngrams(
-      "corpora/fr_gsd-ud-train_alsi-verbpos.conllu",
-      exclude_pos             = EXCLUDE_POS,
-      use_sentence_boundaries = USE_BOUNDARIES
-    )
-    message(sprintf("  %d trigram types observed.", nrow(ngrams)))
-    print(head(ngrams, 10))
-
-    pos_model <- prepare_pos_model(ngrams)
-    saveRDS(pos_model, cache_model)
-    message(sprintf("  Cached to %s", cache_model))
-  }
-}
+# Trained on French-GSD with the ALSI verb-retagging convention, PUNCT/SYM
+# excluded, sentence boundaries enabled. Ships with ALSI.
+message("Loading distributed POS model...")
+pos_model <- readRDS("models/pos_trigram_fr_gsd_alsi.Rds")
 
 
 # 3) Score individual sentences ----
