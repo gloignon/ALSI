@@ -19,9 +19,13 @@
 # at sentence positions 1 and 2 (no full left context) are unscored.
 #
 # Prerequisites:
-# - corpora/fr_gsd-ud-train_alsi-verbpos.conllu   (modified GSD training data)
-# - models/fr_gsd_alsi_20260524_122826.udpipe      (matching ALSI UDPipe model)
-# - out/demo_parsed_tagged.Rds                     (run demo_parse_tag.R first)
+# - out/demo_parsed_tagged.Rds — run demos/demo_parse_tag.R first (section 5).
+# - models/fr_gsd_alsi_20260524_122826.udpipe — ALSI-trained UDPipe model;
+#   downloaded automatically from the GitHub release if missing.
+# - corpora/fr_gsd-ud-train_alsi-verbpos.conllu — modified GSD training data;
+#   only needed if you change EXCLUDE_POS / USE_BOUNDARIES to rebuild a custom
+#   POS model (the distributed models/pos_trigram_fr_gsd_alsi.Rds is used by
+#   default and ships with ALSI).
 
 # 1) Setup ----
 
@@ -85,7 +89,12 @@ if (using_defaults) {
 
 # 3) Score individual sentences ----
 
-udmodel <- udpipe_load_model("models/fr_gsd_alsi_20260524_122826.udpipe")
+alsi_udpipe_path <- "models/fr_gsd_alsi_20260524_122826.udpipe"
+if (!file.exists(alsi_udpipe_path)) {
+  message("ALSI UDPipe model not found — downloading from GitHub (one-time, ~19 MB)...")
+  source("R/artefact_builders/fetch_udpipe_models.R")
+}
+udmodel <- udpipe_load_model(alsi_udpipe_path)
 
 parse_one <- function(text) {
   as_tibble(udpipe_annotate(udmodel, x = text))

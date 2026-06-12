@@ -142,8 +142,11 @@ if (!file.exists(alector_csv)) {
 
 dt_alector <- fread(alector_csv, encoding = "UTF-8")
 
-# Rename the id column to doc_id so parse_text() recognises it.
-setnames(dt_alector, "id", "doc_id")
+# Each numeric id identifies a *pair* of texts: the original ("source") and
+# its simplified version ("target"). parse_text() requires unique doc_ids,
+# so combine both columns (e.g. "012_source", "012_target").
+dt_alector[, doc_id := sprintf("%03d_%s", as.integer(id), class)]
+dt_alector <- dt_alector[, .(doc_id, text)]
 
 # parser = "none" skips dependency parsing (no syntactic head assignment).
 # This is faster when you only need tokens and POS tags, not tree structure.

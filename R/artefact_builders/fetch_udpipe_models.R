@@ -10,7 +10,10 @@
 RELEASE_BASE <- "https://github.com/gloignon/ALSI/releases/download/models-v1"
 
 models <- list(
-  "french_gsd-remix_3.udpipe" = file.path(RELEASE_BASE, "french_gsd-remix_3.udpipe")
+  "french_gsd-remix_3.udpipe" = file.path(RELEASE_BASE, "french_gsd-remix_3.udpipe"),
+  # ALSI-trained model on modified GSD (verb POS re-tagging) — pairs with the
+  # distributed POS trigram model; used by demo_pos_surprisal.R.
+  "fr_gsd_alsi_20260524_122826.udpipe" = file.path(RELEASE_BASE, "fr_gsd_alsi_20260524_122826.udpipe")
 )
 
 dir.create("models", showWarnings = FALSE, recursive = TRUE)
