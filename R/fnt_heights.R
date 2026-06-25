@@ -162,11 +162,18 @@ to_integer_quiet <- function(x) {
 #'   \code{head_final_initial_doc}'s \code{integration_cost}.)
 #' }
 #'
-#' @citation_type "computationally identical" (\code{max_path}, \code{avg_dependency_depth},
-#'   \code{sd_depth}, \code{branching_factor} -- Chen et al. 2024,
-#'   \code{Height}/\code{depthMean}/\code{depthVar}/\code{degreeMean});
-#'   "adapted" (\code{avg_dependency_depth_adj} --
-#'   length-normalized \code{depthMean}, no normalized analogue in Chen et al. 2024;
+#' @citation_type "computationally identical" (\code{avg_dependency_depth} -- Chen
+#'   et al. 2024's \code{depthMean}, mean depth over all metric tokens including
+#'   the root, matched exactly at this sentence level; \code{docwise_graph_stats}
+#'   pools this correctly via \code{total_paths / n});
+#'   "adapted" (\code{max_path}, \code{branching_factor} -- formula matches Chen
+#'   et al. 2024's \code{Height}/\code{degreeMean} exactly when punctuation policy
+#'   aligns, but the default \code{include_punct_in_metrics = TRUE} here includes
+#'   punctuation while Chen's processing excludes it;
+#'   \code{sd_depth} -- same underlying statistic as \code{depthVar}, reported as
+#'   SD (sqrt of variance) rather than variance;
+#'   \code{avg_dependency_depth_adj} -- length-normalized \code{depthMean}, no
+#'   normalized analogue in Chen et al. 2024;
 #'   \code{avg_incomplete_deps}/\code{max_incomplete_deps} -- Gibson 1998 SPLT
 #'   memory cost, fixed UD-upos set approximates his discourse-referent criterion;
 #'   \code{yngve} -- Yngve 1960's branch-numbering/depth-sum formula, applied to
@@ -370,14 +377,22 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
 #' integration cost.
 #'
 #' @details
-#' Pseudocode per token \code{w} with head \code{h} (positions are linear
-#' token indices within the sentence; \code{sent_len} excludes punctuation
-#' by default). Only applies to tokens with a real head (root tokens, whose
+#' Pseudocode per token \code{w} with head \code{h}. \code{head_final},
+#' \code{head_initial}, and \code{head_direction} compare raw token indices
+#' (removing punctuation never changes the relative order of two tokens, so
+#' raw indices are sufficient there). \code{head_distance} and
+#' \code{head_distance_adj} instead use \code{dep_pos}, a position renumbered
+#' sequentially over only the tokens counted in \code{sent_len} (all tokens
+#' if \code{include_punct_in_metrics = TRUE}, non-punctuation tokens
+#' otherwise); this keeps the distance numerator on the same token scale as
+#' the \code{sent_len} denominator, so \code{head_distance_adj} stays in
+#' \code{[0, 1]} even when punctuation tokens fall between a dependent and
+#' its head. Only applies to tokens with a real head (root tokens, whose
 #' head is a sentinel 0, are excluded -- a root has no dependency relation):
 #' \preformatted{
 #' head_final        = position(h) > position(w)
 #' head_initial       = position(h) < position(w)
-#' head_distance      = abs(position(h) - position(w))
+#' head_distance      = abs(dep_pos(h) - dep_pos(w))
 #' head_direction     = +1 if head_final, -1 if head_initial, 0 if h == w
 #' head_distance_adj  = head_distance / (sent_len - 1)
 #' integration_cost   = count of tokens strictly between w and h (exclusive)
@@ -396,9 +411,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
 #'   \code{head_token_id}, and \code{upos}.
 #' @param include_punct_in_metrics Logical; if FALSE (default), punctuation
 #'   is excluded.
-#' @returns A token-level \code{data.table} with \code{head_final},
-#'   \code{head_initial}, \code{head_distance}, \code{head_direction},
-#'   \code{head_distance_adj}, and \code{integration_cost}.
+#' @returns A token-level \code{data.table} with \code{dep_pos} (punctuation-
+#'   renumbered token position), \code{head_final}, \code{head_initial},
+#'   \code{head_distance}, \code{head_direction}, \code{head_distance_adj},
+#'   and \code{integration_cost}.
 head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
 
   dt <- as.data.table(copy(df_doc))
@@ -412,6 +428,7 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
       token_id_num = integer(),
       head_token_id_num = integer(),
       sent_len = integer(),
+      dep_pos = integer(),
       head_final = logical(),
       head_initial = logical(),
       head_distance = integer(),
@@ -424,6 +441,7 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
   dt[, `:=`(
     token_id_num = to_integer_quiet(token_id),
     head_token_id_num = to_integer_quiet(head_token_id),
+    dep_pos = as.integer(NA),
     head_final = as.logical(NA),
     head_initial = as.logical(NA),
     head_distance = as.integer(NA),
@@ -439,6 +457,19 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
     },
     by = .(paragraph_id, sentence_id)]
 
+  # dep_pos: sequential position among only the tokens counted in sent_len
+  # (i.e. punctuation-renumbered when include_punct_in_metrics = FALSE), so
+  # that head_distance/head_distance_adj live on the same token scale as
+  # sent_len -- raw token_id_num would still count punctuation gaps even
+  # though punctuation tokens themselves are excluded from sent_len.
+  pos_rows <- if (isTRUE(include_punct_in_metrics)) {
+    !is.na(dt$token_id_num)
+  } else {
+    !is.na(dt$token_id_num) & dt$upos != "PUNCT"
+  }
+  dt[pos_rows, dep_pos := frank(token_id_num, ties.method = "first"),
+     by = .(paragraph_id, sentence_id)]
+
   valid <- if (isTRUE(include_punct_in_metrics)) {
     !is.na(dt$token_id_num) & !is.na(dt$head_token_id_num)
   } else {
@@ -451,7 +482,11 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
     head_initial = head_token_id_num < token_id_num
   )]
 
-  dt[valid_dependency, head_distance := abs(head_token_id_num - token_id_num)]
+  pos_lookup <- dt[!is.na(dep_pos), .(paragraph_id, sentence_id, token_id_num, dep_pos)]
+  dt[pos_lookup, on = .(paragraph_id, sentence_id, head_token_id_num = token_id_num),
+     head_pos := i.dep_pos]
+
+  dt[valid_dependency, head_distance := abs(head_pos - dep_pos)]
 
   dt[valid_dependency, head_direction := fifelse(
     head_token_id_num > token_id_num, 1L,
@@ -478,7 +513,7 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
   }]
 
   dt[, .(doc_id, paragraph_id, sentence_id, token_id, token_id_num, head_token_id_num,
-         sent_len, head_final, head_initial, head_distance, head_direction,
+         sent_len, dep_pos, head_final, head_initial, head_distance, head_direction,
          head_distance_adj, integration_cost)]
 }
 
@@ -504,6 +539,7 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
       token_id_num = integer(),
       head_token_id_num = integer(),
       sent_len = integer(),
+      dep_pos = integer(),
       head_final = logical(),
       head_initial = logical(),
       head_distance = integer(),
@@ -753,7 +789,11 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' n            = sum(sentence_length)
 #' s            = count(sentences)
 #' total_paths  = sum(count_path)
-#' avg_dependency_depth = total_paths / (n - s)   # sentence-length-weighted depth
+#' avg_dependency_depth = total_paths / n   # sentence-length-weighted pooled depth,
+#'   matches Chen et al. 2024's depthMean (mean depth over all nodes including
+#'   roots); count_path/sentence_length already include the root's depth (0)
+#'   in both numerator and denominator at the sentence level, so pooling must
+#'   divide by n (total nodes), not n - s
 #'
 #' # prop_hf/prop_hi: percentage of head-final/head-initial dependencies
 #' # (Liu 2010, Formulae in Sec. 2), denominator is real dependencies only
@@ -767,27 +807,33 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' avg_integration_cost          = mean(integration_cost)
 #'
 #' # avg_head_distance_adj: Normalized Dependency Distance (Lei & Jockers 2020),
-#' # per sentence, then averaged across sentences. root_position = linear
-#' # position of the root token (head_token_id_num == 0); mdd = mean(head_distance)
-#' # within the sentence; sent_length = sentence_length excluding punctuation.
+#' # per sentence, then averaged across sentences. root_position = dep_pos of
+#' # the root token (head_token_id_num == 0), i.e. its position renumbered
+#' # over punctuation-excluded tokens only, matching the sent_length scale;
+#' # mdd = mean(head_distance) within the sentence, also on dep_pos terms;
+#' # sent_length = sentence_length excluding punctuation.
 #' avg_head_distance_adj = mean( abs(log(mdd / sqrt(root_position * sent_length))) )
 #' }
 #'
-#' @citation_type "computationally identical" (\code{avg_sent_height},
-#'   \code{avg_dependency_depth}, \code{avg_sd_depth}, \code{avg_branching_factor} --
-#'   document-level means of Chen et al. 2024's per-sentence
-#'   \code{Height}/\code{depthMean}/\code{depthVar}/\code{degreeMean};
+#' @citation_type "adapted" (\code{avg_sent_height}, \code{avg_branching_factor} --
+#'   formula matches Chen et al. 2024's per-sentence \code{Height}/\code{degreeMean}
+#'   exactly when punctuation policy aligns, but ALSI includes punctuation by
+#'   default while Chen's processing excludes it;
+#'   \code{avg_sd_depth} -- same underlying statistic as \code{depthVar}, reported
+#'   as SD (sqrt of variance) rather than variance;
+#'   \code{avg_integration_cost} -- Gibson 1998);
+#'   "computationally identical" (\code{avg_dependency_depth} -- \code{total_paths / n},
+#'   the sentence-length-weighted pool of the per-sentence \code{depthMean}
+#'   (mean depth over all nodes including roots), matching Chen et al. 2024;
 #'   \code{prop_hf}, \code{prop_hi} -- Liu 2010;
-#'   \code{avg_head_distance} -- Liu 2008 Formula 2, sample-level MDD);
+#'   \code{avg_head_distance} -- Liu 2008 Formula 2, sample-level MDD;
+#'   \code{avg_head_distance_adj} -- Lei & Jockers 2020's Normalized Dependency
+#'   Distance, NDD, applied per sentence then averaged across the document);
 #'   "inspired" (\code{max_head_distance}, \code{max_head_distance_adj} -- Liu 2008
 #'   discusses maximum dependency distance per sentence as a candidate complexity
 #'   measure but explicitly rejects it as unstable in favor of MDD; he never defines
 #'   a formal max-DD statistic, so this is motivated by his discussion, not a formula
 #'   match);
-#'   "adapted" (\code{avg_integration_cost} -- Gibson 1998);
-#'   "computationally identical" (\code{avg_head_distance_adj} -- Lei & Jockers
-#'   2020's Normalized Dependency Distance, NDD, applied per sentence then
-#'   averaged across the document);
 #'   "derived" (\code{sd_sent_height} -- cross-sentence variability of tree height;
 #'   not the same aggregation level as any Chen et al. 2024 statistic, ALSI-original)
 #'
@@ -825,7 +871,7 @@ docwise_graph_stats <- function(df_corpus) {
     summarise(
       mdd = mean(head_distance, na.rm = TRUE),
       sent_length = dplyr::first(sent_len),
-      root_position = dplyr::first(token_id_num[head_token_id_num == 0L]),
+      root_position = dplyr::first(dep_pos[head_token_id_num == 0L]),
       .groups = "drop"
     ) |>
     mutate(
@@ -861,7 +907,7 @@ docwise_graph_stats <- function(df_corpus) {
       total_paths = sum(count_path, na.rm = TRUE)
     ) |>
     mutate(
-      avg_dependency_depth = (1 / (n - s)) * total_paths
+      avg_dependency_depth = total_paths / n
     )
 
   df_result <- merge(sum_heights, sum_head_final, by = "doc_id")
