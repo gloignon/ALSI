@@ -10,6 +10,7 @@ Scripts covered:
 - `R/fnt_heights.R`
 - `R/fnt_extra_syntax.R`
 - `R/fnt_pos_surprisal.R`
+- `R/fnt_deprel_surprisal.R`
 - `R/fnt_cohesion.R`
 - `R/fnt_embeddings.R`
 - `R/fnt_ollama.R`
@@ -194,33 +195,36 @@ Produced in: `R/fnt_lexical.R` (`lexical_diversity_general`)
 ## 7) `features$heights`
 Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 
-| Feature name | Script | Short description | Level |
-|---|---|---|---|
-| `avg_sent_height` | `R/fnt_heights.R` | Mean max dependency depth per sentence. | document |
-| `avg_sent_height_adj` | `R/fnt_heights.R` | Mean sentence max depth normalized by sentence length. | document |
-| `sd_sent_height` | `R/fnt_heights.R` | Standard deviation of sentence max depth. | document |
-| `avg_dependency_depth_adj` | `R/fnt_heights.R` | Mean adjusted dependency depth over sentences. | document |
-| `avg_sd_depth` | `R/fnt_heights.R` | Mean within-sentence SD of dependency depth. | document |
-| `avg_branching_factor` | `R/fnt_heights.R` | Mean branching factor (dependents per internal node). | document |
-| `avg_max_incomplete_deps` | `R/fnt_heights.R` | Mean peak count of unresolved dependencies per sentence (Gibson DLT). | document |
-| `avg_max_incomplete_deps_adj` | `R/fnt_heights.R` | Mean peak unresolved dependencies normalized by sentence length. | document |
-| `avg_incomplete_deps` | `R/fnt_heights.R` | Mean count of unresolved dependencies across all positions (Gibson DLT). | document |
-| `avg_incomplete_deps_adj` | `R/fnt_heights.R` | Mean unresolved dependencies normalized by sentence length. | document |
-| `n` | `R/fnt_heights.R` | Total counted sentence tokens (aggregation helper, retained). | document |
-| `s` | `R/fnt_heights.R` | Number of sentences (aggregation helper, retained). | document |
-| `total_paths` | `R/fnt_heights.R` | Sum of dependency path lengths (aggregation helper, retained). | document |
-| `avg_dependency_depth` | `R/fnt_heights.R` | Document-level mean dependency depth from path sums. | document |
-| `prop_hf` | `R/fnt_heights.R` | Proportion of head-final dependencies. | document |
-| `prop_hi` | `R/fnt_heights.R` | Proportion of head-initial dependencies. | document |
-| `avg_head_distance` | `R/fnt_heights.R` | Mean absolute dependency distance. | document |
-| `avg_head_distance_adj` | `R/fnt_heights.R` | Mean dependency distance normalized by sentence length. | document |
-| `max_head_distance` | `R/fnt_heights.R` | Maximum dependency distance. | document |
-| `max_head_distance_adj` | `R/fnt_heights.R` | Maximum normalized dependency distance (`head_distance / (sentence_length - 1)`), bounded in `[0, 1]`. | document |
-| `dependency_direction_index` | `R/fnt_heights.R` | Mean signed direction of dependencies (left vs right). | document |
-| `avg_integration_cost` | `R/fnt_heights.R` | Mean Gibson DLT integration cost: intervening discourse referents (NOUN, PROPN, VERB) per dependency arc. | document |
-| `avg_yngve` | `R/fnt_heights.R` | Mean Yngve depth per sentence, averaged over the document. Yngve depth of a word = number of right-sibling co-dependents at each ancestor level; reflects mean left-embedding processing load. (Yngve 1960) | document |
-| `avg_max_yngve` | `R/fnt_heights.R` | Mean of per-sentence maximum Yngve depth; captures peak embedding load. (Yngve 1960) | document |
-| `avg_sd_yngve` | `R/fnt_heights.R` | Mean of per-sentence SD of Yngve depths; captures heterogeneity (mix of shallow and deeply embedded words within sentences). (Yngve 1960) | document |
+| Feature name | Script | Short description | Level | References |
+|---|---|---|---|---|
+| `avg_sent_height` | `R/fnt_heights.R` | Mean of per-sentence maximum root-to-token dependency depth. | document | Chen et al. (2024) [computationally identical to `Height`] |
+| `sd_sent_height` | `R/fnt_heights.R` | Standard deviation of sentence max depth: `sd(max_path)` across sentences, or spread of per-sentence *heights* (cross-sentence consistency of how deep sentences go). | document | [derived: cross-sentence variability of tree height; not the same statistic as Chen et al.'s within-tree `depthVar`] |
+| `avg_sd_depth` | `R/fnt_heights.R` | Mean within-sentence SD of dependency depth: `mean(sd(node_depths))` computed per sentence over all token depths-from-root, then averaged across sentences -- spread of depths *within* a sentence's tree (tree shape/balance), not across sentences. | document | Chen et al. (2024) [computationally identical to `depthVar`, reported as SD instead of variance] |
+| `avg_branching_factor` | `R/fnt_heights.R` | Mean node degree (dependent count) over all metric tokens, including leaves with degree 0. | document | Chen et al. (2024) [computationally identical to `degreeMean`] |
+| `avg_max_incomplete_deps` | `R/fnt_heights.R` | Mean (across sentences) of each sentence's peak memory cost: at every token position, sum `M(n) = n` over all currently-open dependencies (`n` = discourse referents processed since each one opened), keep the max over positions. This is Gibson's own predictor: he argues sentence acceptability tracks the *peak* memory load reached during parsing, not the average. | document | Gibson (1998) [adapted: Formula 10, his stated complexity predictor; fixed UD-upos set approximates his discourse-referent criterion] |
+| `avg_incomplete_deps` | `R/fnt_heights.R` | Mean (across sentences) of each sentence's *average* memory cost over positions, using the same per-position cost as `avg_max_incomplete_deps`. ALSI's own complementary aggregation -- Gibson does not propose the average as a predictor himself, only the peak. | document | Gibson (1998) [adapted, secondary aggregation: same Formula 10 cost, mean instead of max] |
+| `avg_integration_cost` | `R/fnt_heights.R` | Mean Gibson DLT integration cost: count of NOUN/PROPN/VERB tokens strictly between dependent and head (both endpoints excluded), per dependency arc. | document | Gibson (1998) [adapted: matches Formula 9's distance-based integration cost I(n) = n; fixed UD-upos set approximates his discourse-referent criterion] |
+| `n` | `R/fnt_heights.R` | Total counted sentence tokens (aggregation helper, retained in output; not an independent feature). | document | -- |
+| `s` | `R/fnt_heights.R` | Number of sentences (aggregation helper, retained in output; not an independent feature). | document | -- |
+| `total_paths` | `R/fnt_heights.R` | Sum of dependency path lengths (aggregation helper, retained in output; not an independent feature). | document | -- |
+| `avg_dependency_depth` | `R/fnt_heights.R` | Document-level `sum(token_depths) / sum(sentence_length - 1)`: sentence-length-weighted mean dependency depth. | document | Chen et al. (2024) [computationally identical to `depthMean`, pooled across sentences] |
+| `avg_head_distance_adj` | `R/fnt_heights.R` | Mean Normalized Dependency Distance (NDD) per sentence, averaged over the document: `\|ln(MDD / sqrt(root_position * sentence_length))\|`, where `root_position` is the linear position of the sentence's root token. Empirically reduces (but does not eliminate) correlation with sentence length relative to `avg_head_distance` (r = 0.73 -> 0.47 on a 400-doc validation corpus); naive linear-division normalization was tried first and rejected for *increasing* the length confound. | document | Lei & Jockers (2020) [computationally identical to NDD] |
+| `prop_hf` | `R/fnt_heights.R` | Proportion of head-final dependencies: `count(head_final) / count(real dependencies)`, where a real dependency excludes root and punctuation tokens (root has no head, so it cannot be head-final or head-initial). `prop_hf + prop_hi == 1`. | document | Liu (2010) [computationally identical] |
+| `prop_hi` | `R/fnt_heights.R` | Proportion of head-initial dependencies: `count(head_initial) / count(real dependencies)`, same denominator as `prop_hf`. | document | Liu (2010) [computationally identical] |
+| `avg_head_distance` | `R/fnt_heights.R` | Mean absolute dependency distance: `mean(\|head_position - dependent_position\|)` over real dependencies (root, punctuation excluded). | document | Liu (2008) [computationally identical to Formula 2, sample-level MDD] |
+| `max_head_distance` | `R/fnt_heights.R` | Maximum dependency distance. | document | Liu (2008) [inspired: Liu discusses per-sentence max DD as a candidate syntactic complexity measure.] |
+| `max_head_distance_adj` | `R/fnt_heights.R` | Maximum normalized dependency distance (`head_distance / (sentence_length - 1)`), bounded in `[0, 1]`. | document | Liu (2008) [inspired: length-normalized version of their max-DD concept] |
+| `avg_yngve` | `R/fnt_heights.R` | Mean Yngve depth per sentence, averaged over the document. Yngve depth of a word = number of right-sibling co-dependents at each ancestor level; reflects mean left-embedding processing load. | document | Yngve (1960) [adapted: branch-numbering/depth-sum formula identical, applied to dependency trees instead of his original phrase-structure trees] |
+| `avg_max_yngve` | `R/fnt_heights.R` | Mean of per-sentence maximum Yngve depth; captures peak embedding load. | document | Yngve (1960) [adapted: same dependency-tree adaptation as `avg_yngve`] |
+| `avg_sd_yngve` | `R/fnt_heights.R` | Mean of per-sentence SD of Yngve depths; captures heterogeneity (mix of shallow and deeply embedded words within sentences). | document | Yngve (1960) [adapted: same dependency-tree adaptation as `avg_yngve`] |
+
+Reference scope: Lu (2010, *IJCL*) is used for the 14 L2SCA syntactic-complexity measures documented under `features$tunits`; in this table Liu (2008, *Journal of Cognitive Science*) covers dependency distance, Liu (2010, *Lingua*) covers head directionality, Gibson (1998) covers DLT-based costs, Yngve (1960) covers Yngve depth, Chen et al. (2024, arXiv:2402.11549, "Syntactic Language Change in English and German: Metrics, Parsers, and Convergences") covers the tree-height/depth/degree family (`Height`, `depthMean`, `depthVar`, `degreeMean`), and Lei & Jockers (2020, *Journal of Quantitative Linguistics*, "Normalized Dependency Distance") covers the length-normalized `avg_head_distance_adj`.
+
+Note: four previously-documented length-normalization features (`avg_sent_height_adj`, `avg_dependency_depth_adj`, `avg_max_incomplete_deps_adj`, `avg_incomplete_deps_adj`) were removed after empirical validation showed naive division by `(sentence_length - 1)` did not decorrelate them from sentence length -- in most cases it introduced a new, larger, sign-flipped correlation. `max_head_distance_adj` was kept (verified to work); `avg_head_distance_adj` was replaced with the principled Lei & Jockers (2020) NDD formula rather than dropped.
+
+Note: `dependency_direction_index` (a signed `prop_hf - prop_hi` combination) was removed -- Liu (2010) never defines a combined head-final/head-initial index; he reports the two percentages separately and treats either one alone as sufficient for typological positioning (since they are complements: `prop_hi = 1 - prop_hf`). `prop_hf`/`prop_hi` remain as the genuine Liu (2010) statistics.
+
+Note: `avg_max_incomplete_deps`/`avg_incomplete_deps` were re-implemented to compute Gibson's actual Formula 10 memory cost (weighted by intervening discourse referents) instead of a naive unweighted count of open dependencies. The unweighted count was the simpler "stacking incompletely parsed rules" precursor idea Gibson (1998) explicitly attributes to Yngve (1960), not his own SPLT memory-cost hypothesis; the weighted version reuses the same discourse-referent-counting mechanism already implemented for `avg_integration_cost`. As a result, locally-adjacent open dependencies (no NOUN/PROPN/VERB intervening) now correctly cost 0, matching Gibson's prediction that memory cost grows with intervening material, not with the raw count of open dependencies.
 
 
 ## 8) `features$syntactic`
@@ -277,6 +281,83 @@ Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
 | `pos_entropy` | `R/fnt_pos_surprisal.R` | Token-level POS context entropy (bits); `NA` when Stupid Backoff reaches unigram level. | word |
 | `pos_entropy_reduction` | `R/fnt_pos_surprisal.R` | entropy[t−1] − entropy[t] within sentence. | word |
 
+## 11b) `features$deprel_surprisal$doc_surprisal`
+Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
+
+Dependency-triple surprisal over tree arcs (head UPOS, dependency relation,
+dependent UPOS), scoring −log₂ p(dep_pos | head_pos, dep_rel). All values in
+bits (log₂). `deprel_surprisal()` accepts `exclude_pos` and `backoff_scale`
+(Stupid Backoff) — see [docs/features/deprel-surprisal.md](docs/features/deprel-surprisal.md). Backed by Sidorov et al. (2014), *syntactic n-grams* (adapted: POS+deprel triples rather than syntactic paths).
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `mean_deprel_surprisal` | `R/fnt_deprel_surprisal.R` | Mean dependency-triple surprisal (−log₂ p) over scored arcs. | document |
+| `sd_deprel_surprisal` | `R/fnt_deprel_surprisal.R` | SD of dependency-triple surprisal — Uniform Information Density proxy (Jaeger 2010). | document |
+| `mean_deprel_entropy` | `R/fnt_deprel_surprisal.R` | Mean (head_pos, dep_rel)-context entropy. | document |
+| `sd_deprel_entropy` | `R/fnt_deprel_surprisal.R` | SD of context entropy. | document |
+| `mean_deprel_entropy_reduction` | `R/fnt_deprel_surprisal.R` | Mean arc-to-arc entropy change in reading order. | document |
+| `sd_deprel_entropy_reduction` | `R/fnt_deprel_surprisal.R` | SD of entropy change. | document |
+
+## 11c) `features$deprel_surprisal$sent_surprisal`
+Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `mean_deprel_surprisal` | `R/fnt_deprel_surprisal.R` | Mean dependency-triple surprisal at sentence level. | sentence |
+| `sd_deprel_surprisal` | `R/fnt_deprel_surprisal.R` | SD of dependency-triple surprisal at sentence level. | sentence |
+| `mean_deprel_entropy` | `R/fnt_deprel_surprisal.R` | Mean context entropy at sentence level. | sentence |
+| `sd_deprel_entropy` | `R/fnt_deprel_surprisal.R` | SD of context entropy at sentence level. | sentence |
+| `mean_deprel_entropy_reduction` | `R/fnt_deprel_surprisal.R` | Mean entropy reduction at sentence level. | sentence |
+| `sd_deprel_entropy_reduction` | `R/fnt_deprel_surprisal.R` | SD of entropy reduction at sentence level. | sentence |
+
+## 11d) `features$deprel_surprisal$token_surprisal`
+Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `deprel_surprisal` | `R/fnt_deprel_surprisal.R` | Arc-level dependency-triple surprisal (−log₂ p, bits). | word |
+| `deprel_entropy` | `R/fnt_deprel_surprisal.R` | Arc-level (head_pos, dep_rel)-context entropy (bits); `NA` when Stupid Backoff reaches unigram level. | word |
+| `deprel_entropy_reduction` | `R/fnt_deprel_surprisal.R` | entropy[t−1] − entropy[t] in reading order within sentence. | word |
+
+## 11e) `features$attach_surprisal$doc_surprisal`
+Produced in: `R/fnt_deprel_surprisal.R` (`attach_surprisal`)
+
+Dependency-attachment surprisal: same arc triples as the deprel model, flipped
+target — scores −log₂ p(dep_rel | head_pos, dep_pos), i.e. how predictable the
+relation linking two categories is (attachment-label ambiguity). All values in
+bits (log₂). `attach_surprisal()` accepts `exclude_pos` and `backoff_scale` —
+see [docs/features/deprel-surprisal.md](docs/features/deprel-surprisal.md). Backed by Sidorov et al. (2014), *syntactic n-grams* (adapted).
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `mean_attach_surprisal` | `R/fnt_deprel_surprisal.R` | Mean attachment-relation surprisal (−log₂ p) over scored arcs. | document |
+| `sd_attach_surprisal` | `R/fnt_deprel_surprisal.R` | SD of attachment surprisal — Uniform Information Density proxy (Jaeger 2010). | document |
+| `mean_attach_entropy` | `R/fnt_deprel_surprisal.R` | Mean (head_pos, dep_pos)-context entropy over relations (attachment ambiguity). | document |
+| `sd_attach_entropy` | `R/fnt_deprel_surprisal.R` | SD of attachment entropy. | document |
+| `mean_attach_entropy_reduction` | `R/fnt_deprel_surprisal.R` | Mean arc-to-arc entropy change in reading order. | document |
+| `sd_attach_entropy_reduction` | `R/fnt_deprel_surprisal.R` | SD of entropy change. | document |
+
+## 11f) `features$attach_surprisal$sent_surprisal`
+Produced in: `R/fnt_deprel_surprisal.R` (`attach_surprisal`)
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `mean_attach_surprisal` | `R/fnt_deprel_surprisal.R` | Mean attachment surprisal at sentence level. | sentence |
+| `sd_attach_surprisal` | `R/fnt_deprel_surprisal.R` | SD of attachment surprisal at sentence level. | sentence |
+| `mean_attach_entropy` | `R/fnt_deprel_surprisal.R` | Mean attachment entropy at sentence level. | sentence |
+| `sd_attach_entropy` | `R/fnt_deprel_surprisal.R` | SD of attachment entropy at sentence level. | sentence |
+| `mean_attach_entropy_reduction` | `R/fnt_deprel_surprisal.R` | Mean entropy reduction at sentence level. | sentence |
+| `sd_attach_entropy_reduction` | `R/fnt_deprel_surprisal.R` | SD of entropy reduction at sentence level. | sentence |
+
+## 11g) `features$attach_surprisal$token_surprisal`
+Produced in: `R/fnt_deprel_surprisal.R` (`attach_surprisal`)
+
+| Feature name | Script | Short description | Level |
+|---|---|---|---|
+| `attach_surprisal` | `R/fnt_deprel_surprisal.R` | Arc-level attachment-relation surprisal (−log₂ p, bits). | word |
+| `attach_entropy` | `R/fnt_deprel_surprisal.R` | Arc-level (head_pos, dep_pos)-context entropy over relations (bits); `NA` when backoff reaches unigram level. | word |
+| `attach_entropy_reduction` | `R/fnt_deprel_surprisal.R` | entropy[t−1] − entropy[t] in reading order within sentence. | word |
+
 ## 12) `features$lexical_cohesion`
 Produced in: `R/fnt_cohesion.R` (`simple_lexical_cohesion`)
 
@@ -330,8 +411,14 @@ Input: sentence embeddings from `corpus_embeddings()`. Returns one row per docum
 | `emb_topic_drift` | `R/fnt_embeddings.R` | Mean cosine distance between consecutive 3-sentence block centroids. | document |
 | `emb_mean_novelty` | `R/fnt_embeddings.R` | Mean cosine distance of each sentence to the running centroid of all previous sentences. | document |
 | `emb_n_topics` | `R/fnt_embeddings.R` | Optimal number of sentence clusters via silhouette method (k = 1..min(5, n/3)). | document |
-| `emb_convexity` | `R/fnt_embeddings.R` | Conceptual convexity (Gärdenfors): mean NN cosine similarity of points interpolated along all sentence-pair segments (λ = 0.25/0.5/0.75). 1 = perfectly convex. All pairs for n ≤ 30, random sample of 500 pairs above. | document |
-| `emb_local_convexity` | `R/fnt_embeddings.R` | Same as convexity but only on consecutive sentence pairs; measures local semantic continuity. | document |
+| `emb_convexity` | `R/fnt_embeddings.R` | Conceptual convexity (Gärdenfors): mean nearest-neighbour cosine support for sampled sentence-pair midpoints, excluding the pair endpoints. 1 = strongly supported. | document |
+| `emb_blob_convexity` | `R/fnt_embeddings.R` | Proportion of sampled sentence-pair midpoints whose nearest non-endpoint sentence is within the document's median nearest-neighbour support radius. | document |
+| `emb_segment_support` | `R/fnt_embeddings.R` | Local-scale segment support: mean exp(-0.5 × normalized midpoint distance²), where normalized distance uses the geometric mean of endpoint k-NN radii. | document |
+| `emb_segment_occupancy` | `R/fnt_embeddings.R` | Proportion of sampled sentence-pair midpoints within the endpoint k-NN local support scale. | document |
+| `emb_local_convexity` | `R/fnt_embeddings.R` | Same midpoint-support score but only on consecutive sentence pairs; measures local semantic continuity. | document |
+| `emb_local_blob_convexity` | `R/fnt_embeddings.R` | Local consecutive-pair version of blob convexity. | document |
+| `emb_local_segment_support` | `R/fnt_embeddings.R` | Consecutive-pair version of local-scale segment support. | document |
+| `emb_local_segment_occupancy` | `R/fnt_embeddings.R` | Consecutive-pair version of local-scale segment occupancy. | document |
 
 ## 16) `features$surprisal$mlm` and `features$surprisal$ar`
 Produced in: `R/fnt_surprisal.R` (`llm_surprisal_entropy`)

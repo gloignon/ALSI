@@ -132,7 +132,45 @@ to_integer_quiet <- function(x) {
 #' Compute dependency tree statistics for a single sentence
 #'
 #' Calculates max path depth, mean/adjusted dependency depth, depth SD,
-#' branching factor, and Gibson DLT incomplete dependency counts.
+#' branching factor, Yngve depth, and Gibson DLT incomplete dependency counts.
+#'
+#' @details
+#' Pseudocode for each statistic (\code{depth(w)} = path length from token
+#' \code{w} to the sentence root, root depth = 0; \code{n} = number of
+#' metric-eligible tokens in the sentence):
+#' \preformatted{
+#' max_path              = max(depth(w) for w in tokens)
+#' avg_dependency_depth   = mean(depth(w) for w in tokens)
+#' avg_dependency_depth_adj = sum(depth(w) for w in tokens) / (n - 1)
+#' sd_depth               = sd(depth(w) for w in tokens)
+#' branching_factor       = mean(count_dependents(w) for w in tokens)
+#'   (leaves contribute 0; this is node out-degree, averaged over every
+#'   token, not just heads that have at least one dependent)
+#' yngve(w)                = 0                                  if w is root
+#'                          = right_siblings(w) + yngve(parent(w))   otherwise
+#'   where right_siblings(w) = number of co-dependents of the same head
+#'   that precede w in linear (left-to-right) order
+#' avg_incomplete_deps, max_incomplete_deps: Gibson (1998) SPLT memory cost
+#'   (Formula 10). Sweep tokens left to right; a dependency is "open"
+#'   (predicted) between the position of a dependent and the (later)
+#'   position of its head. At each position, each open dependency
+#'   contributes M(n) = n, where n = count of new discourse referents
+#'   (upos in NOUN/PROPN/VERB) processed since that dependency opened;
+#'   sum the contributions of all open dependencies at that position.
+#'   avg/max_incomplete_deps = mean/max of this per-position total across
+#'   the sentence. (Same discourse-referent mechanism as
+#'   \code{head_final_initial_doc}'s \code{integration_cost}.)
+#' }
+#'
+#' @citation_type "computationally identical" (\code{max_path}, \code{avg_dependency_depth},
+#'   \code{sd_depth}, \code{branching_factor} -- Chen et al. 2024,
+#'   \code{Height}/\code{depthMean}/\code{depthVar}/\code{degreeMean});
+#'   "adapted" (\code{avg_dependency_depth_adj} --
+#'   length-normalized \code{depthMean}, no normalized analogue in Chen et al. 2024;
+#'   \code{avg_incomplete_deps}/\code{max_incomplete_deps} -- Gibson 1998 SPLT
+#'   memory cost, fixed UD-upos set approximates his discourse-referent criterion;
+#'   \code{yngve} -- Yngve 1960's branch-numbering/depth-sum formula, applied to
+#'   dependency trees instead of his original phrase-structure trees)
 #'
 #' @param dt_sentence A data.table for one sentence with \code{token_id},
 #'   \code{head_token_id}, and optionally \code{upos}.
@@ -154,7 +192,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       branching_factor = 0,
       count_path = 0,
       sentence_length = 0,
-      max_incomplete_deps = 0L,
+      max_incomplete_deps = 0,
       avg_incomplete_deps = 0,
       max_incomplete_deps_adj = 0,
       avg_incomplete_deps_adj = 0,
@@ -231,7 +269,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       branching_factor = 0,
       count_path = 0,
       sentence_length = 0,
-      max_incomplete_deps = 0L,
+      max_incomplete_deps = 0,
       avg_incomplete_deps = 0,
       max_incomplete_deps_adj = 0,
       avg_incomplete_deps_adj = 0,
@@ -253,31 +291,42 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   max_yngve   <- if (length(valid_yngve) > 0L) max(valid_yngve) else 0L
   sd_yngve    <- if (length(valid_yngve) > 1L) sd(valid_yngve) else 0
 
-  # Branching factor: average number of dependents per internal (non-leaf) node
+  # Branching factor: mean node degree (dependent count) over ALL metric
+  # tokens, including leaves with degree 0 (Chen et al. 2024 degreeMean)
   metric_tokens <- dt_sentence[metric_rows]
   arcs <- metric_tokens[head_token_id > 0L & token_id %in% metric_tokens$token_id]
-  if (nrow(arcs) > 0L) {
-    dep_per_head <- arcs[, .N, by = head_token_id]
-    branching_factor <- mean(dep_per_head$N)
-  } else {
-    branching_factor <- 0
-  }
+  dep_per_head <- arcs[, .N, by = head_token_id]
+  degree <- rep(0L, nrow(metric_tokens))
+  match_idx <- match(metric_tokens$token_id, dep_per_head$head_token_id)
+  degree[!is.na(match_idx)] <- dep_per_head$N[match_idx[!is.na(match_idx)]]
+  branching_factor <- if (length(degree) > 0L) mean(degree) else 0
 
-  # Gibson DLT incomplete dependency count
+  # Gibson DLT memory cost (Formula 10): sweep tokens left to right; a
+  # dependency is "open" (predicted) between the position of a dependent
+  # and the later position of its head. Each open dependency contributes
+  # M(n) = n, where n = count of new discourse referents (NOUN/PROPN/VERB)
+  # processed since it opened; sum contributions of all open dependencies
+  # at each position.
+  discourse_upos <- c("NOUN", "PROPN", "VERB")
   m_tok <- metric_tokens$token_id
   m_head <- metric_tokens$head_token_id
-  tok_sorted <- sort(m_tok)
-  head_for_tok <- m_head[order(m_tok)]
+  m_upos <- metric_tokens$upos
+  ord <- order(m_tok)
+  tok_sorted <- m_tok[ord]
+  head_for_tok <- m_head[ord]
+  cumref_sorted <- cumsum(m_upos[ord] %in% discourse_upos)
   hf_idx <- which(head_for_tok > tok_sorted)
   if (length(hf_idx) > 0L) {
     open_at <- tok_sorted[hf_idx]
     close_at <- head_for_tok[hf_idx]
-    inc_counts <- as.integer(rowSums(outer(tok_sorted, open_at, ">=") &
-                                       outer(tok_sorted, close_at, "<")))
+    cumref_open <- cumref_sorted[hf_idx]
+    open_mat <- outer(tok_sorted, open_at, ">=") & outer(tok_sorted, close_at, "<")
+    weight_mat <- outer(cumref_sorted, cumref_open, "-") * open_mat
+    inc_counts <- rowSums(weight_mat)
     max_incomplete_deps <- max(inc_counts)
     avg_incomplete_deps <- mean(inc_counts)
   } else {
-    max_incomplete_deps <- 0L
+    max_incomplete_deps <- 0
     avg_incomplete_deps <- 0
   }
 
@@ -320,6 +369,28 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
 #' or left (head-initial), computes head distance, direction, and Gibson DLT
 #' integration cost.
 #'
+#' @details
+#' Pseudocode per token \code{w} with head \code{h} (positions are linear
+#' token indices within the sentence; \code{sent_len} excludes punctuation
+#' by default). Only applies to tokens with a real head (root tokens, whose
+#' head is a sentinel 0, are excluded -- a root has no dependency relation):
+#' \preformatted{
+#' head_final        = position(h) > position(w)
+#' head_initial       = position(h) < position(w)
+#' head_distance      = abs(position(h) - position(w))
+#' head_direction     = +1 if head_final, -1 if head_initial, 0 if h == w
+#' head_distance_adj  = head_distance / (sent_len - 1)
+#' integration_cost   = count of tokens strictly between w and h (exclusive)
+#'   whose upos is in {NOUN, PROPN, VERB}  (Gibson 1998 integration cost:
+#'   new discourse referents intervening between dependent and head)
+#' }
+#'
+#' @citation_type "computationally identical" (\code{head_distance} -- Liu 2008 MDD;
+#'   \code{head_final}/\code{head_initial}/\code{head_direction} -- Liu 2010 head directionality);
+#'   "adapted" (\code{head_distance_adj} -- length-normalized \code{head_distance};
+#'   \code{integration_cost} -- Gibson 1998, our discourse-referent set is a fixed
+#'   UD-upos approximation of his original referent-introduction criterion)
+#'
 #' @param df_doc A data.table for one document with \code{doc_id},
 #'   \code{paragraph_id}, \code{sentence_id}, \code{token_id},
 #'   \code{head_token_id}, and \code{upos}.
@@ -338,6 +409,9 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
       paragraph_id = integer(),
       sentence_id = integer(),
       token_id = integer(),
+      token_id_num = integer(),
+      head_token_id_num = integer(),
+      sent_len = integer(),
       head_final = logical(),
       head_initial = logical(),
       head_distance = integer(),
@@ -372,7 +446,7 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
   }
   valid_dependency <- valid & dt$head_token_id_num > 0L
 
-  dt[valid, `:=`(
+  dt[valid_dependency, `:=`(
     head_final = head_token_id_num > token_id_num,
     head_initial = head_token_id_num < token_id_num
   )]
@@ -403,7 +477,9 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
     )
   }]
 
-  dt[, .(doc_id, paragraph_id, sentence_id, token_id, head_final, head_initial, head_distance, head_direction, head_distance_adj, integration_cost)]
+  dt[, .(doc_id, paragraph_id, sentence_id, token_id, token_id_num, head_token_id_num,
+         sent_len, head_final, head_initial, head_distance, head_direction,
+         head_distance_adj, integration_cost)]
 }
 
 #' Compute head-final/initial stats for a corpus
@@ -425,6 +501,9 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
       paragraph_id = integer(),
       sentence_id = integer(),
       token_id = integer(),
+      token_id_num = integer(),
+      head_token_id_num = integer(),
+      sent_len = integer(),
       head_final = logical(),
       head_initial = logical(),
       head_distance = integer(),
@@ -452,6 +531,14 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
 #'
 #' Vectorised version of \code{sentence_graph_stats} for an entire corpus,
 #' using data.table grouping for efficiency.
+#'
+#' @details
+#' Computes the same statistics as \code{sentence_graph_stats} (see that
+#' function's \code{@details} for the pseudocode and citation backing of
+#' \code{max_path}, \code{avg_dependency_depth}, \code{avg_dependency_depth_adj},
+#' \code{sd_depth}, \code{branching_factor}, \code{yngve}/\code{max_yngve}/\code{sd_yngve},
+#' and the Gibson incomplete-dependency counts), one row per sentence instead
+#' of one call per sentence.
 #'
 #' @param dt_corpus A parsed \code{data.table} with \code{doc_id},
 #'   \code{paragraph_id}, \code{sentence_id}, \code{token_id},
@@ -565,7 +652,7 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         branching_factor = 0,
         count_path = 0L,
         sentence_length = 0L,
-        max_incomplete_deps = 0L,
+        max_incomplete_deps = 0,
         avg_incomplete_deps = 0,
         max_incomplete_deps_adj = 0,
         avg_incomplete_deps_adj = 0,
@@ -586,33 +673,36 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       }
       m_tok <- token_id[m_mask]
       m_head <- head_token_id[m_mask]
+      m_upos <- upos[m_mask]
 
-      # Branching factor: average dependents per internal node
+      # Branching factor: mean node degree over ALL metric tokens, including
+      # leaves with degree 0 (Chen et al. 2024 degreeMean)
       m_arcs <- m_head[m_head > 0L]
-      if (length(m_arcs) > 0L) {
-        dep_counts <- tabulate(match(m_arcs, m_tok))
-        bf <- mean(dep_counts[dep_counts > 0L])
-      } else {
-        bf <- 0
-      }
+      degree <- tabulate(match(m_arcs, m_tok), nbins = length(m_tok))
+      bf <- mean(degree)
 
-      # Gibson DLT incomplete dependency count:
-      # sweep left-to-right; at each position count how many dependencies
-      # are still unresolved (dependent seen but head not yet reached).
-      tok_sorted <- sort(m_tok)
-      head_for_tok <- m_head[order(m_tok)]
-      # head-final arcs (head comes later) create incomplete deps
+      # Gibson DLT memory cost (Formula 10): sweep left-to-right; each open
+      # (head-final) dependency contributes M(n) = n, where n = count of
+      # new discourse referents (NOUN/PROPN/VERB) processed since it opened;
+      # sum contributions of all open dependencies at each position.
+      discourse_upos <- c("NOUN", "PROPN", "VERB")
+      ord <- order(m_tok)
+      tok_sorted <- m_tok[ord]
+      head_for_tok <- m_head[ord]
+      cumref_sorted <- cumsum(m_upos[ord] %in% discourse_upos)
       hf_idx <- which(head_for_tok > tok_sorted)
       if (length(hf_idx) > 0L) {
         open_at <- tok_sorted[hf_idx]   # dep opens at this position
         close_at <- head_for_tok[hf_idx] # dep resolves at this position
-        # count open deps at each token position (vectorised outer product)
-        inc_counts <- as.integer(rowSums(outer(tok_sorted, open_at, ">=") &
-                                           outer(tok_sorted, close_at, "<")))
+        cumref_open <- cumref_sorted[hf_idx]
+        open_mat <- outer(tok_sorted, open_at, ">=") &
+          outer(tok_sorted, close_at, "<")
+        weight_mat <- outer(cumref_sorted, cumref_open, "-") * open_mat
+        inc_counts <- rowSums(weight_mat)
         max_inc <- max(inc_counts)
         avg_inc <- mean(inc_counts)
       } else {
-        max_inc <- 0L
+        max_inc <- 0
         avg_inc <- 0
       }
 
@@ -647,6 +737,60 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' direction/distance stats (without punctuation) into a single
 #' document-level summary.
 #'
+#' @details
+#' Document-level aggregation pseudocode (sentence-level inputs come from
+#' \code{batch_graph_stats} and \code{head_final_initial}; \code{n}, \code{s},
+#' and \code{total_paths} are retained aggregation helpers, not independent
+#' features):
+#' \preformatted{
+#' avg_sent_height        = mean(max_path)                 across sentences
+#' sd_sent_height          = sd(max_path)                   across sentences
+#' avg_sd_depth            = mean(sd_depth)                 across sentences
+#' avg_branching_factor    = mean(branching_factor)         across sentences
+#' avg_max_incomplete_deps = mean(max_incomplete_deps)      across sentences
+#' avg_incomplete_deps     = mean(avg_incomplete_deps)      across sentences
+#' avg_yngve / avg_max_yngve / avg_sd_yngve = mean(yngve / max_yngve / sd_yngve)
+#' n            = sum(sentence_length)
+#' s            = count(sentences)
+#' total_paths  = sum(count_path)
+#' avg_dependency_depth = total_paths / (n - s)   # sentence-length-weighted depth
+#'
+#' # prop_hf/prop_hi: percentage of head-final/head-initial dependencies
+#' # (Liu 2010, Formulae in Sec. 2), denominator is real dependencies only
+#' # (root and punctuation excluded, matching "total number of dependencies
+#' # in the treebank"); every real dependency is exactly one of the two, so
+#' # prop_hf + prop_hi == 1.
+#' prop_hf = count(head_final) / count(non-NA head_final)
+#' prop_hi = count(head_initial) / count(non-NA head_initial)
+#' avg_head_distance             = mean(head_distance)
+#' max_head_distance[_adj]       = max(head_distance[_adj])
+#' avg_integration_cost          = mean(integration_cost)
+#'
+#' # avg_head_distance_adj: Normalized Dependency Distance (Lei & Jockers 2020),
+#' # per sentence, then averaged across sentences. root_position = linear
+#' # position of the root token (head_token_id_num == 0); mdd = mean(head_distance)
+#' # within the sentence; sent_length = sentence_length excluding punctuation.
+#' avg_head_distance_adj = mean( abs(log(mdd / sqrt(root_position * sent_length))) )
+#' }
+#'
+#' @citation_type "computationally identical" (\code{avg_sent_height},
+#'   \code{avg_dependency_depth}, \code{avg_sd_depth}, \code{avg_branching_factor} --
+#'   document-level means of Chen et al. 2024's per-sentence
+#'   \code{Height}/\code{depthMean}/\code{depthVar}/\code{degreeMean};
+#'   \code{prop_hf}, \code{prop_hi} -- Liu 2010;
+#'   \code{avg_head_distance} -- Liu 2008 Formula 2, sample-level MDD);
+#'   "inspired" (\code{max_head_distance}, \code{max_head_distance_adj} -- Liu 2008
+#'   discusses maximum dependency distance per sentence as a candidate complexity
+#'   measure but explicitly rejects it as unstable in favor of MDD; he never defines
+#'   a formal max-DD statistic, so this is motivated by his discussion, not a formula
+#'   match);
+#'   "adapted" (\code{avg_integration_cost} -- Gibson 1998);
+#'   "computationally identical" (\code{avg_head_distance_adj} -- Lei & Jockers
+#'   2020's Normalized Dependency Distance, NDD, applied per sentence then
+#'   averaged across the document);
+#'   "derived" (\code{sd_sent_height} -- cross-sentence variability of tree height;
+#'   not the same aggregation level as any Chen et al. 2024 statistic, ALSI-original)
+#'
 #' @param df_corpus A parsed \code{data.table} (full corpus).
 #' @returns A \code{data.table} with one row per document and columns for
 #'   all dependency-tree features.
@@ -663,18 +807,34 @@ docwise_graph_stats <- function(df_corpus) {
   sum_head_final <- df_head_final |>
     group_by(doc_id) |>
     summarise(
-      prop_hf = sum(head_final, na.rm = TRUE) / n(),
-      prop_hi = sum(head_initial, na.rm = TRUE) / n(),
+      prop_hf = sum(head_final, na.rm = TRUE) / sum(!is.na(head_final)),
+      prop_hi = sum(head_initial, na.rm = TRUE) / sum(!is.na(head_initial)),
       avg_head_distance = mean(head_distance, na.rm = TRUE),
-      avg_head_distance_adj = mean(head_distance_adj, na.rm = TRUE),
       max_head_distance = if (all(is.na(head_distance))) NA_integer_ else max(head_distance, na.rm = TRUE),
       max_head_distance_adj = if (all(is.na(head_distance_adj))) NA_real_ else max(head_distance_adj, na.rm = TRUE),
-      dependency_direction_index = {
-        n_dep <- sum(!is.na(head_direction))
-        if (n_dep > 0L) sum(head_direction, na.rm = TRUE) / n_dep else NA_real_
-      },
       avg_integration_cost = mean(integration_cost, na.rm = TRUE)
     )
+
+  # Normalized Dependency Distance (Lei & Jockers 2020): per-sentence MDD
+  # normalized by root-verb position and sentence length, replaces the
+  # naive head_distance / (sent_len - 1) division (which does not actually
+  # decorrelate from sentence length -- verified empirically on the demo
+  # corpus, see FEATURES_CITATIONS.yaml).
+  sum_ndd <- df_head_final |>
+    group_by(doc_id, paragraph_id, sentence_id) |>
+    summarise(
+      mdd = mean(head_distance, na.rm = TRUE),
+      sent_length = dplyr::first(sent_len),
+      root_position = dplyr::first(token_id_num[head_token_id_num == 0L]),
+      .groups = "drop"
+    ) |>
+    mutate(
+      ndd = abs(log(mdd / sqrt(root_position * sent_length)))
+    ) |>
+    group_by(doc_id) |>
+    summarise(avg_head_distance_adj = mean(ndd, na.rm = TRUE))
+
+  sum_head_final <- merge(sum_head_final, sum_ndd, by = "doc_id")
 
   # Tree height/depth: include punctuation (meaningful tree structure)
   message("Heights...")
@@ -688,15 +848,11 @@ docwise_graph_stats <- function(df_corpus) {
     group_by(doc_id) |>
     summarise(
       avg_sent_height = mean(max_path, na.rm = TRUE),
-      avg_sent_height_adj = mean(max_path / pmax(sentence_length - 1L, 1L), na.rm = TRUE),
       sd_sent_height = sd(max_path, na.rm = TRUE),
-      avg_dependency_depth_adj = mean(avg_dependency_depth_adj, na.rm = TRUE),
       avg_sd_depth = mean(sd_depth, na.rm = TRUE),
       avg_branching_factor = mean(branching_factor, na.rm = TRUE),
       avg_max_incomplete_deps = mean(max_incomplete_deps, na.rm = TRUE),
-      avg_max_incomplete_deps_adj = mean(max_incomplete_deps_adj, na.rm = TRUE),
       avg_incomplete_deps = mean(avg_incomplete_deps, na.rm = TRUE),
-      avg_incomplete_deps_adj = mean(avg_incomplete_deps_adj, na.rm = TRUE),
       avg_yngve = mean(yngve, na.rm = TRUE),
       avg_max_yngve = mean(max_yngve, na.rm = TRUE),
       avg_sd_yngve = mean(sd_yngve, na.rm = TRUE),
@@ -712,18 +868,6 @@ docwise_graph_stats <- function(df_corpus) {
   return(df_result)
 }
 
-#' Apply GAM calibration to sentence-level features
-#'
-#' Subtracts the expected value for each sentence length (from saved GAM
-#' models), producing residuals approximately uncorrelated with sentence
-#' length.
-#'
-#' @param dt_sent A \code{data.table} from \code{batch_graph_stats} with a
-#'   \code{sentence_length} column.
-#' @param gam_models Named list of GAM fits, or a path to an \code{.Rds} file.
-#' @param suffix String appended to calibrated column names (default
-#'   \code{"_resid"}).
-#' @returns A copy of \code{dt_sent} with additional \code{*_resid} columns.
 #' [EXPERIMENTAL] Sentence-depth variability within documents
 #'
 #' Computes the mean absolute difference between consecutive sentence tree
@@ -751,6 +895,18 @@ sent_depth_variability <- function(sent_stats) {
   return(result)
 }
 
+#' Apply GAM calibration to sentence-level features
+#'
+#' Subtracts the expected value for each sentence length (from saved GAM
+#' models), producing residuals approximately uncorrelated with sentence
+#' length.
+#'
+#' @param dt_sent A \code{data.table} from \code{batch_graph_stats} with a
+#'   \code{sentence_length} column.
+#' @param gam_models Named list of GAM fits, or a path to an \code{.Rds} file.
+#' @param suffix String appended to calibrated column names (default
+#'   \code{"_resid"}).
+#' @returns A copy of \code{dt_sent} with additional \code{*_resid} columns.
 apply_calibration <- function(dt_sent, gam_models, suffix = "_resid") {
 
   if (is.character(gam_models) && length(gam_models) == 1L) {
