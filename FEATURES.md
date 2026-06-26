@@ -488,11 +488,11 @@ lexicon on the Vikidia/Wikipedia and ALECTOR corpora.
 Produced in: `R/fnt_tunits.R` (`tunit_features`)
 
 Lu's (2010) 14 L2SCA syntactic complexity indices, translated from
-phrase-structure patterns to Universal Dependencies, plus two retained count
-helpers (`n_tunits`, `n_sentences`) and one ALSI coordination derivative
+phrase-structure patterns to Universal Dependency style trees, plus two retained 
+count helpers (`n_tunits`, `n_sentences`) and one ALSI coordination derivative
 (`prop_coord_sent`). The T-unit construct has its historical origin in Hunt
 (1965), but all 14 ratios below — including `mlt` and `c_t` — are sourced
-from Lu (2010); Hunt is not an additional feature source.
+from Lu (2010).
 
 T-unit boundaries are detected from UD dependency parses: the sentence root
 anchors the first T-unit; each predicate (VERB, AUX, or ADJ-with-cop)
