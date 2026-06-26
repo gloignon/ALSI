@@ -96,6 +96,11 @@ pos_surprisal <- function(dt_corpus, pos_model, exclude_pos = character(0),
                           backoff_scale = NULL) {
   dt <- setDT(copy(dt_corpus))[, .(doc_id, sentence_id, token_id, upos)]
 
+  # Drop multi-word-token range rows (e.g. "des" spanning "de"+"les"): UD
+  # gives them no upos of their own, so they are not part of the tag
+  # sequence — keeping them would inject a spurious NA tag into the context.
+  dt <- dt[!is.na(upos)]
+
   if (length(exclude_pos) > 0L) {
     dt <- dt[!upos %chin% exclude_pos]
   }
@@ -105,7 +110,7 @@ pos_surprisal <- function(dt_corpus, pos_model, exclude_pos = character(0),
     # token_id NA marks boundary rows so they can be stripped from output.
     bos_eos <- dt[, {
       list(
-        token_id = NA_character_,
+        token_id = c(NA_character_, NA_character_, .SD$token_id, NA_character_),
         upos     = c("<BOS>", "<BOS>", .SD$upos, "<EOS>")
       )
     }, by = .(doc_id, sentence_id)]
