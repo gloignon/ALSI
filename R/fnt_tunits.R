@@ -1,8 +1,9 @@
 #' Compute T-unit Complexity Features
 #'
 #' Identifies T-unit boundaries in a parsed corpus and returns all 14 measures
-#' from Lu's (2010) L2SCA battery, plus Hunt's (1965) MLT and a coordination
-#' proportion index, aggregated per document.
+#' from Lu's (2010) L2SCA battery, plus a coordination proportion index,
+#' aggregated per document. The T-unit construct itself originates with Hunt
+#' (1965); Lu is the source for all 14 ratios, including MLT.
 #'
 #' A T-unit (minimal terminable unit) is an independent clause together with
 #' all subordinate clauses and non-clausal phrases attached to it. In UD
@@ -23,36 +24,44 @@
 #'     \item{n_sentences}{Total number of orthographic sentences.}
 #'     \item{mls}{Mean length of sentence in tokens (Lu 2010 MLS). PUNCT
 #'       excluded.}
-#'     \item{mlt}{Mean length of T-unit in tokens (Hunt 1965 / Lu 2010 MLT).
-#'       PUNCT excluded.}
+#'     \item{mlt}{Mean length of T-unit in tokens (Lu 2010 MLT). PUNCT
+#'       excluded.}
 #'     \item{mlc}{Mean length of clause in tokens (Lu 2010 MLC). Total tokens
 #'       divided by total clauses (T-units + dependent clauses). PUNCT
 #'       excluded.}
 #'     \item{c_s}{Clauses per sentence (Lu 2010 C/S).}
-#'     \item{t_s}{T-units per sentence (Lu 2010 T/S; coordination index,
-#'       Bardovi-Harlig 1992). Values above 1 indicate sentences with multiple
-#'       coordinate main clauses.}
-#'     \item{c_t}{Clauses per T-unit (Hunt 1965 / Lu 2010 C/T): always >= 1;
-#'       increases with subordination depth within each T-unit.}
+#'     \item{t_s}{T-units per sentence (Lu 2010 T/S), equivalent to Hunt's
+#'       (1966) main clause coordination index. Values above 1 indicate
+#'       sentences with multiple coordinate main clauses.}
+#'     \item{c_t}{Clauses per T-unit (Lu 2010 C/T): always >= 1; increases
+#'       with subordination depth within each T-unit.}
 #'     \item{dc_c}{Dependent clauses per clause (Lu 2010 DC/C). Finite
 #'       subordinate clauses (\code{ccomp}, \code{advcl}, \code{acl},
 #'       \code{acl:relcl}) divided by total clauses.}
 #'     \item{dc_t}{Dependent clauses per T-unit (Lu 2010 DC/T). Same DC
 #'       definition; denominator is T-units rather than clauses.}
 #'     \item{ct_t}{Complex T-unit ratio (Lu 2010 CT/T). Proportion of T-units
-#'       that contain at least one dependent clause. Ranges from 0 to 1.}
+#'       that contain at least one dependent clause. Ranges from 0 to 1.
+#'       Computed as a sentence-level proxy: \code{n_dc} is counted per
+#'       sentence, not per T-unit, so when a sentence holds multiple
+#'       coordinated T-units this under-resolves which specific T-unit
+#'       contains the dependent clause.}
 #'     \item{vp_t}{Verb phrases per T-unit (Lu 2010 VP/T). One verb phrase per
 #'       predicate head — VERB tokens, plus AUX tokens that are not themselves
-#'       \code{aux}/\code{aux:pass} dependents (e.g. copulas, modal heads) —
-#'       divided by total T-units. Auxiliary chains attached via \code{aux}/
-#'       \code{aux:pass} are folded into their governing verb's count, matching
-#'       Lu's VP1 pattern (a periphrastic form like "has been running" is one
-#'       VP, not three).}
+#'       \code{aux}/\code{aux:pass}/\code{aux:tense}/\code{aux:caus} dependents
+#'       (e.g. copulas, modal heads) — divided by total T-units. Auxiliary
+#'       chains attached via those four relations are folded into their
+#'       governing verb's count, matching Lu's VP1 pattern (a periphrastic
+#'       form like "has been running" is one VP, not three).}
 #'     \item{cp_t}{Coordinate phrases per T-unit (Lu 2010 CP/T). \code{conj}
 #'       arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination,
-#'       not clausal).}
+#'       not clausal). Lu's CP also covers coordinated VPs; ALSI routes
+#'       verbal \code{conj} coordination into \code{t_s}/\code{prop_coord_sent}
+#'       (additional T-units) instead, so this is a UD adaptation rather than
+#'       a literal CP/T.}
 #'     \item{cp_c}{Coordinate phrases per clause (Lu 2010 CP/C). Same CP
-#'       definition; denominator is total clauses.}
+#'       definition and UD-adaptation caveat as \code{cp_t}; denominator is
+#'       total clauses.}
 #'     \item{cn_t}{Complex nominals per T-unit (Lu 2010 CN/T). NOUN tokens
 #'       with at least one substantive modifier child. Uses the same relation
 #'       set as \code{add_complex_nominal_flag()} in \code{fnt_extra_syntax.R}.}
@@ -95,8 +104,8 @@
 #'   language writing. \emph{International Journal of Corpus Linguistics,
 #'   15}(4), 474--496. \doi{10.1075/ijcl.15.4.02lu}
 #'
-#'   Bardovi-Harlig, K. (1992). A second look at T-unit analysis.
-#'   \emph{TESOL Quarterly, 26}(2), 390--395.
+#'   Hunt, K. W. (1966). Recent measures in syntactic development.
+#'   \emph{Elementary English, 43}(7), 732--739.
 tunit_features <- function(dt) {
   dt_corpus <- setDT(copy(dt))
 
@@ -125,11 +134,14 @@ tunit_features <- function(dt) {
   # constituency tree, periphrastic forms ("has been running") nest VPs inside
   # VPs, so VP1 fires once for the whole auxiliary chain — not once per
   # auxiliary. The dependency equivalent is one count per predicate head, with
-  # its `aux`/`aux:pass` dependents folded into that same head (mirrors the
+  # its auxiliary dependents folded into that same head (mirrors the
   # has_cv_child grouping used for is_complex_verb in fnt_extra_syntax.R).
-  # Counting raw VERB+AUX tokens would inflate vp_t for every periphrastic
-  # tense, passive, and modal construction.
-  aux_dep_rels <- c("aux", "aux:pass")
+  # The French GSD model never emits a bare "aux" — periphrastic auxiliaries
+  # surface via aux:tense (compound past tenses, e.g. "a mangé"), aux:pass
+  # (passives), and aux:caus (causatives). Restricting to c("aux", "aux:pass")
+  # would silently miss aux:tense/aux:caus and inflate vp_t for the bulk of
+  # French periphrastic tenses.
+  aux_dep_rels <- c("aux", "aux:pass", "aux:tense", "aux:caus")
 
   dt_sent_vocab <- dt_corpus[compte == TRUE, .(
     n_vp = sum(upos == "VERB" | (upos == "AUX" & !dep_rel %in% aux_dep_rels)),
