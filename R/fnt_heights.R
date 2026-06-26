@@ -149,7 +149,7 @@ to_integer_quiet <- function(x) {
 #' yngve(w)                = 0                                  if w is root
 #'                          = right_siblings(w) + yngve(parent(w))   otherwise
 #'   where right_siblings(w) = number of co-dependents of the same head
-#'   that precede w in linear (left-to-right) order
+#'   that appear to the right of w in linear order
 #' avg_incomplete_deps, max_incomplete_deps: Gibson (1998) SPLT memory cost
 #'   (Formula 10). Sweep tokens left to right; a dependency is "open"
 #'   (predicted) between the position of a dependent and the (later)
@@ -776,7 +776,7 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' avg_branching_factor    = mean(branching_factor)         across sentences
 #' avg_max_incomplete_deps = mean(max_incomplete_deps)      across sentences
 #' avg_incomplete_deps     = mean(avg_incomplete_deps)      across sentences
-#' avg_yngve / avg_max_yngve / avg_sd_yngve = mean(yngve / max_yngve / sd_yngve)
+#' avg_integration_cost    = mean(integration_cost)         over real dependencies
 #' n            = sum(sentence_length)
 #' s            = count(sentences)
 #' total_paths  = sum(count_path)
@@ -786,6 +786,14 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #'   in both numerator and denominator at the sentence level, so pooling must
 #'   divide by n (total nodes), not n - s
 #'
+#' # avg_head_distance_adj: Normalized Dependency Distance (Lei & Jockers 2020),
+#' # per sentence, then averaged across sentences. root_position = dep_pos of
+#' # the root token (head_token_id_num == 0), i.e. its position renumbered
+#' # over punctuation-excluded tokens only, matching the sentence_length scale;
+#' # mdd = mean(head_distance) within the sentence, also on dep_pos terms;
+#' # sentence_length = punctuation-excluded token count.
+#' avg_head_distance_adj = mean(abs(log(mdd / sqrt(root_position * sentence_length))))
+#'
 #' # prop_hf/prop_hi: percentage of head-final/head-initial dependencies
 #' # (Liu 2010, Formulae in Sec. 2), denominator is real dependencies only
 #' # (root and punctuation excluded, matching "total number of dependencies
@@ -793,17 +801,11 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' # prop_hf + prop_hi == 1.
 #' prop_hf = count(head_final) / count(non-NA head_final)
 #' prop_hi = count(head_initial) / count(non-NA head_initial)
-#' avg_head_distance             = mean(head_distance)
-#' max_head_distance             = max(head_distance)
-#' avg_integration_cost          = mean(integration_cost)
-#'
-#' # avg_head_distance_adj: Normalized Dependency Distance (Lei & Jockers 2020),
-#' # per sentence, then averaged across sentences. root_position = dep_pos of
-#' # the root token (head_token_id_num == 0), i.e. its position renumbered
-#' # over punctuation-excluded tokens only, matching the sent_length scale;
-#' # mdd = mean(head_distance) within the sentence, also on dep_pos terms;
-#' # sent_length = sentence_length excluding punctuation.
-#' avg_head_distance_adj = mean( abs(log(mdd / sqrt(root_position * sent_length))) )
+#' avg_head_distance = mean(head_distance)
+#' max_head_distance = max(head_distance)
+#' avg_yngve         = mean(yngve)      across sentences
+#' avg_max_yngve     = mean(max_yngve)  across sentences
+#' avg_sd_yngve      = mean(sd_yngve)   across sentences
 #' }
 #'
 #' @citation_type "adapted" (\code{avg_sent_height}, \code{avg_branching_factor} --
@@ -812,7 +814,15 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #'   default while Chen's processing excludes it;
 #'   \code{avg_sd_depth} -- same underlying statistic as \code{depthVar}, reported
 #'   as SD (sqrt of variance) rather than variance;
-#'   \code{avg_integration_cost} -- Gibson 1998);
+#'   \code{avg_max_incomplete_deps} -- Gibson 1998 Formula 10 peak memory cost,
+#'   with a fixed UD-upos set approximating his discourse-referent criterion;
+#'   \code{avg_incomplete_deps} -- same Formula 10 cost, using ALSI's secondary
+#'   mean aggregation instead of Gibson's peak predictor;
+#'   \code{avg_integration_cost} -- Gibson 1998 Formula 9 integration cost,
+#'   with the same fixed UD-upos approximation of discourse referents;
+#'   \code{avg_yngve}, \code{avg_max_yngve}, \code{avg_sd_yngve} -- Yngve 1960's
+#'   branch-numbering/depth-sum formula, applied to dependency trees instead of
+#'   his original phrase-structure trees);
 #'   "computationally identical" (\code{avg_dependency_depth} -- \code{total_paths / n},
 #'   the sentence-length-weighted pool of the per-sentence \code{depthMean}
 #'   (mean depth over all nodes including roots), matching Chen et al. 2024;
@@ -851,7 +861,7 @@ docwise_graph_stats <- function(df_corpus) {
     )
 
   # Normalized Dependency Distance (Lei & Jockers 2020): per-sentence MDD
-  # normalized by root-verb position and sentence length, replaces the
+  # normalized by root-token position and sentence length, replaces the
   # naive head_distance / (sent_len - 1) division (which does not actually
   # decorrelate from sentence length -- verified empirically on the demo
   # corpus, see FEATURES_CITATIONS.yaml).
