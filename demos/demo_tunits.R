@@ -34,7 +34,7 @@ library(data.table)
 library(udpipe)
 
 source("R/fnt_corpus.R",       encoding = "UTF-8")
-source("R/fnt_extra_syntax.R", encoding = "UTF-8")
+source("R/fnt_syntactic_complexity.R", encoding = "UTF-8")
 source("R/fnt_tunits.R",       encoding = "UTF-8")
 source("R/fnt_utility.R",      encoding = "UTF-8")
 source("R/fnt_setup.R",        encoding = "UTF-8")  # ensure_alector_demo_corpus()
@@ -165,16 +165,10 @@ message("Parsed corpus loaded: ", nrow(dt_corpus), " tokens across ",
 
 dt_tu <- tunit_features(dt_corpus)
 message("T-unit features computed.")
-print(dt_tu)
+head(dt_tu)
 
 
-# 5) Effect sizes: Vikidia vs Wikipedia (paired) ----
-#
-# Vikidia articles target younger readers (simplified); Wikipedia targets
-# adults (complex). We expect Wikipedia documents to have higher MLT.
-# Because the corpus contains paired articles (viki_N paired with wiki_N),
-# we use paired = TRUE to remove between-article variance.
-
+# Adding group variable and pair ids for viki-wiki
 dt_tu_grp <- dt_tu |>
   mutate(
     source = factor(
