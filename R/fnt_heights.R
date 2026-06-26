@@ -380,21 +380,19 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
 #' Pseudocode per token \code{w} with head \code{h}. \code{head_final},
 #' \code{head_initial}, and \code{head_direction} compare raw token indices
 #' (removing punctuation never changes the relative order of two tokens, so
-#' raw indices are sufficient there). \code{head_distance} and
-#' \code{head_distance_adj} instead use \code{dep_pos}, a position renumbered
-#' sequentially over only the tokens counted in \code{sent_len} (all tokens
-#' if \code{include_punct_in_metrics = TRUE}, non-punctuation tokens
-#' otherwise); this keeps the distance numerator on the same token scale as
-#' the \code{sent_len} denominator, so \code{head_distance_adj} stays in
-#' \code{[0, 1]} even when punctuation tokens fall between a dependent and
-#' its head. Only applies to tokens with a real head (root tokens, whose
-#' head is a sentinel 0, are excluded -- a root has no dependency relation):
+#' raw indices are sufficient there). \code{head_distance} instead uses
+#' \code{dep_pos}, a position renumbered sequentially over only the tokens
+#' counted in \code{sent_len} (all tokens if \code{include_punct_in_metrics =
+#' TRUE}, non-punctuation tokens otherwise); this keeps the distance on the
+#' same token scale as \code{sent_len}, avoiding gaps from punctuation tokens
+#' falling between a dependent and its head. Only applies to tokens with a
+#' real head (root tokens, whose head is a sentinel 0, are excluded -- a root
+#' has no dependency relation):
 #' \preformatted{
 #' head_final        = position(h) > position(w)
 #' head_initial       = position(h) < position(w)
 #' head_distance      = abs(dep_pos(h) - dep_pos(w))
 #' head_direction     = +1 if head_final, -1 if head_initial, 0 if h == w
-#' head_distance_adj  = head_distance / (sent_len - 1)
 #' integration_cost   = count of tokens strictly between w and h (exclusive)
 #'   whose upos is in {NOUN, PROPN, VERB}  (Gibson 1998 integration cost:
 #'   new discourse referents intervening between dependent and head)
@@ -402,8 +400,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
 #'
 #' @citation_type "computationally identical" (\code{head_distance} -- Liu 2008 MDD;
 #'   \code{head_final}/\code{head_initial}/\code{head_direction} -- Liu 2010 head directionality);
-#'   "adapted" (\code{head_distance_adj} -- length-normalized \code{head_distance};
-#'   \code{integration_cost} -- Gibson 1998, our discourse-referent set is a fixed
+#'   "adapted" (\code{integration_cost} -- Gibson 1998, our discourse-referent set is a fixed
 #'   UD-upos approximation of his original referent-introduction criterion)
 #'
 #' @param df_doc A data.table for one document with \code{doc_id},
@@ -413,8 +410,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
 #'   is excluded.
 #' @returns A token-level \code{data.table} with \code{dep_pos} (punctuation-
 #'   renumbered token position), \code{head_final}, \code{head_initial},
-#'   \code{head_distance}, \code{head_direction}, \code{head_distance_adj},
-#'   and \code{integration_cost}.
+#'   \code{head_distance}, \code{head_direction}, and \code{integration_cost}.
 head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
 
   dt <- as.data.table(copy(df_doc))
@@ -433,7 +429,6 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
       head_initial = logical(),
       head_distance = integer(),
       head_direction = integer(),
-      head_distance_adj = numeric(),
       integration_cost = integer()
     ))
   }
@@ -446,7 +441,6 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
     head_initial = as.logical(NA),
     head_distance = as.integer(NA),
     head_direction = as.integer(NA),
-    head_distance_adj = as.numeric(NA),
     integration_cost = as.integer(NA)
   )]
 
@@ -459,9 +453,9 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
 
   # dep_pos: sequential position among only the tokens counted in sent_len
   # (i.e. punctuation-renumbered when include_punct_in_metrics = FALSE), so
-  # that head_distance/head_distance_adj live on the same token scale as
-  # sent_len -- raw token_id_num would still count punctuation gaps even
-  # though punctuation tokens themselves are excluded from sent_len.
+  # that head_distance lives on the same token scale as sent_len -- raw
+  # token_id_num would still count punctuation gaps even though punctuation
+  # tokens themselves are excluded from sent_len.
   pos_rows <- if (isTRUE(include_punct_in_metrics)) {
     !is.na(dt$token_id_num)
   } else {
@@ -493,8 +487,6 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
     fifelse(head_token_id_num < token_id_num, -1L, 0L)
   )]
 
-  dt[valid_dependency, head_distance_adj := head_distance / pmax(sent_len - 1L, 1L)]
-
   # Gibson DLT integration cost: count of new discourse referents (NOUN, PROPN, VERB)
   # intervening between dependent and head (excluding endpoints)
   discourse_upos <- c("NOUN", "PROPN", "VERB")
@@ -514,7 +506,7 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
 
   dt[, .(doc_id, paragraph_id, sentence_id, token_id, token_id_num, head_token_id_num,
          sent_len, dep_pos, head_final, head_initial, head_distance, head_direction,
-         head_distance_adj, integration_cost)]
+         integration_cost)]
 }
 
 #' Compute head-final/initial stats for a corpus
@@ -544,7 +536,6 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
       head_initial = logical(),
       head_distance = integer(),
       head_direction = integer(),
-      head_distance_adj = numeric(),
       integration_cost = integer()
     ))
   }
@@ -803,7 +794,7 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' prop_hf = count(head_final) / count(non-NA head_final)
 #' prop_hi = count(head_initial) / count(non-NA head_initial)
 #' avg_head_distance             = mean(head_distance)
-#' max_head_distance[_adj]       = max(head_distance[_adj])
+#' max_head_distance             = max(head_distance)
 #' avg_integration_cost          = mean(integration_cost)
 #'
 #' # avg_head_distance_adj: Normalized Dependency Distance (Lei & Jockers 2020),
@@ -829,11 +820,10 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #'   \code{avg_head_distance} -- Liu 2008 Formula 2, sample-level MDD;
 #'   \code{avg_head_distance_adj} -- Lei & Jockers 2020's Normalized Dependency
 #'   Distance, NDD, applied per sentence then averaged across the document);
-#'   "inspired" (\code{max_head_distance}, \code{max_head_distance_adj} -- Liu 2008
-#'   discusses maximum dependency distance per sentence as a candidate complexity
-#'   measure but explicitly rejects it as unstable in favor of MDD; he never defines
-#'   a formal max-DD statistic, so this is motivated by his discussion, not a formula
-#'   match);
+#'   "inspired" (\code{max_head_distance} -- Liu 2008 discusses maximum dependency
+#'   distance per sentence as a candidate complexity measure but explicitly rejects
+#'   it as unstable in favor of MDD; he never defines a formal max-DD statistic, so
+#'   this is motivated by his discussion, not a formula match);
 #'   "derived" (\code{sd_sent_height} -- cross-sentence variability of tree height;
 #'   not the same aggregation level as any Chen et al. 2024 statistic, ALSI-original)
 #'
@@ -857,7 +847,6 @@ docwise_graph_stats <- function(df_corpus) {
       prop_hi = sum(head_initial, na.rm = TRUE) / sum(!is.na(head_initial)),
       avg_head_distance = mean(head_distance, na.rm = TRUE),
       max_head_distance = if (all(is.na(head_distance))) NA_integer_ else max(head_distance, na.rm = TRUE),
-      max_head_distance_adj = if (all(is.na(head_distance_adj))) NA_real_ else max(head_distance_adj, na.rm = TRUE),
       avg_integration_cost = mean(integration_cost, na.rm = TRUE)
     )
 
