@@ -487,34 +487,43 @@ lexicon on the Vikidia/Wikipedia and ALECTOR corpora.
 ## 20) `features$tunits`
 Produced in: `R/fnt_tunits.R` (`tunit_features`)
 
-Operationalized following Hunt (1965) and Lu (2010). T-unit boundaries are detected
-from UD dependency parses: the sentence root anchors the first T-unit; each predicate
-(VERB, AUX, or ADJ-with-cop) reachable from the root via a chain of `conj` arcs
-starts an additional T-unit. Complex nominal detection reuses `add_complex_nominal_flag()`
-from `fnt_extra_syntax.R`, ensuring identical operationalization across feature sets.
+Lu's (2010) 14 L2SCA syntactic complexity indices, translated from
+phrase-structure patterns to Universal Dependencies, plus two retained count
+helpers (`n_tunits`, `n_sentences`) and one ALSI coordination derivative
+(`prop_coord_sent`). The T-unit construct has its historical origin in Hunt
+(1965), but all 14 ratios below — including `mlt` and `c_t` — are sourced
+from Lu (2010); Hunt is not an additional feature source.
+
+T-unit boundaries are detected from UD dependency parses: the sentence root
+anchors the first T-unit; each predicate (VERB, AUX, or ADJ-with-cop)
+reachable from the root via a chain of `conj` arcs starts an additional
+T-unit. Complex nominal detection reuses `add_complex_nominal_flag()` from
+`fnt_extra_syntax.R`, ensuring identical operationalization across feature sets.
 
 | Feature name | Short description | Level |
 |---|---|---|
 | `n_tunits` | Total T-units in the document. | document |
 | `n_sentences` | Total orthographic sentences. | document |
 | `mls` | Mean Length of Sentence in tokens, PUNCT excluded (Lu 2010 MLS). | document |
-| `mlt` | Mean Length of T-unit in tokens, PUNCT excluded (Hunt 1965 / Lu 2010 MLT). | document |
+| `mlt` | Mean Length of T-unit in tokens, PUNCT excluded (Lu 2010 MLT). | document |
 | `mlc` | Mean Length of Clause in tokens, PUNCT excluded (Lu 2010 MLC). Denominator = T-units + dependent clauses. | document |
 | `c_s` | Clauses per sentence (Lu 2010 C/S). | document |
-| `t_s` | T-units per sentence — coordination index (Lu 2010 T/S; Bardovi-Harlig 1992). Values > 1 indicate sentences with multiple coordinated main clauses. | document |
-| `c_t` | Clauses per T-unit (Hunt 1965 / Lu 2010 C/T). Always ≥ 1; increases with subordination depth. | document |
+| `t_s` | T-units per sentence (Lu 2010 T/S), equivalent to Hunt's (1966) main clause coordination index. Values > 1 indicate sentences with multiple coordinated main clauses. | document |
+| `c_t` | Clauses per T-unit (Lu 2010 C/T). Always ≥ 1; increases with subordination depth. | document |
 | `dc_c` | Dependent clauses per clause (Lu 2010 DC/C). Finite subordinate heads (`ccomp`, `advcl`, `acl`, `acl:relcl`) / total clauses. | document |
 | `dc_t` | Dependent clauses per T-unit (Lu 2010 DC/T). Same DC definition; denominator is T-units. | document |
-| `ct_t` | Complex T-unit ratio (Lu 2010 CT/T): proportion of T-units containing ≥ 1 dependent clause. | document |
-| `vp_t` | Verb phrases per T-unit (Lu 2010 VP/T): total VERB + AUX tokens / n\_tunits. | document |
-| `cp_t` | Coordinate phrases per T-unit (Lu 2010 CP/T): `conj` arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination within a T-unit, not clausal). | document |
-| `cp_c` | Coordinate phrases per clause (Lu 2010 CP/C). Same CP definition; denominator is total clauses. | document |
+| `ct_t` | Complex T-unit ratio (Lu 2010 CT/T): proportion of T-units containing ≥ 1 dependent clause. Computed as a sentence-level proxy — `n_dc` is counted per sentence, so when a sentence contains multiple coordinated T-units this under-resolves which specific T-unit holds the dependent clause. | document |
+| `vp_t` | Verb phrases per T-unit (Lu 2010 VP/T): one verb phrase per predicate head — VERB tokens, plus AUX tokens that are not `aux`/`aux:pass`/`aux:tense`/`aux:caus` dependents of another verb — divided by n\_tunits. Auxiliary chains are folded into their governing verb so periphrastic forms (e.g. French passé composé "a mangé") count as one VP, not two. | document |
+| `cp_t` | Coordinate phrases per T-unit (Lu 2010 CP/T): `conj` arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination within a T-unit, not clausal). Lu's CP also includes coordinated VPs; ALSI routes verbal `conj` coordination into `t_s`/`prop_coord_sent` (additional T-units) instead, so this is a UD adaptation rather than a literal CP/T. | document |
+| `cp_c` | Coordinate phrases per clause (Lu 2010 CP/C). Same CP definition and UD-adaptation caveat as `cp_t`; denominator is total clauses. | document |
 | `cn_t` | Complex nominals per T-unit (Lu 2010 CN/T): NOUN tokens with ≥ 1 substantive modifier child. Uses same relation set as `add_complex_nominal_flag()` in `fnt_extra_syntax.R`. | document |
 | `cn_c` | Complex nominals per clause (Lu 2010 CN/C). Same CN definition; denominator is total clauses. | document |
 | `prop_coord_sent` | Proportion of sentences containing more than one T-unit (ALSI addition). | document |
 
-References: Hunt (1965) NCTE Research Report No. 3; Lu (2010) *IJCL* 15(4);
-Bardovi-Harlig (1992) *TESOL Quarterly* 26(2).
+References: Hunt (1965) NCTE Research Report No. 3 (T-unit construct); Lu
+(2010) *IJCL* 15(4) (the 14 indices); Hunt (1966), *Elementary English* 43(7)
+(main clause coordination index, `t_s`; reprinted in Lester, Ed. (1970),
+*Readings in Applied Transformational Grammar*, p. 189).
 
 ## Maintenance notes
 - If `n_sent_context` changes in `simple_lexical_cohesion`, overlap feature names change accordingly (`...prevK`).
