@@ -2,14 +2,8 @@
 #
 # Dependency parsing assigns each word a syntactic "head" — the word it
 # grammatically depends on. From these head-dependent links you can build a
-# tree and compute structural features that reflect syntactic complexity:
-#
-#   max_path / avg_sent_height  — how deep the tree grows (tall = complex)
-#   avg_dependency_depth        — mean distance of each word from the root
-#   avg_head_distance           — mean distance (in words) between a word and its head
-#   branching_factor            — average number of dependents per non-leaf node
-#   avg_incomplete_deps         — Gibson DLT: average number of open dependencies
-#                                 at each position (working-memory load)
+# tree and compute structural features that reflect syntactic complexity
+# (see features.md)
 #
 # Simpler texts (Vikidia) tend to have shallower trees and shorter head
 # distances than more complex texts (Wikipedia).
@@ -18,8 +12,7 @@
 #   1) inspect dependency metrics for individual sentences;
 #   2) compute document-level metrics on the full demo corpus;
 #   3) compare Vikidia vs Wikipedia with Cohen's d effect sizes;
-#   4) check how each feature correlates with sentence length (a potential confounder);
-#   5) visualise features with boxplots.
+#   4) visualise features with boxplots.
 #
 # Prerequisites:
 #   - Run demos/demo_parse_tag.R first (creates out/demo_parsed_tagged.Rds)
@@ -80,19 +73,7 @@ sentence_graph_stats(dt_complex, verbose = TRUE)
 print(batch_graph_stats(dt_complex))
 
 
-# 2) Punctuation sensitivity ----
-#
-# batch_graph_stats() includes punctuation tokens by default because they
-# are part of the tree structure in UDPipe's GSD model.
-# Passing include_punct_in_metrics = FALSE removes them before computing
-# depth and distance — useful if you want a pure lexical complexity measure.
-# The difference is usually small but worth being aware of.
-
-print(batch_graph_stats(dt_sentence_long))                                    # PUNCT included (default)
-print(batch_graph_stats(dt_sentence_long, include_punct_in_metrics = FALSE))  # without PUNCT
-
-
-# 3) Corpus-level docwise features ----
+# 2) Corpus-level docwise features ----
 #
 # docwise_graph_stats() processes an entire parsed corpus and returns one
 # row per document with all tree metrics averaged over sentences.
@@ -104,31 +85,20 @@ dt_parsed_corpus <- readRDS("out/demo_parsed_tagged.Rds")
 message("Loaded corpus: ", uniqueN(dt_parsed_corpus$doc_id), " documents")
 
 # This call may take a minute on a large corpus.
-# Label each document by source (doc_id starts with "viki_" for Vikidia)
-# and add the average sentence length (total tokens / number of sentences),
-# a potential confounder for syntactic complexity measures.
+# Label each document by source (doc_id starts with "viki_" for Vikidia).
 dt_heights <- docwise_graph_stats(dt_parsed_corpus) |>
   as_tibble() |>
-  mutate(
-    source = if_else(str_detect(doc_id, "^viki_"), "Vikidia", "Wikipedia"),
-    doc_sentence_length = n / pmax(s, 1L)
-  )
+  mutate(source = if_else(str_detect(doc_id, "^viki_"), "Vikidia", "Wikipedia"))
 
 
-# 4) Effect sizes + sentence-length correlation ----
+# 3) Effect sizes ----
 #
 # Cohen's d measures how well each feature separates the two groups.
 # d = 0.2 is small, d = 0.5 medium, d = 0.8 large.
 # A negative d here means the feature is lower for Vikidia than for
 # Wikipedia — i.e., Vikidia is simpler on that metric.
-#
-# We also compute the Pearson correlation with average sentence length,
-# because many syntactic complexity features are confounded by sentence
-# length. A high correlation means the feature mostly tracks length,
-# not true structural complexity.
 
-non_features <- c("doc_id", "n", "s", "total_paths", "source",
-                  "doc_sentence_length")
+non_features <- c("doc_id", "n", "s", "total_paths", "source")
 features <- setdiff(names(dt_heights), non_features)
 
 df_effect_sizes <- data.frame(
@@ -136,9 +106,6 @@ df_effect_sizes <- data.frame(
   cohen_d = purrr::map_dbl(features, function(f) {
     cohen.d(dt_heights[[f]][dt_heights$source == "Vikidia"],
             dt_heights[[f]][dt_heights$source == "Wikipedia"])$estimate
-  }),
-  corr_sentence_length = purrr::map_dbl(features, function(f) {
-    cor(dt_heights[[f]], dt_heights$doc_sentence_length, use = "complete.obs")
   })
 )
 
@@ -150,19 +117,21 @@ print(
 )
 
 
-# 5) Faceted boxplots ----
+# 4) Faceted boxplots ----
 #
 # Focus on features with at least a medium effect size (|d| > 0.4) to keep
 # the plot readable. plot_faceted_boxplot() facets one panel per feature
 # and annotates each with Cohen's d for the Vikidia vs Wikipedia contrast.
-
-features_to_plot <- df_effect_sizes$feature[abs(df_effect_sizes$cohen_d) > 0.4]
+# also exclude n and s as they are not features per se
+features_to_plot <- df_effect_sizes |>
+  filter(abs(cohen_d) > 0.4, !feature %in% c("n", "s")) |>
+  pull(feature)
 
 dt_heights |>
   plot_faceted_boxplot(
     source,
     all_of(features_to_plot),
     title = "Distribution of Dependency Features by Source",
-    y_lab = NULL
+    y_lab = NULL, ncol = 4
   ) |>
   print()
