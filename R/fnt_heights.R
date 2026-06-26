@@ -113,6 +113,20 @@ plot_dependency_arcs <- function(dt_sentence, title = NULL, show_deprel = TRUE,
   invisible(NULL)
 }
 
+#' Population variance
+#'
+#' Chen et al. (2024)'s \code{depthVar}/\code{degreeVar} worked examples use
+#' population variance (divide by \code{n}), not R's \code{var()} (divide by
+#' \code{n - 1}) -- e.g. their degree example \code{var([1,0,0,0,1,3]) = 1.14}
+#' only matches the population formula.
+#'
+#' @param x A numeric vector.
+#' @returns A single numeric value.
+#' @keywords internal
+.population_var <- function(x) {
+  return(mean((x - mean(x))^2))
+}
+
 #' Quietly convert to integer
 #'
 #' Converts character to integer, returning NA for non-integer strings
@@ -131,21 +145,31 @@ to_integer_quiet <- function(x) {
 
 #' Compute dependency tree statistics for a single sentence
 #'
-#' Calculates max path depth, mean/adjusted dependency depth, depth SD,
-#' branching factor, Yngve depth, and Gibson DLT incomplete dependency counts.
+#' Calculates max path depth, mean/adjusted dependency depth, depth SD/variance,
+#' branching factor, max degree, degree variance, leaf count, Yngve depth, and
+#' Gibson DLT incomplete dependency counts.
 #'
 #' @details
 #' Pseudocode for each statistic (\code{depth(w)} = path length from token
 #' \code{w} to the sentence root, root depth = 0; \code{n} = number of
-#' metric-eligible tokens in the sentence):
+#' metric-eligible tokens in the sentence; \code{degree(w)} = number of
+#' dependents of \code{w}, i.e. node out-degree):
 #' \preformatted{
 #' max_path              = max(depth(w) for w in tokens)
 #' avg_dependency_depth   = mean(depth(w) for w in tokens)
 #' avg_dependency_depth_adj = sum(depth(w) for w in tokens) / (n - 1)
-#' sd_depth               = sd(depth(w) for w in tokens)
-#' branching_factor       = mean(count_dependents(w) for w in tokens)
+#' sd_depth               = sd(depth(w) for w in tokens)            # n - 1 denominator
+#' depth_var              = popvar(depth(w) for w in tokens)        # n denominator (Chen et al. 2024)
+#' branching_factor       = mean(degree(w) for w in tokens)
 #'   (leaves contribute 0; this is node out-degree, averaged over every
 #'   token, not just heads that have at least one dependent)
+#' max_degree             = max(degree(w) for w in tokens)
+#' degree_var             = popvar(degree(w) for w in tokens)       # n denominator (Chen et al. 2024)
+#' leaf_count             = count(w where degree(w) == 0)
+#' prop_leaves            = leaf_count / n
+#'   where popvar(x) = mean((x - mean(x))^2), the population variance Chen
+#'   et al. 2024 use in their worked examples (e.g. degreeVar([1,0,0,0,1,3])
+#'   = 1.14, which only matches the n-denominator formula, not R's var())
 #' yngve(w)                = 0                                  if w is root
 #'                          = right_siblings(w) + yngve(parent(w))   otherwise
 #'   where right_siblings(w) = number of co-dependents of the same head
@@ -165,7 +189,12 @@ to_integer_quiet <- function(x) {
 #' @citation_type "computationally identical" (\code{avg_dependency_depth} -- Chen
 #'   et al. 2024's \code{depthMean}, mean depth over all metric tokens including
 #'   the root, matched exactly at this sentence level; \code{docwise_graph_stats}
-#'   pools this correctly via \code{total_paths / n});
+#'   pools this correctly via \code{total_paths / n};
+#'   \code{depth_var} -- Chen et al. 2024's \code{depthVar} exactly, reported as
+#'   variance rather than SD;
+#'   \code{max_degree} -- Chen et al. 2024's \code{treeDegree};
+#'   \code{degree_var} -- Chen et al. 2024's \code{degreeVar};
+#'   \code{leaf_count} -- Chen et al. 2024's \code{#Leaves});
 #'   "adapted" (\code{max_path}, \code{branching_factor} -- formula matches Chen
 #'   et al. 2024's \code{Height}/\code{degreeMean} exactly when punctuation policy
 #'   aligns, but the default \code{include_punct_in_metrics = TRUE} here includes
@@ -173,6 +202,8 @@ to_integer_quiet <- function(x) {
 #'   \code{sd_depth} -- same underlying statistic as \code{depthVar}, reported as
 #'   SD (sqrt of variance) rather than variance;
 #'   \code{avg_dependency_depth_adj} -- length-normalized \code{depthMean}, no
+#'   normalized analogue in Chen et al. 2024;
+#'   \code{prop_leaves} -- \code{#Leaves} normalized by sentence length, no
 #'   normalized analogue in Chen et al. 2024;
 #'   \code{avg_incomplete_deps}/\code{max_incomplete_deps} -- Gibson 1998 SPLT
 #'   memory cost, fixed UD-upos set approximates his discourse-referent criterion;
@@ -196,7 +227,12 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       avg_dependency_depth = 0,
       avg_dependency_depth_adj = 0,
       sd_depth = 0,
+      depth_var = 0,
       branching_factor = 0,
+      max_degree = 0L,
+      degree_var = 0,
+      leaf_count = 0L,
+      prop_leaves = 0,
       count_path = 0,
       sentence_length = 0,
       max_incomplete_deps = 0,
@@ -273,7 +309,12 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
       avg_dependency_depth = 0,
       avg_dependency_depth_adj = 0,
       sd_depth = 0,
+      depth_var = 0,
       branching_factor = 0,
+      max_degree = 0L,
+      degree_var = 0,
+      leaf_count = 0L,
+      prop_leaves = 0,
       count_path = 0,
       sentence_length = 0,
       max_incomplete_deps = 0,
@@ -292,6 +333,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   avg_dependency_depth <- mean(valid_depth)
   avg_dependency_depth_adj <- if (n > 1L) count_path / (n - 1L) else 0
   sd_depth <- if (n > 1L) sd(valid_depth) else 0
+  depth_var <- .population_var(valid_depth)
 
   valid_yngve <- dt_sentence[metric_rows & !is.na(yngve), yngve]
   yngve_score <- if (length(valid_yngve) > 0L) mean(valid_yngve) else 0
@@ -307,6 +349,10 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   match_idx <- match(metric_tokens$token_id, dep_per_head$head_token_id)
   degree[!is.na(match_idx)] <- dep_per_head$N[match_idx[!is.na(match_idx)]]
   branching_factor <- if (length(degree) > 0L) mean(degree) else 0
+  max_degree <- if (length(degree) > 0L) max(degree) else 0L
+  degree_var <- .population_var(degree)
+  leaf_count <- sum(degree == 0L)
+  prop_leaves <- leaf_count / n
 
   # Gibson DLT memory cost (Formula 10): sweep tokens left to right; a
   # dependency is "open" (predicted) between the position of a dependent
@@ -342,7 +388,12 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     message("Average dependency depth: ", avg_dependency_depth)
     message("Adjusted average dependency depth: ", avg_dependency_depth_adj)
     message("Depth variance (sd): ", sd_depth)
+    message("Depth variance: ", depth_var)
     message("Branching factor: ", branching_factor)
+    message("Max degree: ", max_degree)
+    message("Degree variance: ", degree_var)
+    message("Leaf count: ", leaf_count)
+    message("Proportion leaves: ", round(prop_leaves, 3))
     message("Sentence length: ", n)
     message("Max incomplete dependencies (Gibson DLT): ", max_incomplete_deps)
     message("Max incomplete deps (adjusted): ", round(max_incomplete_deps / pmax(n, 1L), 3))
@@ -357,7 +408,12 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     avg_dependency_depth = avg_dependency_depth,
     avg_dependency_depth_adj = avg_dependency_depth_adj,
     sd_depth = sd_depth,
+    depth_var = depth_var,
     branching_factor = branching_factor,
+    max_degree = max_degree,
+    degree_var = degree_var,
+    leaf_count = leaf_count,
+    prop_leaves = prop_leaves,
     count_path = count_path,
     sentence_length = n,
     max_incomplete_deps = max_incomplete_deps,
@@ -563,9 +619,11 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
 #' Computes the same statistics as \code{sentence_graph_stats} (see that
 #' function's \code{@details} for the pseudocode and citation backing of
 #' \code{max_path}, \code{avg_dependency_depth}, \code{avg_dependency_depth_adj},
-#' \code{sd_depth}, \code{branching_factor}, \code{yngve}/\code{max_yngve}/\code{sd_yngve},
-#' and the Gibson incomplete-dependency counts), one row per sentence instead
-#' of one call per sentence.
+#' \code{sd_depth}, \code{depth_var}, \code{branching_factor}, \code{max_degree},
+#' \code{degree_var}, \code{leaf_count}, \code{prop_leaves},
+#' \code{yngve}/\code{max_yngve}/\code{sd_yngve}, and the Gibson
+#' incomplete-dependency counts), one row per sentence instead of one call
+#' per sentence.
 #'
 #' @param dt_corpus A parsed \code{data.table} with \code{doc_id},
 #'   \code{paragraph_id}, \code{sentence_id}, \code{token_id},
@@ -586,7 +644,12 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       avg_dependency_depth = numeric(),
       avg_dependency_depth_adj = numeric(),
       sd_depth = numeric(),
+      depth_var = numeric(),
       branching_factor = numeric(),
+      max_degree = integer(),
+      degree_var = numeric(),
+      leaf_count = integer(),
+      prop_leaves = numeric(),
       count_path = integer(),
       sentence_length = integer(),
       max_incomplete_deps = integer(),
@@ -676,7 +739,12 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         avg_dependency_depth = 0,
         avg_dependency_depth_adj = 0,
         sd_depth = 0,
+        depth_var = 0,
         branching_factor = 0,
+        max_degree = 0L,
+        degree_var = 0,
+        leaf_count = 0L,
+        prop_leaves = 0,
         count_path = 0L,
         sentence_length = 0L,
         max_incomplete_deps = 0,
@@ -707,6 +775,9 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       m_arcs <- m_head[m_head > 0L]
       degree <- tabulate(match(m_arcs, m_tok), nbins = length(m_tok))
       bf <- mean(degree)
+      max_deg <- max(degree)
+      deg_var <- .population_var(degree)
+      leaf_n <- sum(degree == 0L)
 
       # Gibson DLT memory cost (Formula 10): sweep left-to-right; each open
       # (head-final) dependency contributes M(n) = n, where n = count of
@@ -743,7 +814,12 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
         avg_dependency_depth = ap,
         avg_dependency_depth_adj = if (n > 1L) cp / (n - 1L) else 0,
         sd_depth = if (n > 1L) sd(metric_depth) else 0,
+        depth_var = .population_var(metric_depth),
         branching_factor = bf,
+        max_degree = max_deg,
+        degree_var = deg_var,
+        leaf_count = leaf_n,
+        prop_leaves = leaf_n / n,
         count_path = cp,
         sentence_length = n,
         max_incomplete_deps = max_inc,
@@ -773,7 +849,12 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' avg_sent_height        = mean(max_path)                 across sentences
 #' sd_sent_height          = sd(max_path)                   across sentences
 #' avg_sd_depth            = mean(sd_depth)                 across sentences
+#' avg_depth_var           = mean(depth_var)                across sentences
 #' avg_branching_factor    = mean(branching_factor)         across sentences
+#' avg_tree_degree         = mean(max_degree)                across sentences
+#' avg_degree_var          = mean(degree_var)                across sentences
+#' avg_leaf_count          = mean(leaf_count)                across sentences
+#' prop_leaves             = mean(prop_leaves)               across sentences
 #' avg_max_incomplete_deps = mean(max_incomplete_deps)      across sentences
 #' avg_incomplete_deps     = mean(avg_incomplete_deps)      across sentences
 #' avg_integration_cost    = mean(integration_cost)         over real dependencies
@@ -793,6 +874,7 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #' # mdd = mean(head_distance) within the sentence, also on dep_pos terms;
 #' # sentence_length = punctuation-excluded token count.
 #' avg_head_distance_adj = mean(abs(log(mdd / sqrt(root_position * sentence_length))))
+#' avg_root_position = mean(root_position)   # droot (Chen et al. 2024 / Lei & Jockers 2020)
 #'
 #' # prop_hf/prop_hi: percentage of head-final/head-initial dependencies
 #' # (Liu 2010, Formulae in Sec. 2), denominator is real dependencies only
@@ -814,6 +896,15 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #'   default while Chen's processing excludes it;
 #'   \code{avg_sd_depth} -- same underlying statistic as \code{depthVar}, reported
 #'   as SD (sqrt of variance) rather than variance;
+#'   \code{avg_depth_var} -- Chen et al. 2024's \code{depthVar} exactly when
+#'   punctuation policy aligns;
+#'   \code{avg_tree_degree} -- Chen et al. 2024's \code{treeDegree} (mean of
+#'   per-sentence max degree, rather than a single corpus-wide max);
+#'   \code{avg_degree_var} -- Chen et al. 2024's \code{degreeVar};
+#'   \code{avg_leaf_count} -- Chen et al. 2024's \code{#Leaves}, averaged per
+#'   sentence rather than summed corpus-wide;
+#'   \code{avg_root_position} -- Chen et al. 2024's \code{droot} / Lei & Jockers
+#'   2020's normalizing root-distance term, exposed here as its own feature;
 #'   \code{avg_max_incomplete_deps} -- Gibson 1998 Formula 10 peak memory cost,
 #'   with a fixed UD-upos set approximating his discourse-referent criterion;
 #'   \code{avg_incomplete_deps} -- same Formula 10 cost, using ALSI's secondary
@@ -835,7 +926,9 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #'   it as unstable in favor of MDD; he never defines a formal max-DD statistic, so
 #'   this is motivated by his discussion, not a formula match);
 #'   "derived" (\code{sd_sent_height} -- cross-sentence variability of tree height;
-#'   not the same aggregation level as any Chen et al. 2024 statistic, ALSI-original)
+#'   not the same aggregation level as any Chen et al. 2024 statistic, ALSI-original;
+#'   \code{prop_leaves} -- \code{#Leaves} normalized by sentence length, no
+#'   normalized analogue in Chen et al. 2024)
 #'
 #' @param df_corpus A parsed \code{data.table} (full corpus).
 #' @returns A \code{data.table} with one row per document and columns for
@@ -870,14 +963,25 @@ docwise_graph_stats <- function(df_corpus) {
     summarise(
       mdd = mean(head_distance, na.rm = TRUE),
       sent_length = dplyr::first(sent_len),
-      root_position = dplyr::first(dep_pos[head_token_id_num == 0L]),
+      # head_token_id_num == 0L is the UD sentinel for "is root" and is
+      # authoritative; filtering to non-NA dep_pos guards against a root
+      # that itself was excluded from punctuation-renumbered positions
+      # (e.g. a degenerate sentence whose sole token is PUNCT), and against
+      # malformed parses with more than one head == 0 row per sentence.
+      root_position = dplyr::first(
+        dep_pos[head_token_id_num == 0L & !is.na(dep_pos)],
+        default = NA_integer_
+      ),
       .groups = "drop"
     ) |>
     mutate(
       ndd = abs(log(mdd / sqrt(root_position * sent_length)))
     ) |>
     group_by(doc_id) |>
-    summarise(avg_head_distance_adj = mean(ndd, na.rm = TRUE))
+    summarise(
+      avg_head_distance_adj = mean(ndd, na.rm = TRUE),
+      avg_root_position = mean(root_position, na.rm = TRUE)
+    )
 
   sum_head_final <- merge(sum_head_final, sum_ndd, by = "doc_id")
 
@@ -895,7 +999,12 @@ docwise_graph_stats <- function(df_corpus) {
       avg_sent_height = mean(max_path, na.rm = TRUE),
       sd_sent_height = sd(max_path, na.rm = TRUE),
       avg_sd_depth = mean(sd_depth, na.rm = TRUE),
+      avg_depth_var = mean(depth_var, na.rm = TRUE),
       avg_branching_factor = mean(branching_factor, na.rm = TRUE),
+      avg_tree_degree = mean(max_degree, na.rm = TRUE),
+      avg_degree_var = mean(degree_var, na.rm = TRUE),
+      avg_leaf_count = mean(leaf_count, na.rm = TRUE),
+      prop_leaves = mean(prop_leaves, na.rm = TRUE),
       avg_max_incomplete_deps = mean(max_incomplete_deps, na.rm = TRUE),
       avg_incomplete_deps = mean(avg_incomplete_deps, na.rm = TRUE),
       avg_yngve = mean(yngve, na.rm = TRUE),
