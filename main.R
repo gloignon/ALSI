@@ -48,6 +48,8 @@ source("R/fnt_lexical.R",       encoding = "UTF-8")
 source("R/fnt_heights.R",       encoding = "UTF-8")
 source("R/fnt_counters.R",      encoding = "UTF-8")
 source("R/fnt_pos_surprisal.R", encoding = "UTF-8")
+source("R/fnt_pos_surprisal_nn.R", encoding = "UTF-8")
+source("R/fnt_deprel_surprisal.R", encoding = "UTF-8")
 source("R/fnt_extra_syntax.R",  encoding = "UTF-8")
 source("R/fnt_cohesion.R",      encoding = "UTF-8")
 source("R/fnt_utility.R",       encoding = "UTF-8")
@@ -110,6 +112,36 @@ pos_model <- readRDS("models/pos_trigram_fr_gsd_alsi.Rds")
 features$pos_surprisal <- pos_surprisal(
   features$parsed_corpus, pos_model,
   use_sentence_boundaries = TRUE
+)
+
+# 11a-nn) Neural POS surprisal — same UPOS sequences scored with a GRU language
+#     model conditioned on the full left context (not just two prior tags).
+#     Columns are suffixed _nn so they coexist with the trigram measures above.
+#     Requires reticulate + torch (managed via reticulate::py_require).
+features$pos_surprisal_nn <- pos_surprisal_nn(
+  features$parsed_corpus,
+  model_path  = "models/pos_lm_fr_gsd_alsi.pt",
+  exclude_pos = c("PUNCT", "SYM")
+)
+
+# 11b) Dependency-triple surprisal — (head_pos, dep_rel, dep_pos) over tree
+#      arcs, scored with the distributed model (PUNCT/SYM excluded). Stupid
+#      Backoff handles the sparser triple space.
+deprel_model <- readRDS("models/deprel_trigram_fr_gsd_alsi.Rds")
+features$deprel_surprisal <- deprel_surprisal(
+  features$parsed_corpus, deprel_model,
+  exclude_pos   = c("PUNCT", "SYM"),
+  backoff_scale = 0.4
+)
+
+# 11c) Dependency-attachment surprisal — same triples, flipped target:
+#      predicts the relation from (head_pos, dep_pos), i.e. how ambiguous the
+#      attachment label is. Built from the same counts as the deprel model.
+attach_model <- readRDS("models/attach_trigram_fr_gsd_alsi.Rds")
+features$attach_surprisal <- attach_surprisal(
+  features$parsed_corpus, attach_model,
+  exclude_pos   = c("PUNCT", "SYM"),
+  backoff_scale = 0.4
 )
 
 # 12) Lexical cohesion
