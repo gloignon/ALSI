@@ -2,7 +2,7 @@
 #
 # In this demo you will:
 # 1) inspect T-unit boundaries on toy French sentences;
-# 2) compute Hunt's MLT and related T-unit measures on the Vikidia/Wikipedia corpus;
+# 2) compute Lu's (2010) MLT and related T-unit measures on the Vikidia/Wikipedia corpus;
 # 3) compare Vikidia (simplified) vs Wikipedia (original) text complexity;
 # 4) repeat the comparison on ALECTOR (79 paired original/simplified texts);
 # 5) visualise both comparisons.
@@ -160,44 +160,32 @@ message("Parsed corpus loaded: ", nrow(dt_corpus), " tokens across ",
 # tunit_features() returns one row per document with:
 #   n_tunits        — total T-units in the document
 #   n_sentences     — total orthographic sentences
-#   mlt             — mean length of T-unit in tokens (Hunt's MLT)
-#   t_s             — mean T-units per sentence (coordination index)
+#   mlt             — mean length of T-unit in tokens (Lu 2010 MLT)
+#   t_s             — mean T-units per sentence (Hunt 1966 coordination index)
 
 dt_tu <- tunit_features(dt_corpus)
 message("T-unit features computed.")
 print(dt_tu)
 
 
-# 5) Effect sizes: Vikidia vs Wikipedia ----
+# 5) Effect sizes: Vikidia vs Wikipedia (paired) ----
 #
 # Vikidia articles target younger readers (simplified); Wikipedia targets
 # adults (complex). We expect Wikipedia documents to have higher MLT.
+# Because the corpus contains paired articles (viki_N paired with wiki_N),
+# we use paired = TRUE to remove between-article variance.
 
 dt_tu_grp <- dt_tu |>
-  mutate(source = factor(
-    if_else(str_starts(doc_id, "viki"), "Vikidia", "Wikipedia"),
-    levels = c("Vikidia", "Wikipedia")
-  ))
-
-dt_summary <- dt_tu_grp |>
-  group_by(source) |>
-  summarise(
-    mean_mlt  = mean(mlt,  na.rm = TRUE),
-    mean_mlc  = mean(mlc,  na.rm = TRUE),
-    mean_t_s  = mean(t_s,  na.rm = TRUE),
-    mean_c_t  = mean(c_t,  na.rm = TRUE),
-    mean_dc_t = mean(dc_t, na.rm = TRUE),
-    mean_ct_t = mean(ct_t, na.rm = TRUE),
-    mean_vp_t = mean(vp_t, na.rm = TRUE),
-    mean_cn_t = mean(cn_t, na.rm = TRUE),
-    .groups = "drop"
+  mutate(
+    source = factor(
+      if_else(str_starts(doc_id, "viki"), "Vikidia", "Wikipedia"),
+      levels = c("Vikidia", "Wikipedia")
+    ),
+    pair_id = sub("^(viki|wiki)_", "", doc_id)
   )
 
-message("Group summary (Vikidia vs Wikipedia):")
-print(dt_summary)
 
-
-# 7) ALECTOR: paired original vs simplified ----
+# 6) ALECTOR: paired original vs simplified ----
 #
 # ALECTOR contains 79 matched pairs: each source text was professionally
 # simplified for young readers (target). Because pairs are matched, we use
@@ -233,25 +221,8 @@ dt_tu_alector <- tunit_features(dt_alector) |>
     pair_id = sub("^(\\d+)_.*", "\\1", doc_id)
   )
 
-dt_summary_alector <- dt_tu_alector |>
-  group_by(version) |>
-  summarise(
-    mean_mlt  = mean(mlt,  na.rm = TRUE),
-    mean_mlc  = mean(mlc,  na.rm = TRUE),
-    mean_t_s  = mean(t_s,  na.rm = TRUE),
-    mean_c_t  = mean(c_t,  na.rm = TRUE),
-    mean_dc_t = mean(dc_t, na.rm = TRUE),
-    mean_ct_t = mean(ct_t, na.rm = TRUE),
-    mean_vp_t = mean(vp_t, na.rm = TRUE),
-    mean_cn_t = mean(cn_t, na.rm = TRUE),
-    .groups = "drop"
-  )
 
-message("Group summary (ALECTOR original vs simplified):")
-print(dt_summary_alector)
-
-
-# 8) Visualisation ----
+# 7) Visualisation ----
 
 # Column renaming: full Lu (2010) 14-measure battery + prop_coord_sent.
 # We rename to human-readable labels for the plot facets.
@@ -274,14 +245,17 @@ lu_renames <- c(
 )
 lu_labels <- names(lu_renames)
 
-# Vikidia vs Wikipedia (unpaired — different articles, not matched)
+# Vikidia vs Wikipedia (paired by article)
 dt_tu_grp |>
   rename(all_of(lu_renames)) |>
   plot_faceted_boxplot(
     source,
     lu_labels,
     title = "T-unit features: Vikidia vs Wikipedia",
-    y_lab = NULL
+    y_lab = NULL,
+    paired = TRUE,
+    pair_col = "pair_id",
+    ncol = 4
   ) |> print()
 
 # ALECTOR original vs simplified (paired by text)
@@ -293,5 +267,6 @@ dt_tu_alector |>
     title    = "T-unit features: ALECTOR original vs simplified",
     y_lab    = NULL,
     paired   = TRUE,
-    pair_col = "pair_id"
+    pair_col = "pair_id",
+    ncol = 4
   ) |> print()
