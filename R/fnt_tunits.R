@@ -64,7 +64,7 @@
 #'       total clauses.}
 #'     \item{cn_t}{Complex nominals per T-unit (Lu 2010 CN/T). NOUN tokens
 #'       with at least one substantive modifier child. Uses the same relation
-#'       set as \code{add_complex_nominal_flag()} in \code{fnt_extra_syntax.R}.}
+#'       set as \code{add_complex_nominal_flag()} in \code{fnt_syntactic_complexity.R}.}
 #'     \item{cn_c}{Complex nominals per clause (Lu 2010 CN/C). Same CN
 #'       definition; denominator is total clauses.}
 #'     \item{prop_coord_sent}{Proportion of sentences containing more than one
@@ -109,7 +109,7 @@
 tunit_features <- function(dt) {
   dt_corpus <- setDT(copy(dt))
 
-  # --- Mark predicates and find T-unit starters (shared with fnt_extra_syntax.R) ---
+  # --- Mark predicates and find T-unit starters (shared with fnt_syntactic_complexity.R) ---
   dt_corpus <- add_predicate_flag(dt_corpus)
 
   sent_keys <- c("doc_id", "paragraph_id", "sentence_id")
@@ -135,7 +135,7 @@ tunit_features <- function(dt) {
   # VPs, so VP1 fires once for the whole auxiliary chain — not once per
   # auxiliary. The dependency equivalent is one count per predicate head, with
   # its auxiliary dependents folded into that same head (mirrors the
-  # has_cv_child grouping used for is_complex_verb in fnt_extra_syntax.R).
+  # has_cv_child grouping used for is_complex_verb in fnt_syntactic_complexity.R).
   # The French GSD model never emits a bare "aux" — periphrastic auxiliaries
   # surface via aux:tense (compound past tenses, e.g. "a mangé"), aux:pass
   # (passives), and aux:caus (causatives). Restricting to c("aux", "aux:pass")
@@ -150,7 +150,7 @@ tunit_features <- function(dt) {
                na.rm = TRUE)
   ), by = sent_keys]
 
-  # Complex nominals: delegate to the shared helper in fnt_extra_syntax.R
+  # Complex nominals: delegate to the shared helper in fnt_syntactic_complexity.R
   dt_corpus <- add_complex_nominal_flag(dt_corpus)
   dt_sent_cn <- dt_corpus[compte == TRUE,
                            .(n_cn = sum(is_complex_nominal, na.rm = TRUE)),

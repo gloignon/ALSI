@@ -99,10 +99,12 @@ add_complex_nominal_flag <- function(dt_corpus) {
   return(dt_corpus)
 }
 
-# Add is_predicate column: TRUE for VERB/AUX tokens, and for ADJ tokens with
-# a copula (cop) child (modifies in place). Used to detect independent-clause
-# (T-unit) heads among `conj`-coordinated tokens; shared with tunit_features()
-# in fnt_tunits.R.
+# Add is_predicate column: TRUE for VERB/AUX tokens, and for any token with a
+# copula (cop) child, regardless of its own upos (modifies in place). Per UD
+# guidelines, cop always attaches to the head of a non-verbal predicate, which
+# can be ADJ ("he is tall"), NOUN/PROPN/PRON ("she was a singer"), NUM, etc. —
+# not only ADJ. Used to detect independent-clause (T-unit) heads among
+# `conj`-coordinated tokens; shared with tunit_features() in fnt_tunits.R.
 add_predicate_flag <- function(dt_corpus) {
   dt_cop <- dt_corpus[dep_rel == "cop",
                       .(has_cop = TRUE),
@@ -116,7 +118,7 @@ add_predicate_flag <- function(dt_corpus) {
     all.x = TRUE
   )
   dt_corpus[is.na(has_cop), has_cop := FALSE]
-  dt_corpus[, is_predicate := upos %in% c("VERB", "AUX") | (upos == "ADJ" & has_cop)]
+  dt_corpus[, is_predicate := upos %in% c("VERB", "AUX") | has_cop]
   return(dt_corpus)
 }
 
