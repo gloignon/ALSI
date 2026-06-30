@@ -51,6 +51,8 @@
 #'   \code{complex_verb_per_sent}, \code{cv_per_clause}: ALSI-derived (no Lu
 #'   index; "inspired" by UD auxiliary-chain annotation, cf. Duran et al. 2021).
 #'   \code{avg_dep_count}: derived graph statistic (no Lu/Liu source).
+#'   \code{avg_words_before_root}: "adapted" (Vajjala & Meurers 2012; their
+#'   main-clause main-verb anchor approximated by the UD root).
 #'   See \code{docs/FEATURES_CITATIONS.yaml} for per-feature backing.
 #'
 #' @details Operationalizations follow Lu (2010, \emph{International Journal of
