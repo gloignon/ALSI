@@ -1,13 +1,126 @@
-# This file contains functions to compute sentence heights and head final/initial stats
+# This file contains functions to compute sentence heights and head
+# final/initial stats.
 #
 # loignon.guillaume@uqam.ca
-#
 
+#' Zero-valued tree statistics for an empty or all-punctuation sentence
+#'
+#' Shared by \code{sentence_graph_stats()} and \code{batch_graph_stats()} so the
+#' field set stays in sync across both. Integer-typed counts (\code{0L}) keep
+#' data.table grouped output type-stable.
+#'
+#' @returns A named list of zeroed sentence-level statistics.
+#' @keywords internal
+.zero_graph_stats <- function() {
+  list(
+    max_path = 0L,
+    avg_dependency_depth = 0,
+    avg_dependency_depth_adj = 0,
+    sd_depth = 0,
+    depth_var = 0,
+    branching_factor = 0,
+    max_degree = 0L,
+    degree_var = 0,
+    leaf_count = 0L,
+    prop_leaves = 0,
+    count_path = 0L,
+    sentence_length = 0L,
+    max_incomplete_deps = 0,
+    avg_incomplete_deps = 0,
+    max_incomplete_deps_adj = 0,
+    avg_incomplete_deps_adj = 0,
+    yngve = 0,
+    max_yngve = 0L,
+    sd_yngve = 0
+  )
+}
 
+#' Empty token-level result skeleton for head-final/initial stats
+#'
+#' Shared zero-row \code{data.table} returned by \code{head_final_initial_doc()}
+#' and \code{head_final_initial()} on empty input, so both keep an identical
+#' column set and type.
+#'
+#' @returns An empty token-level \code{data.table}.
+#' @keywords internal
+.empty_head_final_dt <- function() {
+  data.table(
+    doc_id = character(),
+    paragraph_id = integer(),
+    sentence_id = integer(),
+    token_id = integer(),
+    token_id_num = integer(),
+    head_token_id_num = integer(),
+    sent_len = integer(),
+    dep_pos = integer(),
+    head_final = logical(),
+    head_initial = logical(),
+    head_distance = integer(),
+    head_direction = integer(),
+    integration_cost = integer()
+  )
+}
 
-#
-# New versions 2026-02 without igraph ------
-#
+#' Fill dependency depth by iterative parent-to-child propagation
+#'
+#' Modifies \code{dt} in place. The input must already carry integer
+#' \code{token_id}/\code{head_token_id}, a \code{row_id} (\code{.I}), a
+#' \code{sent_key} grouping column, and a \code{depth} initialised to \code{0L}
+#' at roots and \code{NA} elsewhere. Bounded to 200 hops to guard against cyclic
+#' or disconnected parses. Shared by \code{sentence_graph_stats()} and
+#' \code{batch_graph_stats()}.
+#'
+#' @param dt A \code{data.table} prepared as described above.
+#' @returns \code{dt}, invisibly (modified in place).
+#' @keywords internal
+.compute_depth <- function(dt) {
+  for (i in seq_len(200L)) {
+    if (!anyNA(dt$depth)) break
+    parents  <- dt[!is.na(depth), .(sent_key, token_id, parent_depth = depth)]
+    children <- dt[is.na(depth), .(row_id, sent_key, head_token_id)]
+    joined   <- parents[children, on = .(sent_key, token_id = head_token_id)]
+    new_depth <- joined$parent_depth + 1L
+    fill      <- children$row_id[!is.na(new_depth)]
+    if (length(fill) == 0L) break
+    dt[fill, depth := new_depth[!is.na(new_depth)]]
+  }
+  return(invisible(dt))
+}
+
+#' Fill Yngve depth by iterative parent-to-child propagation
+#'
+#' Modifies \code{dt} in place, adding \code{right_siblings} and \code{yngve}.
+#' Yngve depth of a token is \code{right_siblings(w) + yngve(parent(w))}, with
+#' the root at 0; \code{right_siblings(w)} is the number of co-dependents of the
+#' same head that follow \code{w} in linear order. Same input contract as
+#' \code{.compute_depth()}; bounded to 200 hops.
+#'
+#' @param dt A \code{data.table} prepared as for \code{.compute_depth()}.
+#' @returns \code{dt}, invisibly (modified in place).
+#' @keywords internal
+.compute_yngve <- function(dt) {
+  dt[head_token_id == 0L, right_siblings := 0L]
+  dt[head_token_id > 0L, right_siblings := {
+    k <- .N
+    k - frank(token_id, ties.method = "first")
+  }, by = .(sent_key, head_token_id)]
+  dt[is.na(right_siblings), right_siblings := 0L]
+
+  dt[, yngve := fifelse(head_token_id == 0L, 0L, NA_integer_)]
+  for (i in seq_len(200L)) {
+    if (!anyNA(dt$yngve)) break
+    parents  <- dt[!is.na(yngve), .(sent_key, token_id, parent_yngve = yngve)]
+    children <- dt[is.na(yngve),
+                   .(row_id, sent_key, head_token_id, right_siblings)]
+    joined    <- parents[children, on = .(sent_key, token_id = head_token_id)]
+    new_yngve <- joined$parent_yngve + children$right_siblings
+    fill      <- children$row_id[!is.na(joined$parent_yngve)]
+    nv        <- new_yngve[!is.na(joined$parent_yngve)]
+    if (length(fill) == 0L) break
+    dt[fill, yngve := nv]
+  }
+  return(invisible(dt))
+}
 
 #' Plot dependency arcs for a parsed sentence
 #'
@@ -110,7 +223,7 @@ plot_dependency_arcs <- function(dt_sentence, title = NULL, show_deprel = TRUE,
     text(root_ids, 0.05, "ROOT", cex = cex_text * 0.7, col = "darkgreen")
   }
 
-  invisible(NULL)
+  return(invisible(NULL))
 }
 
 #' Population variance
@@ -140,7 +253,7 @@ to_integer_quiet <- function(x) {
   out <- rep.int(NA_integer_, length(x_chr))
   ok <- grepl("^-?[0-9]+$", x_chr)
   out[ok] <- as.integer(x_chr[ok])
-  out
+  return(out)
 }
 
 #' Compute dependency tree statistics for a single sentence
@@ -222,27 +335,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   dt_sentence <- dt_sentence[!is.na(head_token_id) & !is.na(token_id)]
 
   if (nrow(dt_sentence) == 0L) {
-    return(list(
-      max_path = 0,
-      avg_dependency_depth = 0,
-      avg_dependency_depth_adj = 0,
-      sd_depth = 0,
-      depth_var = 0,
-      branching_factor = 0,
-      max_degree = 0L,
-      degree_var = 0,
-      leaf_count = 0L,
-      prop_leaves = 0,
-      count_path = 0,
-      sentence_length = 0,
-      max_incomplete_deps = 0,
-      avg_incomplete_deps = 0,
-      max_incomplete_deps_adj = 0,
-      avg_incomplete_deps_adj = 0,
-      yngve = 0,
-      max_yngve = 0L,
-      sd_yngve = 0
-    ))
+    return(.zero_graph_stats())
   }
 
   dt_sentence[, `:=`(
@@ -251,50 +344,11 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   )]
   dt_sentence <- dt_sentence[!is.na(token_id) & !is.na(head_token_id)]
 
+  dt_sentence[, sent_key := 1L]
   dt_sentence[, depth := fifelse(head_token_id == 0L, 0L, NA_integer_)]
   dt_sentence[, row_id := .I]
-
-  for (i in seq_len(200L)) {
-    missing_rows <- dt_sentence[is.na(depth), row_id]
-    if (length(missing_rows) == 0L) break
-
-    parents <- dt_sentence[!is.na(depth), .(token_id, parent_depth = depth)]
-    children <- dt_sentence[is.na(depth), .(row_id, head_token_id)]
-
-    joined <- parents[children, on = .(token_id = head_token_id)]
-    new_depth <- joined$parent_depth + 1L
-    fill <- children$row_id[!is.na(new_depth)]
-
-    if (length(fill) == 0L) break
-
-    dt_sentence[fill, depth := new_depth[!is.na(new_depth)]]
-  }
-
-  # Yngve depth: right_siblings(w) + Yngve(parent(w)), root = 0.
-  # right_siblings(w) = co-dependents of same head that appear to the right of w.
-  dt_sentence[head_token_id == 0L, right_siblings := 0L]
-  dt_sentence[head_token_id > 0L, right_siblings := {
-    k <- .N
-    k - frank(token_id, ties.method = "first")
-  }, by = head_token_id]
-  dt_sentence[is.na(right_siblings), right_siblings := 0L]
-
-  dt_sentence[, yngve := fifelse(head_token_id == 0L, 0L, NA_integer_)]
-  for (i in seq_len(200L)) {
-    missing_rows <- dt_sentence[is.na(yngve), row_id]
-    if (length(missing_rows) == 0L) break
-
-    parents <- dt_sentence[!is.na(yngve), .(token_id, parent_yngve = yngve)]
-    children <- dt_sentence[is.na(yngve), .(row_id, head_token_id, right_siblings)]
-
-    joined <- parents[children, on = .(token_id = head_token_id)]
-    new_yngve <- joined$parent_yngve + children$right_siblings
-    fill <- children$row_id[!is.na(joined$parent_yngve)]
-    nv <- new_yngve[!is.na(joined$parent_yngve)]
-
-    if (length(fill) == 0L) break
-    dt_sentence[fill, yngve := nv]
-  }
+  .compute_depth(dt_sentence)
+  .compute_yngve(dt_sentence)
 
   metric_rows <- if (isTRUE(include_punct_in_metrics)) {
     !is.na(dt_sentence$depth)
@@ -304,27 +358,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
   valid_depth <- dt_sentence[metric_rows, depth]
 
   if (length(valid_depth) == 0L) {
-    return(list(
-      max_path = 0,
-      avg_dependency_depth = 0,
-      avg_dependency_depth_adj = 0,
-      sd_depth = 0,
-      depth_var = 0,
-      branching_factor = 0,
-      max_degree = 0L,
-      degree_var = 0,
-      leaf_count = 0L,
-      prop_leaves = 0,
-      count_path = 0,
-      sentence_length = 0,
-      max_incomplete_deps = 0,
-      avg_incomplete_deps = 0,
-      max_incomplete_deps_adj = 0,
-      avg_incomplete_deps_adj = 0,
-      yngve = 0,
-      max_yngve = 0L,
-      sd_yngve = 0
-    ))
+    return(.zero_graph_stats())
   }
 
   n <- length(valid_depth)
@@ -403,7 +437,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     message("Yngve depth (sd):   ", round(sd_yngve, 3))
   }
 
-  list(
+  return(list(
     max_path = max_path,
     avg_dependency_depth = avg_dependency_depth,
     avg_dependency_depth_adj = avg_dependency_depth_adj,
@@ -423,7 +457,7 @@ sentence_graph_stats <- function(dt_sentence, verbose = FALSE, include_punct_in_
     yngve = yngve_score,
     max_yngve = max_yngve,
     sd_yngve = sd_yngve
-  )
+  ))
 }
 
 #' Compute head-final/initial stats for one document
@@ -472,21 +506,7 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
   dt <- as.data.table(copy(df_doc))
 
   if (nrow(dt) == 0L) {
-    return(data.table(
-      doc_id = character(),
-      paragraph_id = integer(),
-      sentence_id = integer(),
-      token_id = integer(),
-      token_id_num = integer(),
-      head_token_id_num = integer(),
-      sent_len = integer(),
-      dep_pos = integer(),
-      head_final = logical(),
-      head_initial = logical(),
-      head_distance = integer(),
-      head_direction = integer(),
-      integration_cost = integer()
-    ))
+    return(.empty_head_final_dt())
   }
 
   dt[, `:=`(
@@ -560,9 +580,9 @@ head_final_initial_doc <- function(df_doc, include_punct_in_metrics = FALSE) {
     )
   }]
 
-  dt[, .(doc_id, paragraph_id, sentence_id, token_id, token_id_num, head_token_id_num,
-         sent_len, dep_pos, head_final, head_initial, head_distance, head_direction,
-         integration_cost)]
+  return(dt[, .(doc_id, paragraph_id, sentence_id, token_id, token_id_num,
+                head_token_id_num, sent_len, dep_pos, head_final, head_initial,
+                head_distance, head_direction, integration_cost)])
 }
 
 #' Compute head-final/initial stats for a corpus
@@ -579,21 +599,7 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
   dt <- as.data.table(copy(df))
 
   if (nrow(dt) == 0L) {
-    return(data.table(
-      doc_id = character(),
-      paragraph_id = integer(),
-      sentence_id = integer(),
-      token_id = integer(),
-      token_id_num = integer(),
-      head_token_id_num = integer(),
-      sent_len = integer(),
-      dep_pos = integer(),
-      head_final = logical(),
-      head_initial = logical(),
-      head_distance = integer(),
-      head_direction = integer(),
-      integration_cost = integer()
-    ))
+    return(.empty_head_final_dt())
   }
 
   if (!"doc_id" %in% names(dt)) {
@@ -602,12 +608,12 @@ head_final_initial <- function(df, include_punct_in_metrics = FALSE) {
 
   doc_ids <- unique(dt$doc_id)
 
-  rbindlist(
+  return(rbindlist(
     lapply(doc_ids, function(id) {
       head_final_initial_doc(dt[doc_id == id], include_punct_in_metrics)
     }),
     use.names = TRUE
-  )
+  ))
 }
 
 #' Batch-compute sentence-level dependency tree statistics
@@ -671,22 +677,7 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
   dt[, sent_key := .GRP, by = .(doc_id, paragraph_id, sentence_id)]
   dt[, depth := fifelse(head_token_id == 0L, 0L, NA_integer_)]
   dt[, row_id := .I]
-
-  for (i in seq_len(200L)) {
-    missing_rows <- dt[is.na(depth), row_id]
-    if (length(missing_rows) == 0L) break
-
-    parents <- dt[!is.na(depth), .(sent_key, token_id, parent_depth = depth)]
-    children <- dt[is.na(depth), .(row_id, sent_key, head_token_id)]
-
-    joined <- parents[children, on = .(sent_key, token_id = head_token_id)]
-    new_depth <- joined$parent_depth + 1L
-    fill <- children$row_id[!is.na(new_depth)]
-
-    if (length(fill) == 0L) break
-
-    dt[fill, depth := new_depth[!is.na(new_depth)]]
-  }
+  .compute_depth(dt)
 
   if (verbose && any(is.na(dt$depth))) {
     bad_sentences <- unique(dt[is.na(depth), .(doc_id, sentence_id)])
@@ -699,33 +690,9 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
     )
   }
 
-  # Yngve depth: right_siblings(w) + Yngve(parent(w)), root = 0.
-  # right_siblings(w) = co-dependents of same head that appear to the right of w.
-  dt[head_token_id == 0L, right_siblings := 0L]
-  dt[head_token_id > 0L, right_siblings := {
-    k <- .N
-    k - frank(token_id, ties.method = "first")
-  }, by = .(sent_key, head_token_id)]
-  dt[is.na(right_siblings), right_siblings := 0L]
+  .compute_yngve(dt)
 
-  dt[, yngve := fifelse(head_token_id == 0L, 0L, NA_integer_)]
-  for (i in seq_len(200L)) {
-    missing_rows <- dt[is.na(yngve), row_id]
-    if (length(missing_rows) == 0L) break
-
-    parents <- dt[!is.na(yngve), .(sent_key, token_id, parent_yngve = yngve)]
-    children <- dt[is.na(yngve), .(row_id, sent_key, head_token_id, right_siblings)]
-
-    joined <- parents[children, on = .(sent_key, token_id = head_token_id)]
-    new_yngve <- joined$parent_yngve + children$right_siblings
-    fill <- children$row_id[!is.na(joined$parent_yngve)]
-    nv <- new_yngve[!is.na(joined$parent_yngve)]
-
-    if (length(fill) == 0L) break
-    dt[fill, yngve := nv]
-  }
-
-  dt[, {
+  result <- dt[, {
     metric_depth <- if (isTRUE(include_punct_in_metrics)) {
       depth[!is.na(depth)]
     } else {
@@ -734,27 +701,7 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
     n <- length(metric_depth)
 
     if (n == 0L) {
-      .(
-        max_path = 0L,
-        avg_dependency_depth = 0,
-        avg_dependency_depth_adj = 0,
-        sd_depth = 0,
-        depth_var = 0,
-        branching_factor = 0,
-        max_degree = 0L,
-        degree_var = 0,
-        leaf_count = 0L,
-        prop_leaves = 0,
-        count_path = 0L,
-        sentence_length = 0L,
-        max_incomplete_deps = 0,
-        avg_incomplete_deps = 0,
-        max_incomplete_deps_adj = 0,
-        avg_incomplete_deps_adj = 0,
-        yngve = 0,
-        max_yngve = 0L,
-        sd_yngve = 0
-      )
+      .zero_graph_stats()
     } else {
       mp <- max(metric_depth)
       cp <- sum(metric_depth)
@@ -832,6 +779,8 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
       )
     }
   }, by = .(doc_id, paragraph_id, sentence_id)]
+
+  return(result)
 }
 
 #' Aggregate dependency features at the document level
@@ -931,7 +880,7 @@ batch_graph_stats <- function(dt_corpus, verbose = FALSE, include_punct_in_metri
 #'   normalized analogue in Chen et al. 2024)
 #'
 #' @param df_corpus A parsed \code{data.table} (full corpus).
-#' @returns A \code{data.table} with one row per document and columns for
+#' @returns A \code{data.frame} with one row per document and columns for
 #'   all dependency-tree features.
 docwise_graph_stats <- function(df_corpus) {
 

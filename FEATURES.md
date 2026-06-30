@@ -8,7 +8,7 @@ Scripts covered:
 - `R/fnt_lexical.R`
 - `R/fnt_burstiness.R`
 - `R/fnt_heights.R`
-- `R/fnt_extra_syntax.R`
+- `R/fnt_syntactic_complexity.R`
 - `R/fnt_pos_surprisal.R`
 - `R/fnt_deprel_surprisal.R`
 - `R/fnt_cohesion.R`
@@ -224,23 +224,28 @@ Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
 | `avg_sd_yngve` | Mean of per-sentence SD of Yngve depths; captures heterogeneity (mix of shallow and deeply embedded words within sentences). | document | Yngve (1960) [adapted: same dependency-tree adaptation as `avg_yngve`] |
 
 ## 8) `features$syntactic`
-Produced in: `R/fnt_extra_syntax.R` (`extra_syntactic_features`)
+Produced in: `R/fnt_syntactic_complexity.R` (`extra_syntactic_features`)
 
-Operationalized following Lu (2010, *International Journal of Corpus Linguistics*, 15(4), 474–496), translated from Penn Treebank tregex patterns to Universal Dependencies. Dependency distance follows Liu (2008, *Journal of Cognitive Science*, 9(2), 159–191).
+Operationalized following Lu (2010, *International Journal of Corpus Linguistics*, 15(4), 474–496), with the Penn Treebank tregex patterns *adapted* to Universal Dependencies (see caveats below). Dependency distance follows Liu (2008, *Journal of Cognitive Science*, 9(2), 159–191).
 
-Source split: clause length, clausal density, dependent-clause ratios, and complex nominal measures are Lu (2010)-derived. Mean dependency distance is Liu (2008).
+Source split: clause length, clausal density, and the dependent-clause / complex-nominal ratios are Lu (2010)-adapted. Mean dependency distance is computationally identical to Liu (2008, Formula 2). Complex-verb measures are ALSI-derived (not a Lu index). `avg_dep_count` is a derived graph statistic with no Lu/Liu source. Words before the main verb is *adapted* from Vajjala & Meurers (2012, *Proceedings of the 7th Workshop on Building Educational Applications Using NLP* (BEA), 163–173), an SLA-motivated working-memory load index; they counted words before the main-clause main verb in a constituency parse, here approximated by the UD sentence root.
 
 | Feature name | Short description | Level |
 |---|---|---|
-| `clausal_density` | Mean clauses per sentence (Lu C/S). Clause count = T-units plus finite dependent-clause heads identified by UD relations `ccomp`, `advcl`, `acl`, `acl:relcl`. | document |
+| `clausal_density` | Mean clauses per sentence (Lu C/S). Clause count = T-units plus dependent-clause heads identified by the UD relations `ccomp`, `advcl`, `acl`, `acl:relcl` (a UD approximation of Lu's finite dependent-clause set — see caveat). | document |
 | `avg_clause_length` | Mean tokens per clause (Lu MLC): total counted tokens / total clauses. | document |
-| `dc_per_clause` | Mean proportion of clauses that are dependent clauses (Lu DC/C): mean(dependent clauses / total clauses) per sentence. | document |
-| `complex_nom_per_sent` | Mean complex nominals per sentence, using Lu (2010)-derived complex nominal detection. A NOUN head with at least one child bearing `amod`, `nmod`, `nmod:poss`, `acl`, `acl:relcl`, `nummod`, `appos`, `compound`, or `det:nummod`. | document |
-| `cn_per_clause` | Mean complex nominals per clause (Lu CN/C). | document |
+| `dc_per_clause` | Dependent clauses per clause (Lu DC/C): **total** dependent clauses / **total** clauses across the document (a ratio of sums, matching Lu — not a mean of per-sentence ratios). | document |
+| `complex_nom_per_sent` | Mean complex nominals per sentence, using Lu (2010) CN1-style detection adapted to UD. A NOUN head with at least one child bearing `amod`, `nmod`, `nmod:poss`, `acl`, `acl:relcl`, `nummod`, `appos`, `compound`, or `det:nummod`. Covers Lu's CN1 only; CN2/CN3 clausal nominals are not included here. | document |
+| `cn_per_clause` | Complex nominals per clause (Lu CN/C): total complex nominals / total clauses across the document. | document |
 | `complex_verb_per_sent` | Mean complex verbs per sentence. A VERB head with at least one `aux`, `aux:pass`, `aux:tense`, or `aux:caus` child. Not one of Lu's 14 indices; added by ALSI. | document |
-| `cv_per_clause` | Mean complex verbs per clause. Analogous to Lu CN/C but for complex verbs. Not one of Lu's 14 indices; added by ALSI. | document |
-| `avg_dep_dist` | Mean Dependency Distance (MDD, Liu 2008): mean \|position(head) − position(dependent)\| over non-PUNCT tokens. | document |
-| `avg_dep_count` | Mean number of dependents per token (mean out-degree in the dependency tree). | document |
+| `cv_per_clause` | Complex verbs per clause: total complex verbs / total clauses (ALSI analogue of Lu CN/C). Not one of Lu's 14 indices; added by ALSI. | document |
+| `avg_dep_dist` | Mean Dependency Distance (MDD, Liu 2008, Formula 2): total \|position(head) − position(dependent)\| over all real (non-root, non-PUNCT) dependencies, divided by the total number of real dependencies (pooled across sentences). | document |
+| `avg_dep_count` | Mean out-degree per token, pooled across the document: total countable children / total countable tokens, leaves counted as 0. Derived graph statistic. | document |
+| `avg_words_before_root` | Mean number of tokens preceding the root (usually the main verb): for each sentence, count the tokens whose surface position is before the `root` token, then average across sentences (Vajjala & Meurers 2012, adapted — pre-verbal working memory load). | document |
+
+**Caveat (clause finiteness).** The default `dc_rels` set (`ccomp`, `advcl`, `acl`, `acl:relcl`) is a UD *approximation* of Lu's finite dependent-clause definition, not an exact match: these relations are not conditioned on finiteness, so a non-finite `acl`/`advcl` head (e.g. a participial adjunct) is still counted as a dependent clause. The non-finite `xcomp` is excluded by default; `csubj`/`csubj:pass` are excluded because they are essentially absent in parsed French. Pass a custom `dc_rels` to change this.
+
+Optional clause-counting mode: `extra_syntactic_features(..., count_parataxis = TRUE)` also follows UD `parataxis` arcs when detecting independent clauses, which can recover asyndetic main-clause coordination. The default is `FALSE` because `parataxis` also covers comment and quotative clauses that Hunt/Lu-style T-unit logic would often keep inside one unit.
 
 ## 9) `features$pos_surprisal$doc_surprisal`
 Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
@@ -498,7 +503,7 @@ T-unit boundaries are detected from UD dependency parses: the sentence root
 anchors the first T-unit; each predicate (VERB, AUX, or ADJ-with-cop)
 reachable from the root via a chain of `conj` arcs starts an additional
 T-unit. Complex nominal detection reuses `add_complex_nominal_flag()` from
-`fnt_extra_syntax.R`, ensuring identical operationalization across feature sets.
+`fnt_syntactic_complexity.R`, ensuring identical operationalization across feature sets.
 
 | Feature name | Short description | Level |
 |---|---|---|
@@ -516,7 +521,7 @@ T-unit. Complex nominal detection reuses `add_complex_nominal_flag()` from
 | `vp_t` | Verb phrases per T-unit (Lu 2010 VP/T): one verb phrase per predicate head — VERB tokens, plus AUX tokens that are not `aux`/`aux:pass`/`aux:tense`/`aux:caus` dependents of another verb — divided by n\_tunits. Auxiliary chains are folded into their governing verb so periphrastic forms (e.g. French passé composé "a mangé") count as one VP, not two. | document |
 | `cp_t` | Coordinate phrases per T-unit (Lu 2010 CP/T): `conj` arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination within a T-unit, not clausal). Lu's CP also includes coordinated VPs; ALSI routes verbal `conj` coordination into `t_s`/`prop_coord_sent` (additional T-units) instead, so this is a UD adaptation rather than a literal CP/T. | document |
 | `cp_c` | Coordinate phrases per clause (Lu 2010 CP/C). Same CP definition and UD-adaptation caveat as `cp_t`; denominator is total clauses. | document |
-| `cn_t` | Complex nominals per T-unit (Lu 2010 CN/T): NOUN tokens with ≥ 1 substantive modifier child. Uses same relation set as `add_complex_nominal_flag()` in `fnt_extra_syntax.R`. | document |
+| `cn_t` | Complex nominals per T-unit (Lu 2010 CN/T): NOUN tokens with ≥ 1 substantive modifier child. Uses same relation set as `add_complex_nominal_flag()` in `fnt_syntactic_complexity.R`. | document |
 | `cn_c` | Complex nominals per clause (Lu 2010 CN/C). Same CN definition; denominator is total clauses. | document |
 | `prop_coord_sent` | Proportion of sentences containing more than one T-unit (ALSI addition). | document |
 

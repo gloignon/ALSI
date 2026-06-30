@@ -5,7 +5,8 @@
 #' indicators, complex nominals, and complex verbs at the token level, then
 #' aggregates per sentence and per document.
 #'
-#' @param dt A parsed data.table (UDPipe output after post-processing) containing
+#' @param dt A parsed data.table (parser output after
+#'   \code{post_process_lexicon}) containing
 #'   at minimum: \code{doc_id}, \code{paragraph_id}, \code{sentence_id},
 #'   \code{token_id}, \code{head_token_id}, \code{dep_rel}, \code{upos},
 #'   and \code{compte}.
@@ -21,8 +22,12 @@
 #'   (see the note below). Supply a different set to use an alternative
 #'   clause-boundary definition (e.g. the broader, pre-2026-06 ALSI list that
 #'   also included \code{xcomp}, \code{csubj}, and \code{csubj:pass}).
+#' @param count_parataxis Logical, default \code{FALSE}. Passed to
+#'   \code{count_tunits_in_sent()}: when \code{TRUE}, the T-unit BFS also
+#'   follows \code{parataxis} arcs, so asyndetic main-clause coordination
+#'   opens a new T-unit. See \code{tunit_features()} in \code{fnt_tunits.R}.
 #'
-#' @returns A data.frame (grouped tibble) with one row per \code{doc_id} and columns:
+#' @returns A tibble with one row per \code{doc_id} and columns:
 #'   \describe{
 #'     \item{avg_clause_length}{Mean tokens per clause (Lu MLC).}
 #'     \item{complex_nom_per_sent}{Mean complex nominals per sentence.}
@@ -314,8 +319,7 @@ extra_syntactic_features <- function(dt,
                      all.x = TRUE)
   dt_corpus[is.na(has_cv_child), has_cv_child := FALSE]
   dt_corpus[, is_complex_verb := upos == "VERB" & has_cv_child]
-  
-  
+
   sum_extra_syn_features <- dt_corpus |>
     filter(compte == TRUE) |>
     group_by(doc_id, paragraph_id, sentence_id) |>

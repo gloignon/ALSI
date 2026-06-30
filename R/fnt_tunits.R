@@ -18,8 +18,9 @@
 #' into a single T-unit on exactly this basis ("each [unit] will contain
 #' only one main clause").
 #'
-#' @param dt A parsed data.table (UDPipe output after post-processing)
-#'   containing at minimum: \code{doc_id}, \code{paragraph_id},
+#' @param dt A parsed data.table (parser output after
+#'   \code{post_process_lexicon}) containing at minimum: \code{doc_id},
+#'   \code{paragraph_id},
 #'   \code{sentence_id}, \code{token_id}, \code{head_token_id},
 #'   \code{dep_rel}, \code{upos}, and \code{compte}.
 #' @param count_parataxis Logical, default \code{FALSE}. When \code{TRUE}, the
