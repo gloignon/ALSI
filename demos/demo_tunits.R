@@ -135,6 +135,99 @@ parse_sentence("Marie chante, Pierre danse et Jean rit.", udmodel_french) |> get
 message("--- Coord inside subordinate: 'Je crois que Marie chante et danse.' ---")
 parse_sentence("Je crois que Marie chante et danse.", udmodel_french) |> get_tunits() |> print()
 
+# ── 2i. Imperative root, no overt subject (1 T-unit) ────────────────────────
+#
+# "Mange ta soupe !"
+# The boundary rule normally requires a predicate to have its own subject to
+# start a new T-unit. The sentence root is the one exception: it always anchors
+# a T-unit even with no nsubj, so imperatives count as 1 (not 0). This is why
+# n_tunits >= n_sentences holds. Expected: 1.
+
+message("--- Imperative root: 'Mange ta soupe !' ---")
+parse_sentence("Mange ta soupe !", udmodel_french) |> get_tunits() |> print()
+
+# ── 2j. Relative clause (1 T-unit) ──────────────────────────────────────────
+#
+# "Le chat qui dort mange la souris."
+# 'dort' heads a relative clause (acl:relcl) — a DEPENDENT clause, not a new
+# T-unit. Like the ccomp case in 2b, this shows the T-unit/clause distinction:
+# the document has 2 clauses but only 1 T-unit. Expected: 1.
+
+message("--- Relative clause: 'Le chat qui dort mange la souris.' ---")
+parse_sentence("Le chat qui dort mange la souris.", udmodel_french) |> get_tunits() |> print()
+
+# ── 2k. Adverbial subordinate clause (1 T-unit) ─────────────────────────────
+#
+# "Quand Marie chante, Pierre danse."
+# 'chante' heads an adverbial clause (advcl) attached to the main verb 'danse'.
+# advcl is a dependent clause, so no new T-unit opens despite the comma and the
+# fronted clause. Pairs with the relative case in 2j. Expected: 1.
+
+message("--- Adverbial subordinate: 'Quand Marie chante, Pierre danse.' ---")
+parse_sentence("Quand Marie chante, Pierre danse.", udmodel_french) |> get_tunits() |> print()
+
+# ── 2l. Adversative coordinator 'mais' (2 T-units) ──────────────────────────
+#
+# "Marie chante mais Pierre dort."
+# Coordination is not limited to 'et'. 'dort' is a conj of 'chante' with its
+# own subject 'Pierre', so 'mais' opens a second T-unit just like 'et' would.
+# Expected: 2.
+
+message("--- 'mais' coordination: 'Marie chante mais Pierre dort.' ---")
+parse_sentence("Marie chante mais Pierre dort.", udmodel_french) |> get_tunits() |> print()
+
+# ── 2m. Passive coordination (2 T-units) ────────────────────────────────────
+#
+# "La souris est mangée et le chat est puni."
+# Each conjunct is a passive ('est mangée', 'est puni') whose subject is a
+# nsubj:pass dependent. The subject test in the boundary rule accepts
+# nsubj:pass, so the second passive predicate opens a new T-unit. Expected: 2.
+
+message("--- Passive coordination: 'La souris est mangée et le chat est puni.' ---")
+parse_sentence("La souris est mangée et le chat est puni.", udmodel_french) |> get_tunits() |> print()
+
+# ── 2n. Two orthographic sentences (2 T-units) ──────────────────────────────
+#
+# "Marie chante. Pierre danse."
+# Two separate sentences, each one root T-unit. Sanity check that T-units
+# accumulate across sentence boundaries (n_tunits >= n_sentences). Expected: 2.
+
+message("--- Two sentences: 'Marie chante. Pierre danse.' ---")
+parse_sentence("Marie chante. Pierre danse.", udmodel_french) |> get_tunits() |> print()
+
+# ── 2o. Asyndetic juxtaposition — LIMITATION + opt-in fix ───────────────────
+#
+# "Le soleil brille, les oiseaux chantent."
+# Two independent clauses joined by a comma with no coordinator. The parser
+# attaches the second clause via 'parataxis', NOT 'conj'. By default the
+# T-unit BFS only follows conj arcs, so it never reaches the second predicate
+# and reports 1 (the linguistic truth is 2).
+#
+# tunit_features(count_parataxis = TRUE) extends the BFS to follow parataxis
+# arcs too (gated by the same predicate + own-subject test), recovering the
+# second T-unit. It is OFF by default because UD parataxis also covers comment
+# clauses ("Marie est partie, je crois.") and quotative framing ("..., dit-il"),
+# which would then be over-counted — see the next case (2p note) and the
+# Limitations section of fnt_tunits.R.
+
+asyndetic <- parse_sentence("Le soleil brille, les oiseaux chantent.", udmodel_french)
+message("--- Asyndetic, default (LIMITATION, expect 1): 'Le soleil brille, les oiseaux chantent.' ---")
+tunit_features(asyndetic) |> select(-doc_id) |> mutate(across(everything(), \(x) round(x, 2))) |> print()
+message("--- Asyndetic, count_parataxis = TRUE (expect 2) ---")
+tunit_features(asyndetic, count_parataxis = TRUE) |> select(-doc_id) |> mutate(across(everything(), \(x) round(x, 2))) |> print()
+
+# ── 2p. Gapping — KNOWN LIMITATION (undercount) ─────────────────────────────
+#
+# "Marie aime le café, Pierre le thé."
+# The verb of the second conjunct is elided (gapping). 'Pierre' is attached as
+# a conj, but it is a PROPN with no predicate to anchor a T-unit boundary on,
+# so no second T-unit opens. Linguistically this is 2 T-units, but ALSI reports
+# 1. Documented limitation (see fnt_tunits.R, Limitations): gapping is not
+# detected. Expected (ALSI): 1. (Linguistic truth: 2.)
+
+message("--- Gapping (LIMITATION): 'Marie aime le café, Pierre le thé.' ---")
+parse_sentence("Marie aime le café, Pierre le thé.", udmodel_french) |> get_tunits() |> print()
+
 
 # 3) Full corpus application ----
 

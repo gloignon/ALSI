@@ -9,14 +9,26 @@
 #' all subordinate clauses and non-clausal phrases attached to it. In UD
 #' terms, each sentence contains one T-unit rooted at the sentence root; each
 #' coordinated predicate reachable from that root via a chain of \code{conj}
-#' arcs and whose head token is a predicate (VERB, AUX, or ADJ-with-cop)
-#' starts an additional T-unit. Shared-subject coordination ("Marie chante et
-#' danse") counts as two T-units, following Hunt's standard scoring.
+#' arcs, whose head token is a predicate (VERB, AUX, or ADJ/NOUN-with-cop)
+#' AND has its own subject (\code{nsubj}, \code{nsubj:pass}, \code{csubj},
+#' \code{csubj:pass}, or \code{expl}), starts an additional T-unit.
+#' Shared-subject coordination ("Marie chante et danse") counts as one
+#' T-unit, since the second verb has no subject of its own — per Hunt
+#' (1965, p.20-21), whose own worked example slices "They tried and tried."
+#' into a single T-unit on exactly this basis ("each [unit] will contain
+#' only one main clause").
 #'
 #' @param dt A parsed data.table (UDPipe output after post-processing)
 #'   containing at minimum: \code{doc_id}, \code{paragraph_id},
 #'   \code{sentence_id}, \code{token_id}, \code{head_token_id},
 #'   \code{dep_rel}, \code{upos}, and \code{compte}.
+#' @param count_parataxis Logical, default \code{FALSE}. When \code{TRUE}, the
+#'   T-unit BFS also follows \code{parataxis} (and \code{parataxis:*}) arcs in
+#'   addition to \code{conj}, so asyndetic main-clause coordination ("Le soleil
+#'   brille, les oiseaux chantent.") opens a new T-unit. OFF by default because
+#'   UD \code{parataxis} also covers comment clauses ("Marie est partie, je
+#'   crois.") and quotative framing, which would then be over-counted. See the
+#'   note in \code{count_tunits_in_sent()} in \code{fnt_syntactic_complexity.R}.
 #'
 #' @returns A data.frame with one row per \code{doc_id} and columns:
 #'   \describe{
@@ -78,19 +90,37 @@
 #'
 #'   \strong{T-unit boundary rule}: starting from the sentence root, follow
 #'   \code{conj} arcs transitively (BFS). Every node in this conj-reachable
-#'   set whose UPOS is \code{VERB}, \code{AUX}, or \code{ADJ} with a
-#'   \code{cop} child marks the head of a new T-unit. The root itself always
-#'   anchors the first T-unit, so \code{n_tunits >= n_sentences}.
+#'   set whose UPOS is \code{VERB}, \code{AUX}, or \code{ADJ}/\code{NOUN} with
+#'   a \code{cop} child, AND which has its own subject dependent
+#'   (\code{nsubj}, \code{nsubj:pass}, \code{csubj}, \code{csubj:pass}, or
+#'   \code{expl}), marks the head of a new T-unit. A conj-reachable predicate
+#'   with no subject of its own (subject shared by ellipsis under
+#'   coordination) is folded into the same T-unit as its head instead. The
+#'   root itself always anchors the first T-unit regardless of whether it has
+#'   a subject (e.g. imperatives), so \code{n_tunits >= n_sentences}.
 #'
 #'   \strong{Dependent clause (DC)}: finite subordinate clause heads with
 #'   dep_rel in \code{ccomp}, \code{advcl}, \code{acl}, \code{acl:relcl}.
 #'   Non-finite \code{xcomp} is excluded following Lu's (2010) definition.
 #'
-#'   \strong{Limitations}: the heuristic cannot distinguish shared-subject
-#'   coordination from non-shared-subject coordination based on UD structure
-#'   alone — both are counted as separate T-units per Hunt's definition.
-#'   Gapping is not detected. Non-verbal coordination on nouns or adjectives
-#'   is excluded because the conj head is not a predicate.
+#'   \strong{Limitations}: gapping (a fully elided verb in the second
+#'   conjunct, e.g. "Mary likes coffee, John tea") is not detected, since
+#'   there is no token to anchor the T-unit boundary on. Sentences joined by
+#'   bare juxtaposition that the parser annotates with \code{parataxis} rather
+#'   than \code{conj} (asyndetic coordination, some run-ons) are undercounted
+#'   by default, since the BFS has no \code{conj} edge to follow between them —
+#'   see Hunt's (1965) 68-word run-on example in
+#'   \code{validation/l2sca_reference_texts/}. Pass
+#'   \code{count_parataxis = TRUE} to also follow \code{parataxis} arcs and
+#'   recover these (at the cost of over-counting comment/quotative clauses).
+#'   Comma splices are NOT automatically undercounted: the French GSD model
+#'   often parses "Marie chante, Pierre danse." with a \code{conj} arc across
+#'   the comma, in which case the second T-unit IS detected. Whether
+#'   juxtaposition is undercounted depends on the parser's
+#'   \code{conj}-vs-\code{parataxis} choice, not on the punctuation. Non-verbal
+#'   coordination on
+#'   nouns or adjectives without a \code{cop} child is excluded because the
+#'   conj head is not a predicate.
 #'
 #'   \strong{Token length}: only tokens where \code{compte == TRUE} are
 #'   counted toward MLS, MLT, and MLC, which excludes punctuation.
@@ -106,7 +136,7 @@
 #'
 #'   Hunt, K. W. (1966). Recent measures in syntactic development.
 #'   \emph{Elementary English, 43}(7), 732--739.
-tunit_features <- function(dt) {
+tunit_features <- function(dt, count_parataxis = FALSE) {
   dt_corpus <- setDT(copy(dt))
 
   # --- Mark predicates and find T-unit starters (shared with fnt_syntactic_complexity.R) ---
@@ -116,7 +146,8 @@ tunit_features <- function(dt) {
 
   # T-unit count per sentence (uses full token set for tree traversal)
   dt_sent_tu <- dt_corpus[, .(
-    n_tunits = count_tunits_in_sent(token_id, head_token_id, dep_rel, is_predicate)
+    n_tunits = count_tunits_in_sent(token_id, head_token_id, dep_rel, is_predicate,
+                                    count_parataxis = count_parataxis)
   ), by = sent_keys]
 
   # Token count per sentence (compte == TRUE excludes PUNCT)

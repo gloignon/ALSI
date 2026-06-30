@@ -25,7 +25,7 @@ library(tidyverse)
 library(udpipe)
 
 source("R/fnt_corpus.R",       encoding = "UTF-8")
-source("R/fnt_extra_syntax.R", encoding = "UTF-8")
+source("R/fnt_syntactic_complexity.R", encoding = "UTF-8")
 source("R/fnt_utility.R",      encoding = "UTF-8")
 
 dir.create("out", showWarnings = FALSE)
@@ -181,35 +181,7 @@ dt_en_relcl <- parse_sentence("The book that she wrote is good.", udmodel_englis
 get_features(dt_en_relcl) |> print()
 
 
-# 3) Side-by-side comparison of all sentence types ----
-
-sentences <- lst(
-  "FR: simple"       = dt_fr_simple,
-  "FR: mod. noun"    = dt_fr_noun,
-  "FR: nmod"         = dt_fr_nmod,
-  "FR: periphrastic" = dt_fr_cv,
-  "FR: ccomp"        = dt_fr_ccomp,
-  "FR: relative"     = dt_fr_relcl,
-  "FR: advcl"        = dt_fr_advcl,
-  "EN: simple"       = dt_en_simple,
-  "EN: mod. noun"    = dt_en_noun,
-  "EN: modal"        = dt_en_modal,
-  "EN: passive"      = dt_en_passive,
-  "EN: ccomp"        = dt_en_ccomp,
-  "EN: relative"     = dt_en_relcl
-)
-
-dt_all <- imap(sentences, \(dt, nm) mutate(dt, doc_id = nm)) |>
-  list_rbind()
-
-dt_comparison <- extra_syntactic_features(dt_all) |>
-  rename(sentence = doc_id) |>
-  mutate(across(where(is.numeric), \(x) round(x, 2)))
-
-print(dt_comparison, n = Inf)
-
-
-# 4) Document-level features on the demo corpus ----
+# 3) Document-level features on the demo corpus ----
 
 message("Loading parsed corpus...")
 dt_corpus <- readRDS("out/demo_parsed_tagged.Rds") |>
@@ -226,7 +198,7 @@ dt_syntax |>
   print()
 
 
-# 5) Boxplot: key features by source ----
+# 4) Boxplot: key features by source ----
 #
 # The per-clause ratios (dc_per_clause, cn_per_clause, cv_per_clause) normalize
 # CN and CV counts by clausal structure rather than sentence count — useful when
