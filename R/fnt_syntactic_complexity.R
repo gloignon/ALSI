@@ -33,7 +33,9 @@
 #'     \item{complex_nom_per_sent}{Mean complex nominals per sentence.}
 #'     \item{complex_verb_per_sent}{Mean complex verbs per sentence.}
 #'     \item{avg_dep_dist}{Pooled mean dependency distance (Liu 2008 MDD,
-#'       Formula 2: total |token-to-head gap| / total real dependencies).}
+#'       Formula 2: total |token-to-head gap| / total real dependencies).
+#'       Positions are renumbered over non-punctuation tokens, so intervening
+#'       punctuation does not add distance.}
 #'     \item{avg_dep_count}{Mean out-degree per token, pooled across the
 #'       document (total out-degree / total countable tokens; leaves count
 #'       as 0).}
@@ -46,7 +48,8 @@
 #'       total complex verbs / total clauses.}
 #'     \item{avg_words_before_root}{Mean number of countable tokens preceding
 #'       the sentence root (main verb), averaged over sentences with a root
-#'       (Vajjala & Meurers 2012, adapted — pre-verbal working-memory load).}
+#'       (Coh-Metrix left embeddedness, SYNLE — Graesser, McNamara &
+#'       Kulikowich 2011, adapted — pre-verbal working-memory load).}
 #'   }
 #'
 #' @citation_type \code{clausal_density}, \code{avg_clause_length},
@@ -56,8 +59,10 @@
 #'   \code{complex_verb_per_sent}, \code{cv_per_clause}: ALSI-derived (no Lu
 #'   index; "inspired" by UD auxiliary-chain annotation, cf. Duran et al. 2021).
 #'   \code{avg_dep_count}: derived graph statistic (no Lu/Liu source).
-#'   \code{avg_words_before_root}: "adapted" (Vajjala & Meurers 2012; their
-#'   main-clause main-verb anchor approximated by the UD root).
+#'   \code{avg_words_before_root}: "adapted" (Coh-Metrix SYNLE, left
+#'   embeddedness: Graesser, McNamara & Kulikowich 2011,
+#'   \doi{10.3102/0013189X11413260}; their main-clause main-verb anchor is
+#'   approximated by the UD root).
 #'   See \code{docs/FEATURES_CITATIONS.yaml} for per-feature backing.
 #'
 #' @details Operationalizations follow Lu (2010, \emph{International Journal of
@@ -72,11 +77,15 @@
 #'   non-finite \code{xcomp} by default but does not test finiteness on
 #'   \code{acl}/\code{advcl} heads.
 #'
-#'   \strong{Complex nominals} (CN): a NOUN token that has at least one child
-#'   with a substantive modifier relation — \code{amod}, \code{nmod},
-#'   \code{nmod:poss}, \code{acl}, \code{acl:relcl}, \code{nummod},
-#'   \code{appos}, \code{compound}, \code{det:nummod}. Bare nouns with only
-#'   \code{det}/\code{case}/\code{punct} dependents are excluded.
+#'   \strong{Complex nominals} (CN): a nominal token (NOUN, PROPN, or PRON --
+#'   Lu's CN1 tregex matches NP nodes, which also head proper nouns and
+#'   pronouns) that has at least one child with a substantive modifier
+#'   relation — \code{amod}, \code{nmod}, \code{nmod:poss}, \code{acl},
+#'   \code{acl:relcl}, \code{nummod}, \code{appos}, \code{compound},
+#'   \code{det:nummod}. Bare nominals with only
+#'   \code{det}/\code{case}/\code{punct} dependents are excluded. Only Lu's
+#'   CN1 is implemented: CN2 (nominal clauses) and CN3 (gerunds/infinitives
+#'   in subject position) are not counted.
 #'
 #'   \strong{Complex verbs} (CV): a VERB token that has at least one
 #'   \code{aux}, \code{aux:pass}, \code{aux:tense}, or \code{aux:caus} child.
@@ -92,9 +101,12 @@
 #'   is \eqn{\sum |\text{pos(head)} - \text{pos(dependent)}|} over every real
 #'   dependency, divided by the total number of real dependencies. Root links
 #'   (\code{head_token_id == 0}, DD defined as 0 by Liu) and PUNCT tokens are
-#'   excluded; the morphological-features column is not used as a filter (Liu's
-#'   formula is not conditioned on morphology). This is the same pooled
-#'   estimator as \code{avg_head_distance} in \code{fnt_heights.R}.
+#'   excluded, and positions are renumbered over non-punctuation tokens so
+#'   the distance counts intervening \emph{words} (Hudson's definition,
+#'   quoted by Liu); the morphological-features column is not used as a
+#'   filter (Liu's formula is not conditioned on morphology). This is the
+#'   same pooled estimator, on the same position scale, as
+#'   \code{avg_head_distance} in \code{fnt_heights.R}.
 #'
 #' @note Earlier versions of this function used a broader dependent-clause
 #'   relation set that also included \code{xcomp}, \code{csubj}, and
@@ -119,9 +131,18 @@
 .cn_child_rels <- c("amod", "nmod", "nmod:poss", "acl", "acl:relcl",
                     "nummod", "appos", "compound", "det:nummod")
 
+# Nominal heads eligible as complex nominals. Lu's (2010) CN1 tregex pattern
+# matches NP nodes, which cover common nouns, proper nouns ("le grand
+# Paris"), and pronoun heads ("celui qui chante"); restricting to NOUN alone
+# undercounts modified PROPN/PRON heads.
+.cn_head_upos <- c("NOUN", "PROPN", "PRON")
+
 # Add is_complex_nominal column to a parsed data.table (modifies in place).
-# A NOUN token qualifies when at least one of its children has a relation in
-# .cn_child_rels. Bare nouns with only det/case/punct dependents are excluded.
+# A nominal token (.cn_head_upos) qualifies when at least one of its children
+# has a relation in .cn_child_rels. Bare nominals with only det/case/punct
+# dependents are excluded. Implements Lu's (2010) CN1 pattern only: CN2
+# (nominal clauses) and CN3 (gerunds/infinitives in subject position) are
+# not counted.
 add_complex_nominal_flag <- function(dt_corpus) {
   dt_child_flags <- dt_corpus[, .(
     has_cn_child = any(dep_rel %in% .cn_child_rels)
@@ -133,7 +154,37 @@ add_complex_nominal_flag <- function(dt_corpus) {
                      by.y = c("doc_id", "paragraph_id", "sentence_id", "head_token_id"),
                      all.x = TRUE)
   dt_corpus[is.na(has_cn_child), has_cn_child := FALSE]
-  dt_corpus[, is_complex_nominal := upos == "NOUN" & has_cn_child]
+  dt_corpus[, is_complex_nominal := upos %in% .cn_head_upos & has_cn_child]
+  return(dt_corpus)
+}
+
+#' Flag tokens that govern an overt subject of their own
+#'
+#' Adds a logical \code{has_own_subj} column: \code{TRUE} for tokens with at
+#' least one child bearing a subject relation (\code{.subj_rels}). Complements
+#' \code{is_predicate}: a \code{conj}-coordinated predicate with its own
+#' subject is clausal coordination (a further T-unit or dependent clause),
+#' one without is phrasal VP coordination (a Lu 2010 coordinate phrase).
+#' Shared with \code{tunit_features()} in \code{fnt_tunits.R}.
+#'
+#' @param dt_corpus A parsed \code{data.table} with \code{doc_id},
+#'   \code{paragraph_id}, \code{sentence_id}, \code{token_id},
+#'   \code{head_token_id}, and \code{dep_rel}.
+#' @returns \code{dt_corpus} with the added \code{has_own_subj} column.
+#' @keywords internal
+add_own_subject_flag <- function(dt_corpus) {
+  dt_subj <- dt_corpus[dep_rel %in% .subj_rels,
+                       .(has_own_subj = TRUE),
+                       by = .(doc_id, paragraph_id, sentence_id, head_token_id)]
+
+  if ("has_own_subj" %in% names(dt_corpus)) dt_corpus[, has_own_subj := NULL]
+  dt_corpus <- merge(
+    dt_corpus, dt_subj,
+    by.x = c("doc_id", "paragraph_id", "sentence_id", "token_id"),
+    by.y = c("doc_id", "paragraph_id", "sentence_id", "head_token_id"),
+    all.x = TRUE
+  )
+  dt_corpus[is.na(has_own_subj), has_own_subj := FALSE]
   return(dt_corpus)
 }
 
@@ -163,8 +214,15 @@ add_predicate_flag <- function(dt_corpus) {
 # UD relations that mark a token as having its own subject (as opposed to a
 # subject shared by ellipsis under coordination, e.g. "danse" in "Marie
 # chante et danse"). Used by count_tunits_in_sent() to decide whether a
-# conj-reachable predicate starts a new T-unit.
-.subj_rels <- c("nsubj", "nsubj:pass", "csubj", "csubj:pass", "expl")
+# conj-reachable predicate starts a new T-unit. Subtypes matter and are
+# matched exactly: the French GSD model emits nsubj:caus (causative
+# subjects, "Marie fait chanter...") and expl:subj (impersonal "il", as in
+# "il faut..."), both overt subjects under Hunt's clause-with-a-subject
+# criterion. expl:pass and expl:comp are clitic markers ("se vendent"),
+# not subjects, and are deliberately excluded; bare "expl" is kept for
+# models that emit the unsubtyped relation.
+.subj_rels <- c("nsubj", "nsubj:pass", "nsubj:caus",
+                "csubj", "csubj:pass", "expl", "expl:subj")
 
 # Count independent clauses (Hunt 1965 T-units) in a single sentence: the
 # root clause plus every predicate reachable from it via a chain of `conj`
@@ -195,7 +253,7 @@ add_predicate_flag <- function(dt_corpus) {
 # to use asyndetic main-clause coordination and few comment clauses.
 count_tunits_in_sent <- function(token_ids, head_token_ids, dep_rels, is_pred,
                                  count_parataxis = FALSE) {
-  root_tok <- token_ids[dep_rels == "root"]
+  root_tok <- token_ids[which(dep_rels == "root")]
   if (length(root_tok) == 0L) return(1L)
   root_tok <- root_tok[[1L]]
 
@@ -230,20 +288,40 @@ extra_syntactic_features <- function(dt,
                                      count_parataxis = FALSE) {
   dt_corpus <- setDT(copy(dt))
 
+  sent_keys <- c("doc_id", "paragraph_id", "sentence_id")
+
   # --- Dependency distance (Liu 2008, Formula 2: pooled sample MDD) ---------
-  # DD is the absolute linear gap between a token and its governor. Liu defines
-  # the root (head_token_id == 0) as DD = 0 and excludes it from the sum (his
-  # denominator is n - s, real dependencies only); punctuation is not a
-  # syntactic dependency and is likewise excluded. The morphological-features
+  # DD is the linear gap between a token and its governor, "measured in terms
+  # of intervening words" (Hudson 1995, quoted by Liu 2008, fn. 3): positions
+  # are renumbered over non-PUNCT tokens so intervening punctuation does not
+  # inflate the distance -- the same dep_pos scale as head_final_initial_doc()
+  # in fnt_heights.R, whose avg_head_distance this estimator matches (Lei &
+  # Jockers 2020 likewise exclude punct relations). Liu defines the root
+  # (head_token_id == 0) as DD = 0 and excludes it from the sum (his
+  # denominator is n - s, real dependencies only). The morphological-features
   # column plays no part in Liu's formula, so dependents are NOT filtered on
   # `feats` here (an earlier version did, dropping valid feats == NA tokens and
   # — for root tokens with non-NA feats — counting a spurious |token_id - 0|
   # distance to the pseudo-root). Document-level MDD is then computed as a
-  # pooled ratio of sums (sum|DD| / sum(real deps)), matching avg_head_distance
-  # in fnt_heights.R rather than averaging per-sentence means.
-  dt_corpus[head_token_id != "0" & !upos %in% c("PUNCT"),
-            dep_dist := abs(as.numeric(token_id) - as.numeric(head_token_id)),
-            by = c("doc_id", "paragraph_id", "sentence_id")]
+  # pooled ratio of sums (sum|DD| / sum(real deps)), not an average of
+  # per-sentence means. Multi-word-token range rows ("30-31") convert to NA
+  # and drop out, as in fnt_heights.R.
+  dt_corpus[, `:=`(
+    token_id_num = suppressWarnings(as.integer(token_id)),
+    head_token_id_num = suppressWarnings(as.integer(head_token_id))
+  )]
+  dt_corpus[!is.na(token_id_num) & upos != "PUNCT",
+            dep_pos := frank(token_id_num, ties.method = "first"),
+            by = sent_keys]
+  pos_lookup <- dt_corpus[!is.na(dep_pos),
+                          .(doc_id, paragraph_id, sentence_id,
+                            token_id_num, dep_pos)]
+  dt_corpus[pos_lookup,
+            on = .(doc_id, paragraph_id, sentence_id,
+                   head_token_id_num = token_id_num),
+            head_pos := i.dep_pos]
+  dt_corpus[head_token_id_num > 0L & !is.na(dep_pos),
+            dep_dist := abs(head_pos - dep_pos)]
 
   # --- Dependent count per token (mean out-degree) -------------------------
   # Out-degree counts only countable children (compte == TRUE) so excluded
@@ -276,27 +354,29 @@ extra_syntactic_features <- function(dt,
 
   dt_corpus[, is_dependent_clause := dep_rel %in% dc_rels]
 
-  sent_keys <- c("doc_id", "paragraph_id", "sentence_id")
   dt_sent_tu <- dt_corpus[, .(
     n_tunits = count_tunits_in_sent(token_id, head_token_id, dep_rel, is_predicate,
                                     count_parataxis = count_parataxis)
   ), by = sent_keys]
 
-  # --- Words before the main verb (Vajjala & Meurers 2012, adapted) ---------
-  # Pre-verbal working-memory load: count the countable tokens whose surface
-  # position precedes the sentence root (the main predicate). Copular être
-  # sentences are reparsed upstream (reparse_copulas) so the copula heads the
-  # clause and the root is the verb, matching Vajjala & Meurers' main-clause
-  # main-verb anchor. Sentences with no root contribute NA and are dropped from
-  # the document mean. Only compte == TRUE tokens are counted, consistent with
-  # the other counts in this function (punctuation does not inflate the load).
+  # --- Words before the main verb (Coh-Metrix SYNLE, adapted) ---------------
+  # Left embeddedness / pre-verbal working-memory load: count the countable
+  # tokens whose surface position precedes the sentence root (the main
+  # predicate). Coh-Metrix anchors on the main verb of the main clause in a
+  # constituency parse (Graesser, McNamara & Kulikowich 2011); here the UD
+  # sentence root approximates that anchor. Copular être sentences are
+  # reparsed upstream (reparse_copulas) so the copula heads the clause and
+  # the root is the verb. Sentences with no root contribute NA and are
+  # dropped from the document mean. Only compte == TRUE tokens are counted,
+  # consistent with the other counts in this function (punctuation does not
+  # inflate the load).
   dt_sent_bv <- dt_corpus[, {
-    root_pos <- as.numeric(token_id[dep_rel == "root"])
-    if (length(root_pos) == 0L) {
+    root_pos <- token_id_num[which(dep_rel == "root")]
+    if (length(root_pos) == 0L || is.na(root_pos[[1L]])) {
       .(n_before_root = NA_integer_)
     } else {
       .(n_before_root = sum(compte == TRUE &
-                              as.numeric(token_id) < root_pos[[1L]], na.rm = TRUE))
+                              token_id_num < root_pos[[1L]], na.rm = TRUE))
     }
   }, by = sent_keys]
 
@@ -320,6 +400,17 @@ extra_syntactic_features <- function(dt,
   dt_corpus[is.na(has_cv_child), has_cv_child := FALSE]
   dt_corpus[, is_complex_verb := upos == "VERB" & has_cv_child]
 
+  # Pooled DD bookkeeping is computed WITHOUT the compte filter: compte marks
+  # MWT range rows ("du" -> "3-4") as countable and their component rows
+  # ("de", "le") as not, the inverse of what dep_dist needs. dep_dist itself
+  # already excludes range rows (NA token_id_num, see above) and PUNCT, so
+  # this sums exactly the real, non-punctuation dependencies — matching
+  # fnt_heights.R's avg_head_distance, which never filters on compte.
+  dt_sent_dd <- dt_corpus[, .(
+    dep_dist_sum = sum(dep_dist, na.rm = TRUE),
+    n_dep        = sum(!is.na(dep_dist))
+  ), by = sent_keys]
+
   sum_extra_syn_features <- dt_corpus |>
     filter(compte == TRUE) |>
     group_by(doc_id, paragraph_id, sentence_id) |>
@@ -328,11 +419,6 @@ extra_syntactic_features <- function(dt,
       n_tokens          = n(),
       n_complex_nominal = sum(is_complex_nominal,  na.rm = TRUE),
       n_complex_verb    = sum(is_complex_verb,     na.rm = TRUE),
-      # Pooled DD bookkeeping: keep the sentence's DD sum and its count of real
-      # (non-root, non-PUNCT) dependencies so the document MDD can be formed as
-      # sum|DD| / sum(deps) — Liu's Formula (2), not a mean of sentence MDDs.
-      dep_dist_sum      = sum(dep_dist, na.rm = TRUE),
-      n_dep             = sum(!is.na(dep_dist)),
       # Pooled out-degree bookkeeping: total out-degree and the number of
       # countable tokens, so the document mean pools per token (sum / count)
       # rather than averaging per-sentence means (which equal-weights short and
@@ -340,6 +426,7 @@ extra_syntactic_features <- function(dt,
       dep_count_sum     = sum(dep_count, na.rm = TRUE),
       .groups = "drop"
     ) |>
+    left_join(dt_sent_dd, by = sent_keys) |>
     left_join(dt_sent_tu, by = sent_keys) |>
     left_join(dt_sent_bv, by = sent_keys) |>
     mutate(n_clause = n_tunits + n_dc) |>
@@ -359,8 +446,8 @@ extra_syntactic_features <- function(dt,
       # / total countable tokens (matches the ratio-of-sums style used for the
       # Lu measures), not a mean of per-sentence means.
       avg_dep_count         = sum(dep_count_sum) / sum(n_tokens),
-      # Vajjala & Meurers (2012): mean tokens before the main verb (root),
-      # averaged over sentences that have a root.
+      # Coh-Metrix SYNLE (Graesser et al. 2011): mean tokens before the main
+      # verb (root), averaged over sentences that have a root.
       avg_words_before_root = mean(n_before_root, na.rm = TRUE),
       clausal_density       = sum(n_clause,  na.rm = TRUE) / n(),
       # Lu (2010) DC/C and CN/C are sample-level ratios of sums (total

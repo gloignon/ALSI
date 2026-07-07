@@ -65,19 +65,28 @@
 #'       (e.g. copulas, modal heads) — divided by total T-units. Auxiliary
 #'       chains attached via those four relations are folded into their
 #'       governing verb's count, matching Lu's VP1 pattern (a periphrastic
-#'       form like "has been running" is one VP, not three).}
-#'     \item{cp_t}{Coordinate phrases per T-unit (Lu 2010 CP/T). \code{conj}
-#'       arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination,
-#'       not clausal). Lu's CP also covers coordinated VPs; ALSI routes
-#'       verbal \code{conj} coordination into \code{t_s}/\code{prop_coord_sent}
-#'       (additional T-units) instead, so this is a UD adaptation rather than
-#'       a literal CP/T.}
+#'       form like "has been running" is one VP, not three). A shared-subject
+#'       \code{conj} predicate ("Marie chante et danse") also folds in: it
+#'       extends a coordinated VP (one VP plus one CP under Lu's patterns)
+#'       rather than starting a new one. Non-finite \code{acl} participles
+#'       are counted here although Lu's "VP > S" pattern would skip reduced
+#'       participial modifiers.}
+#'     \item{cp_t}{Coordinate phrases per T-unit (Lu 2010 CP/T, tregex
+#'       \code{ADJP|ADVP|NP|VP < CC}). Counted once per coordinated head
+#'       token (the phrase), not once per \code{conj} arc — "A, B et C" is
+#'       one coordinate phrase. Eligible head upos: NOUN, PROPN, PRON, NUM
+#'       (Lu's NP), ADJ (ADJP), ADV (ADVP), VERB, AUX (VP). Conjuncts that
+#'       are predicates with their own subject are clausal coordination and
+#'       are excluded (they surface in \code{t_s}/\code{prop_coord_sent}
+#'       instead when anchored at the root).}
 #'     \item{cp_c}{Coordinate phrases per clause (Lu 2010 CP/C). Same CP
-#'       definition and UD-adaptation caveat as \code{cp_t}; denominator is
-#'       total clauses.}
-#'     \item{cn_t}{Complex nominals per T-unit (Lu 2010 CN/T). NOUN tokens
-#'       with at least one substantive modifier child. Uses the same relation
-#'       set as \code{add_complex_nominal_flag()} in \code{fnt_syntactic_complexity.R}.}
+#'       definition as \code{cp_t}; denominator is total clauses.}
+#'     \item{cn_t}{Complex nominals per T-unit (Lu 2010 CN/T). Nominal tokens
+#'       (NOUN, PROPN, PRON) with at least one substantive modifier child.
+#'       Uses the same relation set as \code{add_complex_nominal_flag()} in
+#'       \code{fnt_syntactic_complexity.R}. Implements Lu's CN1 only: CN2
+#'       (nominal clauses) and CN3 (gerunds/infinitives in subject position)
+#'       are not counted.}
 #'     \item{cn_c}{Complex nominals per clause (Lu 2010 CN/C). Same CN
 #'       definition; denominator is total clauses.}
 #'     \item{prop_coord_sent}{Proportion of sentences containing more than one
@@ -158,9 +167,24 @@ tunit_features <- function(dt, count_parataxis = FALSE) {
   # xcomp is non-finite in UD and excluded per Lu (2010).
   dc_rels <- c("ccomp", "advcl", "acl", "acl:relcl")
 
-  # Coordinate phrase heads: conj arcs whose head UPOS is nominal/adjectival
-  # (phrasal coordination within a T-unit, not clausal T-unit boundaries).
-  cp_head_upos <- c("NOUN", "PROPN", "ADJ", "ADV")
+  # Clausal conjuncts: conj-coordinated predicates carrying their own overt
+  # subject. These are clausal, not phrasal, coordination — in Lu's
+  # constituency terms an S-level conjunct, not an "ADJP|ADVP|NP|VP < CC"
+  # coordinate phrase — so they are excluded from both the VP fold rule and
+  # the CP count below. (When the conj chain anchors at the sentence root
+  # they surface as additional T-units via count_tunits_in_sent().)
+  dt_corpus <- add_own_subject_flag(dt_corpus)
+  dt_corpus[, base_rel := sub(":.*$", "", dep_rel)]
+  dt_corpus[, is_clausal_conjunct := base_rel == "conj" &
+              is_predicate & has_own_subj]
+
+  # Coordinate phrase heads (Lu 2010 CP, tregex "ADJP|ADVP|NP|VP < CC"),
+  # mapping Lu's phrase labels onto UD upos of the coordination head:
+  # NP -> NOUN/PROPN/PRON/NUM, ADJP -> ADJ, ADVP -> ADV, VP -> VERB/AUX.
+  # Shared-subject verbal coordination ("Marie chante et danse") is a
+  # coordinated VP inside one clause and therefore a CP.
+  cp_head_upos <- c("NOUN", "PROPN", "PRON", "NUM",
+                    "ADJ", "ADV", "VERB", "AUX")
 
   # Verb phrases (Lu VP1: "a VP directly dominated by a clause node"). In a
   # constituency tree, periphrastic forms ("has been running") nest VPs inside
@@ -173,14 +197,25 @@ tunit_features <- function(dt, count_parataxis = FALSE) {
   # (passives), and aux:caus (causatives). Restricting to c("aux", "aux:pass")
   # would silently miss aux:tense/aux:caus and inflate vp_t for the bulk of
   # French periphrastic tenses.
+  # A shared-subject conj predicate likewise folds into the coordinated VP it
+  # extends: "chante et danse" is (VP (VP chante) et (VP danse)) — one VP
+  # under Lu's "VP > S" pattern (plus one CP), not two VPs.
   aux_dep_rels <- c("aux", "aux:pass", "aux:tense", "aux:caus")
 
-  dt_sent_vocab <- dt_corpus[compte == TRUE, .(
-    n_vp = sum(upos == "VERB" | (upos == "AUX" & !dep_rel %in% aux_dep_rels)),
-    n_dc = sum(dep_rel %in% dc_rels),
-    n_cp = sum(dep_rel == "conj" & upos[match(head_token_id, token_id)] %in% cp_head_upos,
-               na.rm = TRUE)
-  ), by = sent_keys]
+  dt_sent_vocab <- dt_corpus[compte == TRUE, {
+    head_upos <- upos[match(head_token_id, token_id)]
+    # CP: one per coordinated head (phrase), not one per conj arc —
+    # "A, B et C" is a single coordinate NP under Lu's node counting.
+    cp_dep <- base_rel == "conj" & !is_clausal_conjunct &
+      !is.na(head_upos) & head_upos %in% cp_head_upos
+    .(
+      n_vp = sum((upos %in% "VERB" |
+                    (upos %in% "AUX" & !dep_rel %in% aux_dep_rels)) &
+                   !(base_rel == "conj" & is_predicate & !has_own_subj)),
+      n_dc = sum(dep_rel %in% dc_rels),
+      n_cp = uniqueN(head_token_id[cp_dep])
+    )
+  }, by = sent_keys]
 
   # Complex nominals: delegate to the shared helper in fnt_syntactic_complexity.R
   dt_corpus <- add_complex_nominal_flag(dt_corpus)
