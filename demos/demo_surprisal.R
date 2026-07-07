@@ -55,6 +55,103 @@ source("R/fnt_corpus.R",    encoding = "UTF-8")
 source("R/fnt_utility.R",   encoding = "UTF-8")
 
 
+
+# 0) Basic functionality on a single demo sentence ----
+#
+# Before running the full corpus, we illustrate the three core measures on one
+# hand-picked sentence so you can see exactly what each function returns: one
+# row per word, with a surprisal and an entropy value.
+#
+# We use `llm_surprisal_entropy_raw()`, which takes a data.table of *raw*
+# sentences (columns doc_id, sentence_id, sentence) and lets the model's own
+# tokenizer decide word boundaries. This is the recommended entry point for
+# scoring natural text (see the discussion in section 3).
+
+demo_sentence <- data.table::data.table(
+  doc_id      = "demo",
+  sentence_id = 1L,
+  sentence    = "La petite chatte grise dort dans le panier d'osier."
+)
+
+# --- (a) MLM surprisal + entropy -------------------------------------------
+#
+# A masked language model (CamemBERT) uses BOTH left and right context to
+# predict each word. Surprisal is high for words the model finds unexpected;
+# entropy is high where many continuations were plausible.
+
+message("\n0a) MLM surprisal + entropy (CamemBERT, both-side context)")
+demo_mlm <- llm_surprisal_entropy_raw(
+  demo_sentence,
+  model_name = "almanach/moderncamembert-base",
+  mode       = "mlm"
+)
+print(as_tibble(demo_mlm) |>
+        select(token, llm_surprisal, llm_entropy, llm_subword_n))
+
+# --- (b) AR surprisal + entropy --------------------------------------------
+#
+# An autoregressive model (GPT-style) predicts each word from LEFT context
+# only — left to right, as in reading. This is the classic psycholinguistic
+# notion of surprisal. Note: with no `context`, the first word has no left
+# context and its surprisal is reported as NA (see the roxygen note).
+#
+# We use PAGnol-small, a small French GPT-style model, so the demo stays
+# lightweight. This model's tokenizer needs `add_prefix_space = TRUE` to align
+# word boundaries correctly.
+
+message("\n0b) AR surprisal + entropy (PAGnol-small, left-context only)")
+demo_ar <- llm_surprisal_entropy_raw(
+  demo_sentence,
+  model_name       = "lightonai/pagnol-small",
+  mode             = "ar",
+  add_prefix_space = TRUE
+)
+print(as_tibble(demo_ar) |>
+        select(token, llm_surprisal, llm_entropy, llm_subword_n))
+
+# --- (c) The entropy modes -------------------------------------------------
+#
+# When a word is split into several sub-word tokens, its single `llm_entropy`
+# value has to be derived from the per-subword entropies. The `entropy`
+# argument controls which per-word entropy is reported:
+#   "onset"     — entropy at the word's FIRST subtoken (DEFAULT; uncertainty
+#                 *before* committing to the word — the approximation used by
+#                 several recent papers)
+#   "mean"      — average over the word's subwords
+#   "sum"       — total over the word's subwords
+#   "offset"    — entropy at the word's LAST subtoken (uncertainty about what
+#                 comes *after* the word — used in the corpus analysis below)
+#   "none"      — skip entropy entirely; `llm_entropy` is NA and the entropy
+#                 computation is not run (use when you only need surprisal)
+#
+# Surprisal is unaffected by `entropy`; only the entropy column changes.
+# We reprocess the same sentence under each mode and join the entropy columns
+# side by side so the effect is easy to see. ("none" is left out here since it
+# would just yield an all-NA column.)
+
+message("\n0c) Same sentence, four entropy modes (MLM)")
+entropy_modes <- c("onset", "mean", "sum", "offset")
+
+demo_entropy <- entropy_modes |>
+  purrr::map(function(mode_i) {
+    llm_surprisal_entropy_raw(
+      demo_sentence,
+      model_name = "almanach/moderncamembert-base",
+      mode       = "mlm",
+      entropy    = mode_i
+    ) |>
+      as_tibble() |>
+      transmute(token_id, token, "entropy_{mode_i}" := llm_entropy, llm_subword_n)
+  }) |>
+  purrr::reduce(dplyr::left_join,
+                by = c("token_id", "token", "llm_subword_n"))
+
+# llm_subword_n is identical across modes (it depends on tokenization, not on
+# the entropy mode), so we keep a single copy and show it as the last column.
+print(demo_entropy |> select(-token_id, -llm_subword_n, llm_subword_n))
+
+# DEMO ON THE ALECTOR CORPUS -----
+
 # 1) Download ALECTOR (if not already present) ----
 #
 # ALECTOR contains 79 paired texts: each pair has an original (source)
@@ -127,26 +224,27 @@ message("ALECTOR parsed: ", nrow(dt_alector), " tokens, ",
 
 
 # 3) Compute MLM surprisal on ALECTOR ----
-#
-# llm_surprisal_entropy() returns a token-level data.table with columns:
-#   llm_surprisal — -log2 probability of this token given its context
-#   llm_entropy   — model uncertainty about what token could come next
-#
-# CamemBERT (ModernCamemBERT variant) is a French BERT-style model trained
-# on French web text. Mode = "mlm" uses both left and right context (masked).
 
-cache_al_mlm <- "out/demo_surprisal_al_mlm.Rds"
+dt_alector_sentences <- dt_alector |>
+  as_tibble() |>
+  distinct(doc_id, sentence_id, sentence) |>
+  filter(!is.na(sentence), nzchar(sentence)) |>
+  as.data.table()
+
+cache_al_mlm <- "out/demo_surprisal_al_mlm_onset.Rds"
 
 if (file.exists(cache_al_mlm)) {
   message("Loading cached ALECTOR MLM surprisal scores")
   dt_alector_mlm <- readRDS(cache_al_mlm)
 } else {
-  message("Computing MLM surprisal (may take several minutes)...")
-  dt_alector_mlm <- llm_surprisal_entropy(
-    dt_alector,
+  message("Computing MLM surprisal on raw sentences (may take several minutes)...")
+  dt_alector_mlm <- llm_surprisal_entropy_raw(
+    dt_alector_sentences,
     model_name = "almanach/moderncamembert-base",
     mode       = "mlm",
-    batch_size = 8  # reduce to 1 if you get memory errors
+    entropy    = "onset",  # onset entropy: uncertainty before the word (the
+                           # default; approximation used by several recent papers)
+    batch_size = 10  # reduce to 1 if you get memory errors
   )
   saveRDS(dt_alector_mlm, cache_al_mlm)
   message("Saved to ", cache_al_mlm)
@@ -195,28 +293,33 @@ df_docs |>
 
 # 6) Summary statistics table ----
 #
-# Paired Cohen's d uses within-pair differences (source − target) to
-# remove between-topic variance — a more sensitive test when observations
-# are paired by topic.
+# Paired Cohen's d (pooled SD) and a paired Wilcoxon p-value come straight
+# from the compare_groups() utility, so the demo does not re-implement effect
+# sizes. NOTE: compare_groups() uses effsize::cohen.d(paired = TRUE), i.e. the
+# pooled-SD Cohen's d — NOT mean(diff)/sd(diff), which is d_z and inflates the
+# estimate for positively correlated pairs.
 #
-# Spearman r: how consistently one group outranks the other across pairs.
-# Cohen's kappa: agreement between binary classifications (above/below median).
+# Spearman r (how consistently one group outranks the other across pairs) is
+# demo-specific and computed here.
 
-cohens_d_paired <- function(x, y) {
-  d <- x - y
-  return(mean(d) / sd(d))
-}
+# Effect size (paired Cohen's d) + paired Wilcoxon p, one row per metric.
+df_effects <- compare_groups(
+  df           = df_docs,
+  grp_col      = "source",
+  grp_a        = "source",
+  grp_b        = "target",
+  feat_cols    = c("llm_surprisal", "llm_entropy"),
+  corpus_label = "ALECTOR",
+  paired       = TRUE,
+  pair_col     = "pair_id"
+) |>
+  transmute(
+    metric   = recode(feature, llm_surprisal = "Surprisal", llm_entropy = "Entropy"),
+    cohens_d = round(d, 2),
+    p        = if_else(p < 0.001, "< .001", sprintf("%.3f", p))
+  )
 
-cohens_kappa <- function(x, y) {
-  # Median-split both vectors, compute agreement on the 2×2 table.
-  med <- median(c(x, y))
-  tab <- table(x > med, y > med)
-  p_o <- sum(diag(tab)) / sum(tab)
-  p_e <- sum(rowSums(tab) * colSums(tab)) / sum(tab)^2
-  return((p_o - p_e) / (1 - p_e))
-}
-
-# Pivot to wide format so each row is one pair: columns source and target.
+# Wide-by-pair for the descriptive means and Spearman r.
 df_paired <- df_docs |>
   pivot_longer(
     cols = c(llm_surprisal, llm_entropy),
@@ -231,14 +334,11 @@ df_summary <- df_paired |>
   summarise(
     mean_source = round(mean(source, na.rm = TRUE), 2),
     mean_target = round(mean(target, na.rm = TRUE), 2),
-    cohens_d    = round(cohens_d_paired(source, target), 2),
     spearman_r  = round(cor(source, target, method = "spearman"), 2),
-    kappa       = round(cohens_kappa(source, target), 2),
-    p_value     = t.test(source, target, paired = TRUE)$p.value,
     n_pairs     = n(),
     .groups = "drop"
   ) |>
-  mutate(p = if_else(p_value < 0.001, "< .001", sprintf("%.3f", p_value)))
+  left_join(df_effects, by = "metric")
 
 message("\n=== ALECTOR: Source vs Target (paired, CamemBERT MLM) ===\n")
-print(df_summary |> select(metric, mean_source, mean_target, cohens_d, spearman_r, kappa, p, n_pairs))
+print(df_summary |> select(metric, mean_source, mean_target, cohens_d, spearman_r, p, n_pairs))
