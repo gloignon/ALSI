@@ -1,4 +1,23 @@
 
+# Valid per-word entropy modes; kept in sync with `_ENTROPY_MODES` in
+# py/llm_scoring.py. "none" skips entropy entirely.
+.ENTROPY_MODES <- c("onset", "mean", "sum", "offset", "none")
+
+# Normalise the `entropy` argument: NULL means "unspecified" and falls back to
+# the default ("onset"); any other value must be one of .ENTROPY_MODES, else we
+# stop rather than silently substituting a mode the caller did not ask for.
+.normalize_entropy <- function(entropy) {
+  if (is.null(entropy)) {
+    return("onset")
+  }
+  if (length(entropy) != 1L || !is.character(entropy) ||
+      !(entropy %in% .ENTROPY_MODES)) {
+    stop("`entropy` must be NULL or one of: ",
+         paste(.ENTROPY_MODES, collapse = ", "), call. = FALSE)
+  }
+  return(entropy)
+}
+
 #' Load a language model for token-level scoring
 #'
 #' Initialises a masked or autoregressive language model via the Python
@@ -45,7 +64,9 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
 #' returns per-token surprisal, entropy, and sub-word token count.
 #'
 #' @param dt_corpus A \code{data.table} with \code{doc_id},
-#'   \code{sentence_id}, and \code{token}.
+#'   \code{sentence_id}, and \code{token}, plus one of \code{term_id},
+#'   \code{vrai_token_id}, or \code{token_id} (preferred in that order) to
+#'   establish token order within each sentence.
 #' @param model_name HuggingFace model identifier.
 #' @param mode Either \code{"mlm"} or \code{"ar"}.
 #' @param context Optional context string prepended to each sentence.
@@ -57,11 +78,23 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
 #' @param pll_mode Character; PLL scoring mode for MLM models. Either
 #'   \code{"original"} (Salazar et al. 2020) or \code{"within_word_l2r"}
 #'   (Kauf & Ivanova 2023). Ignored for AR models.
-#' @param entropy_agg Character; how a multi-subword word's
-#'   \code{llm_entropy} is derived from its subword entropies. One of
-#'   \code{"mean"} (default, mean across subwords), \code{"sum"} (sum across
-#'   subwords), \code{"onset"} (entropy of the word's first subtoken), or
-#'   \code{"successor"} (entropy of the word's last subtoken).
+#' @param entropy Character; which per-word entropy to report, i.e. how a
+#'   multi-subword word's \code{llm_entropy} is derived from its subword
+#'   entropies. One of \code{"onset"} (default, entropy of the word's first
+#'   subtoken, the approximation used by several recent papers), \code{"mean"}
+#'   (mean across subwords), \code{"sum"} (sum across subwords),
+#'   \code{"offset"} (entropy of the word's last subtoken), or \code{"none"}
+#'   (skip entropy entirely; \code{llm_entropy} is \code{NA} and the entropy
+#'   computation is not run). Passing \code{NULL} uses the default.
+#' @param drop_mwt_parts Logical (default \code{TRUE}); drop the expanded
+#'   parts of multi-word tokens (MWTs) before scoring. udpipe /
+#'   \code{post_process_lexicon} emit both the surface contraction ("des",
+#'   \code{token_id} "5-6") and its syntactic parts ("de", "le",
+#'   \code{token_id} "5", "6"). The LLM reads surface text, so keeping all
+#'   three would score every contraction three times. When \code{TRUE} the
+#'   surface range row is kept and its parts removed; the parts never appear
+#'   in surface text. Set \code{FALSE} only if \code{dt_corpus} contains no
+#'   MWT range rows (already flattened upstream).
 #' @returns The input \code{data.table} augmented with \code{llm_surprisal},
 #'   \code{llm_entropy}, and \code{llm_subword_n} columns.
 llm_surprisal_entropy <- function(dt_corpus,
@@ -74,7 +107,8 @@ llm_surprisal_entropy <- function(dt_corpus,
                                   trust_remote_code = TRUE,
                                   add_prefix_space = NULL,
                                   pll_mode = "original",
-                                  entropy_agg = "mean") {
+                                  entropy = NULL,
+                                  drop_mwt_parts = TRUE) {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -83,21 +117,69 @@ llm_surprisal_entropy <- function(dt_corpus,
       !("token" %in% names(dt_corpus))) {
     stop("dt_corpus must contain columns: doc_id, sentence_id, token")
   }
+  entropy <- .normalize_entropy(entropy)
 
   dt <- data.table::as.data.table(data.table::copy(dt_corpus))
 
-  # Choose a stable ordering within sentence
-  if ("token_id" %in% names(dt)) {
-    order_col <- "token_id"
+  # Choose a stable ordering within sentence. Prefer the integer row
+  # counters: token_id is character in udpipe output, and sorting it
+  # lexicographically scrambles sentences with 10+ tokens ("10" < "2").
+  if ("term_id" %in% names(dt)) {
+    order_col <- "term_id"
   } else if ("vrai_token_id" %in% names(dt)) {
     order_col <- "vrai_token_id"
-  } else if ("term_id" %in% names(dt)) {
-    order_col <- "term_id"
+  } else if ("token_id" %in% names(dt)) {
+    order_col <- "token_id"
+    if (is.character(dt$token_id)) {
+      # Numeric prefix ("30-31" -> 30); the sort is stable, so MWT range
+      # rows stay ahead of their parts.
+      dt[, .token_order := suppressWarnings(
+        as.integer(sub("-.*$", "", token_id)))]
+      order_col <- ".token_order"
+    }
   } else {
-    stop("No token order column found. Expected token_id, vrai_token_id, or term_id.")
+    stop("No token order column found. Expected term_id, vrai_token_id, or token_id.")
   }
 
   data.table::setorderv(dt, c("doc_id", "sentence_id", order_col))
+  if (order_col == ".token_order") {
+    dt[, .token_order := NULL]
+  }
+
+  # Multi-word-token (MWT) de-duplication. udpipe/post_process_lexicon keeps
+  # BOTH the surface range row ("des", token_id "5-6") AND its expanded parts
+  # ("de" token_id "5", "le" token_id "6"). The LLM sees surface text, so
+  # scoring all three triples-counts every contraction. Keep the range row
+  # (the surface form the model reads) and drop its parts. Parts are the rows
+  # whose integer token_id falls inside a hyphenated range in the same
+  # sentence.
+  if (isTRUE(drop_mwt_parts) && "token_id" %in% names(dt) &&
+      any(grepl("-", as.character(dt$token_id)))) {
+    dt[, .tid_chr := as.character(token_id)]
+    dt[, .is_range := grepl("-", .tid_chr)]
+    dt[, .tid_int := suppressWarnings(as.integer(.tid_chr))]
+    dt[, .rng_lo := suppressWarnings(as.integer(sub("-.*$", "", .tid_chr)))]
+    dt[, .rng_hi := suppressWarnings(as.integer(sub("^.*-", "", .tid_chr)))]
+    dt[, .drop_part := FALSE]
+    # For each sentence, flag non-range rows whose token_id is covered by a
+    # range row.
+    dt[, .drop_part := {
+      lo <- .rng_lo[.is_range]
+      hi <- .rng_hi[.is_range]
+      covered <- rep(FALSE, .N)
+      if (length(lo)) {
+        for (r in seq_along(lo)) {
+          covered <- covered | (!.is_range & !is.na(.tid_int) &
+                                  .tid_int >= lo[r] & .tid_int <= hi[r])
+        }
+      }
+      covered
+    }, by = .(doc_id, sentence_id)]
+    dt <- dt[.drop_part == FALSE]
+    dt[, c(".tid_chr", ".is_range", ".tid_int",
+           ".rng_lo", ".rng_hi", ".drop_part") := NULL]
+  }
+
   dt[, token_index := seq_len(.N), by = .(doc_id, sentence_id)]
 
   # In AR mode without context, the first word of each sentence is scored
@@ -159,14 +241,14 @@ llm_surprisal_entropy <- function(dt_corpus,
           batch_size = batch_size,
           context_text = context,
           pll_mode = pll_mode,
-          entropy_agg = entropy_agg
+          entropy = entropy
         )
       } else if (mode == "ar") {
         score_autoregressive_tokens(
           tokens = sent_tokens,
           temperature = temperature,
           context_text = context,
-          entropy_agg = entropy_agg
+          entropy = entropy
         )
       } else {
         stop("mode must be one of: 'mlm', 'ar'")
@@ -243,8 +325,8 @@ llm_surprisal_entropy <- function(dt_corpus,
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
 #' @param pll_mode Character; PLL scoring mode. See \code{llm_surprisal_entropy}.
-#' @param entropy_agg Character; entropy aggregation mode. See
-#'   \code{llm_surprisal_entropy}.
+#' @param entropy Character; which per-word entropy to report (or
+#'   \code{"none"} to skip it). See \code{llm_surprisal_entropy}.
 #' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
 #'   \code{sentence}, \code{llm_surprisal}, and \code{llm_entropy}
 #'   (sentence-level means).
@@ -258,7 +340,7 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
                                             trust_remote_code = TRUE,
                                             add_prefix_space = NULL,
                                             pll_mode = "original",
-                                            entropy_agg = "mean") {
+                                            entropy = NULL) {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -267,6 +349,7 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
   if (length(missing)) {
     stop(sprintf("dt_sentences must contain columns: %s", paste(required, collapse = ", ")))
   }
+  entropy <- .normalize_entropy(entropy)
 
   dt <- data.table::as.data.table(data.table::copy(dt_sentences))
   dt_tok <- dt[, .(token = unlist(strsplit(sentence, "\\s+")),
@@ -284,7 +367,7 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
     trust_remote_code = trust_remote_code,
     add_prefix_space = add_prefix_space,
     pll_mode = pll_mode,
-    entropy_agg = entropy_agg
+    entropy = entropy
   )
 
   dt_result <- dt_scored[, .(
@@ -323,8 +406,8 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
 #' @param pll_mode Character; PLL scoring mode. See \code{llm_surprisal_entropy}.
-#' @param entropy_agg Character; entropy aggregation mode. See
-#'   \code{llm_surprisal_entropy}.
+#' @param entropy Character; which per-word entropy to report (or
+#'   \code{"none"} to skip it). See \code{llm_surprisal_entropy}.
 #' @returns A \code{data.table} with \code{doc_id}, \code{sentence_id},
 #'   \code{token_id} (word index within the sentence), \code{token} (the
 #'   word as the tokenizer sees it), \code{llm_surprisal},
@@ -339,7 +422,7 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
                                       trust_remote_code = TRUE,
                                       add_prefix_space = NULL,
                                       pll_mode = "original",
-                                      entropy_agg = "mean") {
+                                      entropy = NULL) {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -348,6 +431,7 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
   if (length(missing)) {
     stop(sprintf("dt_sentences must contain columns: %s", paste(required, collapse = ", ")))
   }
+  entropy <- .normalize_entropy(entropy)
 
   dt <- data.table::as.data.table(data.table::copy(dt_sentences))
   data.table::setorderv(dt, c("doc_id", "sentence_id"))
@@ -395,7 +479,7 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
           context_text        = context,
           is_split_into_words = FALSE,
           pll_mode            = pll_mode,
-          entropy_agg         = entropy_agg
+          entropy         = entropy
         )
       } else if (mode == "ar") {
         score_autoregressive_tokens(
@@ -403,7 +487,7 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
           temperature         = temperature,
           context_text        = context,
           is_split_into_words = FALSE,
-          entropy_agg         = entropy_agg
+          entropy         = entropy
         )
       } else {
         stop("mode must be one of: 'mlm', 'ar'")

@@ -8,12 +8,15 @@ from transformers import AutoTokenizer, AutoModelForMaskedLM, AutoModelForCausal
 
 LN2 = math.log(2.0)
 
-_tokenizer = None
-_model = None
-_device = None
-_mode = None
-_model_name = None
-_add_prefix_space = None
+# Module-level model cache. reticulate::source_python() re-executes this
+# file on every call from the R API; globals().get() keeps an already-loaded
+# model instead of resetting the cache to None.
+_tokenizer = globals().get("_tokenizer")
+_model = globals().get("_model")
+_device = globals().get("_device")
+_mode = globals().get("_mode")
+_model_name = globals().get("_model_name")
+_add_prefix_space = globals().get("_add_prefix_space")
 
 
 def _best_device():
@@ -68,7 +71,9 @@ def load_llm_model(
 
     if force_fast:
         from transformers import PreTrainedTokenizerFast
-        _tokenizer = PreTrainedTokenizerFast.from_pretrained(model_name)
+        _tokenizer = PreTrainedTokenizerFast.from_pretrained(
+            model_name, add_prefix_space=add_prefix_space
+        )
     else:
         try:
             _tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
@@ -82,7 +87,9 @@ def load_llm_model(
             _probe_ids = _tokenizer("Cette", add_special_tokens=False)["input_ids"]
             if len(_probe_ids) > 3:
                 from transformers import PreTrainedTokenizerFast
-                _fast = PreTrainedTokenizerFast.from_pretrained(model_name)
+                _fast = PreTrainedTokenizerFast.from_pretrained(
+                    model_name, add_prefix_space=add_prefix_space
+                )
                 _probe_fast = _fast("Cette", add_special_tokens=False)["input_ids"]
                 if len(_probe_fast) <= 3:
                     _tokenizer = _fast
@@ -112,13 +119,17 @@ def get_llm_state():
     return {"model_name": _model_name, "mode": _mode, "add_prefix_space": _add_prefix_space}
 
 
-def _compute_surprisal_entropy(logits: torch.Tensor, target_id: int, temperature: float = 1.0):
+def _compute_surprisal_entropy(logits: torch.Tensor, target_id: int, temperature: float = 1.0,
+                               compute_entropy: bool = True):
     if temperature <= 0:
         raise ValueError("temperature must be > 0")
     scaled = logits / temperature
-    probs = torch.softmax(scaled, dim=-1)
     log_probs = torch.log_softmax(scaled, dim=-1)
     surprisal = -log_probs[target_id].item() / LN2
+    if not compute_entropy:
+        # entropy == "none": skip the full-vocab entropy sum entirely.
+        return surprisal, float("nan")
+    probs = torch.softmax(scaled, dim=-1)
     entropy = -(probs * log_probs).sum().item() / LN2
     return surprisal, entropy
 
@@ -133,28 +144,32 @@ def _get_word_ids(encoding) -> Optional[List]:
     return None
 
 
-_ENTROPY_AGG_MODES = ("mean", "sum", "onset", "successor")
+_ENTROPY_MODES = ("mean", "sum", "onset", "offset", "none")
 
 
 def _aggregate_to_words(
     word_ids: List, n_words: int, context_len: int,
     subword_surprisals: List[float], subword_entropies: List[float],
-    entropy_agg: str = "mean",
+    entropy: str = "onset",
 ) -> Dict[str, List]:
     """Aggregate subword scores to word level using word_ids mapping.
 
-    `entropy_agg` controls how a multi-subword word's entropy is summarized:
-      - "mean": mean of subword entropies (default; prior behaviour).
+    `entropy` controls how a multi-subword word's entropy is summarized:
+      - "onset": entropy of the word's first subtoken (default).
+      - "mean": mean of subword entropies.
       - "sum": sum of subword entropies.
-      - "onset": entropy of the word's first subtoken.
-      - "successor": entropy of the word's last subtoken.
+      - "offset": entropy of the word's last subtoken.
+      - "none": skip entropy entirely; every word entropy is reported as NaN.
     """
     word_surps = [0.0] * n_words
     word_ents = [0.0] * n_words
     word_onset_ents = [float("nan")] * n_words
-    word_successor_ents = [float("nan")] * n_words
+    word_offset_ents = [float("nan")] * n_words
     word_counts = [0] * n_words
-    word_has_nan = [False] * n_words
+    # Track surprisal and entropy validity separately: when entropy is skipped
+    # (entropy == "none") its NaNs must not poison an otherwise valid surprisal.
+    word_surp_has_nan = [False] * n_words
+    word_ent_has_nan = [False] * n_words
 
     for pos, wid in enumerate(word_ids):
         if wid is None:
@@ -163,31 +178,54 @@ def _aggregate_to_words(
             sub_pos = context_len + pos
             surp = subword_surprisals[sub_pos]
             ent = subword_entropies[sub_pos]
-            if math.isnan(surp) or math.isnan(ent):
-                word_has_nan[wid] = True
+            if math.isnan(surp):
+                word_surp_has_nan[wid] = True
             else:
                 word_surps[wid] += surp
+            if math.isnan(ent):
+                word_ent_has_nan[wid] = True
+            else:
                 word_ents[wid] += ent
-                if word_counts[wid] == 0:
+                if math.isnan(word_onset_ents[wid]):
                     word_onset_ents[wid] = ent
-                word_successor_ents[wid] = ent
+                word_offset_ents[wid] = ent
             word_counts[wid] += 1
 
+    # Reject an unknown mode once, up front, so a requested mode is always the
+    # one actually applied (never a silent fallback) and the error does not
+    # depend on the data having a clean word to reach an else-branch.
+    if entropy not in _ENTROPY_MODES:
+        raise ValueError(
+            f"unknown entropy {entropy!r}; expected one of {_ENTROPY_MODES}"
+        )
+
     # Surprisal: sum of subword surprisals (chain rule of probability).
-    # Entropy: summarized across subwords according to `entropy_agg` — a
+    # Entropy: summarized across subwords according to `entropy` — a
     # heuristic, not the entropy of any single distribution, but a useful
     # per-word summary.
-    # A word with any NaN subword is reported as NaN rather than a partial
-    # sum/mean over only its valid subwords, which would understate its score.
+    #
+    # NaN handling depends on whether entropy is being computed:
+    #  - For a computing mode ("onset"/"mean"/"sum"/"offset"), a word with any
+    #    NaN subword (surprisal OR entropy) is reported NaN for BOTH metrics,
+    #    rather than a partial aggregate that would understate its score.
+    #  - For "none", entropy is deliberately skipped, so its (all-NaN) entropy
+    #    array must NOT poison an otherwise valid surprisal.
     for i in range(n_words):
-        if word_counts[i] > 0 and not word_has_nan[i]:
-            if entropy_agg == "onset":
+        if entropy == "none":
+            word_ents[i] = float("nan")
+            if not (word_counts[i] > 0 and not word_surp_has_nan[i]):
+                word_surps[i] = float("nan")
+            continue
+
+        word_has_nan = word_surp_has_nan[i] or word_ent_has_nan[i]
+        if word_counts[i] > 0 and not word_has_nan:
+            if entropy == "onset":
                 word_ents[i] = word_onset_ents[i]
-            elif entropy_agg == "successor":
-                word_ents[i] = word_successor_ents[i]
-            elif entropy_agg == "sum":
+            elif entropy == "offset":
+                word_ents[i] = word_offset_ents[i]
+            elif entropy == "sum":
                 pass  # word_ents[i] already holds the sum
-            else:
+            else:  # "mean"
                 word_ents[i] = word_ents[i] / word_counts[i]
         else:
             word_surps[i] = float("nan")
@@ -347,7 +385,7 @@ def score_masked_lm_tokens(
     context_text: str = None,
     is_split_into_words: bool = True,
     pll_mode: str = "original",
-    entropy_agg: str = "mean",
+    entropy: str = "onset",
 ) -> Dict[str, List]:
     """Score a single sentence under an MLM.
 
@@ -365,12 +403,14 @@ def score_masked_lm_tokens(
         later subwords of that same word (Kauf & Ivanova 2023). Falls back to
         "original" when word_ids is unavailable.
 
-    `entropy_agg` controls how a multi-subword word's `word_entropies` value
+    `entropy` controls how a multi-subword word's `word_entropies` value
     is derived from its subword entropies:
-      - "mean" (default): mean across all subwords of the word.
+      - "onset" (default): entropy of the word's first subtoken.
+      - "mean": mean across all subwords of the word.
       - "sum": sum across all subwords of the word.
-      - "onset": entropy of the word's first subtoken.
-      - "successor": entropy of the word's last subtoken.
+      - "offset": entropy of the word's last subtoken.
+      - "none": skip entropy entirely; `word_entropies` (and the subword
+        entropies) are all NaN, and the full-vocab entropy sum is not computed.
     """
     global _tokenizer, _model, _device
 
@@ -380,8 +420,8 @@ def score_masked_lm_tokens(
     if pll_mode not in ("original", "within_word_l2r"):
         raise ValueError("pll_mode must be one of: 'original', 'within_word_l2r'")
 
-    if entropy_agg not in _ENTROPY_AGG_MODES:
-        raise ValueError(f"entropy_agg must be one of: {_ENTROPY_AGG_MODES}")
+    if entropy not in _ENTROPY_MODES:
+        raise ValueError(f"entropy must be one of: {_ENTROPY_MODES}")
 
     if is_split_into_words:
         if tokens is None or len(tokens) == 0:
@@ -449,7 +489,7 @@ def score_masked_lm_tokens(
         if word_ids is not None:
             result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                               full_surprisals, full_entropies,
-                                              entropy_agg=entropy_agg))
+                                              entropy=entropy))
         else:
             result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
         result["word_tokens"], result["word_oov"] = _extract_word_tokens(
@@ -506,7 +546,9 @@ def score_masked_lm_tokens(
         for local_idx, (target_pos, _extra) in enumerate(batch_variants):
             target_id = int(input_ids[target_pos].item())
             logits = logits_batch[local_idx, target_pos]
-            surp, ent = _compute_surprisal_entropy(logits, target_id, temperature)
+            surp, ent = _compute_surprisal_entropy(
+                logits, target_id, temperature,
+                compute_entropy=entropy != "none")
             subword_surprisals[target_pos] = surp
             subword_entropies[target_pos] = ent
 
@@ -520,7 +562,7 @@ def score_masked_lm_tokens(
     if word_ids is not None:
         result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                           subword_surprisals, subword_entropies,
-                                          entropy_agg=entropy_agg))
+                                          entropy=entropy))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
     result["word_tokens"], result["word_oov"] = _extract_word_tokens(
@@ -535,18 +577,18 @@ def score_autoregressive_tokens(
     temperature: float = 1.0,
     context_text: str = None,
     is_split_into_words: bool = True,
-    entropy_agg: str = "mean",
+    entropy: str = "onset",
 ) -> Dict[str, List]:
     """AR counterpart of ``score_masked_lm_tokens``; see that function's
-    docstring for the meaning of ``is_split_into_words`` and ``entropy_agg``.
+    docstring for the meaning of ``is_split_into_words`` and ``entropy``.
     """
     global _tokenizer, _model, _device, _mode
 
     if _tokenizer is None or _model is None or _mode != "ar":
         raise RuntimeError("Model not loaded in AR mode. Call load_llm_model(mode='ar') first.")
 
-    if entropy_agg not in _ENTROPY_AGG_MODES:
-        raise ValueError(f"entropy_agg must be one of: {_ENTROPY_AGG_MODES}")
+    if entropy not in _ENTROPY_MODES:
+        raise ValueError(f"entropy must be one of: {_ENTROPY_MODES}")
 
     if is_split_into_words:
         if tokens is None or len(tokens) == 0:
@@ -607,10 +649,14 @@ def score_autoregressive_tokens(
             with torch.no_grad():
                 bos_logits = _model(torch.tensor([[bos_id]], device=_device)).logits[0, -1]
             target_id = int(input_ids[pos].item())
-            surp, ent = _compute_surprisal_entropy(bos_logits, target_id, temperature)
+            surp, ent = _compute_surprisal_entropy(
+                bos_logits, target_id, temperature,
+                compute_entropy=entropy != "none")
         else:
             target_id = int(input_ids[pos].item())
-            surp, ent = _compute_surprisal_entropy(logits[pos - 1], target_id, temperature)
+            surp, ent = _compute_surprisal_entropy(
+                logits[pos - 1], target_id, temperature,
+                compute_entropy=entropy != "none")
 
         subword_surprisals[pos] = surp
         subword_entropies[pos] = ent
@@ -625,7 +671,7 @@ def score_autoregressive_tokens(
     if word_ids is not None:
         result.update(_aggregate_to_words(word_ids, n_words, context_len,
                                           subword_surprisals, subword_entropies,
-                                          entropy_agg=entropy_agg))
+                                          entropy=entropy))
     else:
         result.update({"word_surprisals": [], "word_entropies": [], "word_token_counts": []})
     result["word_tokens"], result["word_oov"] = _extract_word_tokens(
