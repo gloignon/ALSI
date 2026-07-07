@@ -148,14 +148,24 @@ plot_faceted_boxplot <- function(df,
     groups <- levels(df_long$group)
 
     if (paired) {
+      # Pooled-SD Cohen's d (via effsize::cohen.d(paired = TRUE)), matching
+      # compare_groups(). NOT mean(diff)/sd(diff): that alternative divides by
+      # the SD of the paired differences rather than the pooled SD of the raw
+      # scores, which inflates the estimate whenever paired values are
+      # positively correlated (the usual case for source/target versions of
+      # the same text) and reports a different quantity (d_z, an
+      # effect-size-for-power analogue) mislabelled as Cohen's d.
       pair_sym <- rlang::sym(pair_col)
       d_labels <- df_long |>
         select(feature, group, !!pair_sym, value) |>
         pivot_wider(names_from = group, values_from = value) |>
         summarise(
           d = {
-            diffs <- .data[[groups[1]]] - .data[[groups[2]]]
-            mean(diffs, na.rm = TRUE) / sd(diffs, na.rm = TRUE)
+            ok <- is.finite(.data[[groups[1]]]) & is.finite(.data[[groups[2]]])
+            effsize::cohen.d(
+              .data[[groups[1]]][ok], .data[[groups[2]]][ok],
+              paired = TRUE
+            )$estimate
           },
           .by = feature
         ) |>
