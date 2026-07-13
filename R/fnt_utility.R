@@ -173,10 +173,20 @@ plot_faceted_boxplot <- function(df,
     } else {
       d_labels <- df_long |>
         summarise(
-          d = effsize::cohen.d(
-            value[group == groups[1]],
-            value[group == groups[2]]
-          )$estimate,
+          d = {
+            # Features can be legitimately NA for short documents (e.g. the
+            # embedding coherence metrics); drop those before cohen.d(),
+            # which does not remove NAs itself.
+            x_a <- value[group == groups[1]]
+            x_b <- value[group == groups[2]]
+            x_a <- x_a[is.finite(x_a)]
+            x_b <- x_b[is.finite(x_b)]
+            if (length(x_a) < 2 || length(x_b) < 2) {
+              NA_real_
+            } else {
+              effsize::cohen.d(x_a, x_b)$estimate
+            }
+          },
           .by = feature
         ) |>
         mutate(label = paste0("d = ", round(d, 2)))
