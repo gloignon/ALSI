@@ -16,9 +16,14 @@
 #   topic_drift            — mean cosine distance between consecutive 3-sentence blocks
 #   mean_novelty           — mean cosine distance to the running centroid (so far)
 #   n_topics               — estimated number of topic clusters (k = 1–5 by silhouette)
-#   convexity              — Gärdenfors-style: midpoints between sentence pairs stay near
-#                            other embeddings (= conceptually convex space); 1 = convex
-#   local_convexity        — same but only for consecutive sentence pairs
+#   convexity              — Gärdenfors-style: pair midpoints stay near
+#                            non-endpoint sentence embeddings; 1 = supported
+#   blob_convexity         — proportion of pair midpoints inside the document's
+#                            local support radius
+#   segment_support        — local-scale support exp(-0.5 * normalised distance^2)
+#   segment_occupancy      — proportion of midpoints within endpoint k-NN scale
+#   local_convexity        — same midpoint support, only for consecutive pairs
+#   local_blob_convexity   — local version of blob_convexity
 #
 # In this demo you will:
 #   1) compute coherence features on the Viki-Wiki corpus;
@@ -73,7 +78,10 @@ feat_cols <- c(
   "emb_sequential_similarity", "emb_mean_semantic_gap",
   "emb_max_semantic_gap", "emb_topic_drift",
   "emb_mean_novelty", "emb_n_topics",
-  "emb_convexity", "emb_local_convexity"
+  "emb_convexity", "emb_blob_convexity",
+  "emb_segment_support", "emb_segment_occupancy",
+  "emb_local_convexity", "emb_local_blob_convexity",
+  "emb_local_segment_support", "emb_local_segment_occupancy"
 )
 
 
