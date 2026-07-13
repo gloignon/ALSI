@@ -82,9 +82,10 @@ dt_toy <- data.table(
   compte = rep(TRUE, 15)
 )
 
-# Document-level recurrence: for each token, what fraction of sentences in
-# the same document also contain this token?
-# "chat" in doc1 appears in 2 out of 3 sentences → normalized_match ≈ 0.67
+# Document-level recurrence: for each token, how frequent is it in the rest
+# of the document (occurrences outside the current sentence, divided by the
+# number of tokens outside the current sentence)?
+# "chat" in doc1 s1 appears once in the other 6 tokens → normalized_match = 1/6 ≈ 0.17
 dt_doc_match <- compute_document_match(copy(dt_toy))
 print(dt_doc_match[, .(doc_id, sentence_id, token, normalized_match)])
 

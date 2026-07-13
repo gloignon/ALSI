@@ -102,29 +102,36 @@ compute_previous_sentence_match <- function(dt, value_col = "token", n_prev = 1,
   proportions <- proportions[, c("doc_id", "sentence_id", "value", new_col), with = FALSE]
   
   # TODO: Consider computing multiple n_prev windows in one pass to avoid repeated work.
-  # Join back to original table
-  dt[, value := get(value_col)]
-  dt <- proportions[dt, on = .(doc_id, sentence_id, value)]
-  dt[, value := NULL]
-  
+  # Join back to original table on the value column itself, without adding
+  # temporary columns to the caller's table by reference
+  setnames(proportions, "value", value_col)
+  dt <- proportions[dt, on = c("doc_id", "sentence_id", value_col)]
+
   return(dt)
 }
 
 #' Compute Coh-Metrix style argument overlap
 #'
 #' For each pair of adjacent sentences, checks whether any noun or pronoun
-#' lemma appears in both. Returns a binary overlap flag per pair.
+#' lemma appears in both. Returns a binary overlap flag per pair. All
+#' adjacent sentence pairs present in \code{dt} are included: a sentence
+#' with no noun/pronoun scores 0 against its neighbours.
 #'
 #' @param dt A \code{data.table} with \code{doc_id}, \code{sentence_id},
 #'   \code{upos}, and \code{lemma}.
 #' @returns A \code{data.table} with columns \code{doc_id},
-#'   \code{sentence_id}, and \code{arg_overlap} (0 or 1).
+#'   \code{sentence_id}, and \code{arg_overlap} (0 or 1), one row per
+#'   adjacent sentence pair, keyed by the first sentence of the pair.
 compute_argument_overlap <- function(dt) {
   # Coh-Metrix style: for each adjacent sentence pair, does any noun/pronoun
   # lemma appear in both? Returns one row per pair with a binary flag.
-  dt_np <- dt[upos %in% c("NOUN", "PRON")]
-  # unique lemmas per sentence
-  sent_lemmas <- dt_np[, .(lemmas = list(unique(lemma))), by = .(doc_id, sentence_id)]
+  # Every sentence present in dt enters the pairing, so a sentence with no
+  # noun/pronoun scores 0 against its neighbours instead of dropping the
+  # pair from the denominator.
+  sent_lemmas <- dt[upos %in% c("NOUN", "PRON"),
+                    .(lemmas = list(unique(lemma))), by = .(doc_id, sentence_id)]
+  all_sentences <- unique(dt[, .(doc_id, sentence_id)])
+  sent_lemmas <- sent_lemmas[all_sentences, on = .(doc_id, sentence_id)]
   setorder(sent_lemmas, doc_id, sentence_id)
 
   # pair with next sentence
@@ -136,9 +143,11 @@ compute_argument_overlap <- function(dt) {
   if (nrow(pairs) == 0L) {
     return(data.table(doc_id = character(), sentence_id = integer(), arg_overlap = integer()))
   }
+  # lemma sets are NULL for sentences with no noun/pronoun; intersect(NULL, x)
+  # is empty, so those pairs correctly score 0
   pairs[, arg_overlap := as.integer(mapply(function(a, b) length(intersect(a, b)) > 0L,
                                            lemmas, lemmas_next))]
-  pairs[, .(doc_id, sentence_id, arg_overlap)]
+  return(pairs[, .(doc_id, sentence_id, arg_overlap)])
 }
 
 #' Compute similarity between two token vectors
@@ -226,6 +235,13 @@ compute_sentence_similarity <- function(dt, method = "cosine") {
 #'   each cohesion feature (overlap proportions, cosine similarities,
 #'   argument overlap, global-local gap).
 simple_lexical_cohesion <- function(dt_corpus, n_sent_context = c(1,5)) {
+
+  required_cols <- c("doc_id", "sentence_id", "token_id", "token", "lemma", "upos", "compte")
+  missing_cols <- setdiff(required_cols, names(dt_corpus))
+  if (length(missing_cols) > 0) {
+    stop(paste0("simple_lexical_cohesion | dt_corpus is missing columns: ",
+                paste(missing_cols, collapse = ", ")))
+  }
 
   dt <- copy(dt_corpus)
   dt <- dt[compte == TRUE]
