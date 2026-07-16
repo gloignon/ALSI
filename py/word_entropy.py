@@ -4,7 +4,7 @@ Motivation
 ----------
 ``llm_scoring.py`` already returns per-word *surprisal* (sum of sub-token
 surprisals — exact, by the chain rule) and several per-word *entropy*
-summaries (``entropy_agg`` in {mean, sum, onset, successor}). Those entropy
+summaries (``entropy`` in {mean, sum, onset, offset, none}). Those entropy
 summaries are heuristics built from the entropies of the *realised* sub-token
 positions: none of them is the entropy of an actual distribution over whole
 words.
@@ -26,7 +26,7 @@ A masked LM has no proper autoregressive joint over a word's sub-tokens (its
 per-slot scores are pseudo-log-likelihoods, not a factorised joint), so a
 "marginal next-word distribution" is undefined. For MLMs the honest word-level
 entropy remains the summed/onset per-slot entropy already provided by
-``llm_scoring.score_masked_lm_tokens(entropy_agg=...)``. This module therefore
+``llm_scoring.score_masked_lm_tokens(entropy=...)``. This module therefore
 covers the AR case only and is meant to *complement*, not replace, that file.
 
 Word boundaries

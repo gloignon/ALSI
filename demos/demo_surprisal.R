@@ -50,9 +50,10 @@ py_require(c(
   "numpy"
 ), action = "add")
 
-source("R/fnt_surprisal.R", encoding = "UTF-8")
-source("R/fnt_corpus.R",    encoding = "UTF-8")
-source("R/fnt_utility.R",   encoding = "UTF-8")
+source("R/fnt_surprisal.R",       encoding = "UTF-8")
+source("R/fnt_top_predictions.R", encoding = "UTF-8")
+source("R/fnt_corpus.R",          encoding = "UTF-8")
+source("R/fnt_utility.R",         encoding = "UTF-8")
 
 
 
@@ -149,6 +150,54 @@ demo_entropy <- entropy_modes |>
 # llm_subword_n is identical across modes (it depends on tokenization, not on
 # the entropy mode), so we keep a single copy and show it as the last column.
 print(demo_entropy |> select(-token_id, -llm_subword_n, llm_subword_n))
+
+# --- (d) Top-k predictions: what did the model expect? ---------------------
+#
+# Surprisal tells you *how* surprised the model was at a word, but not *what*
+# it expected instead. `llm_word_predictions()` answers that: it masks each
+# word's whole span (turning the sentence into a fill-in-the-blank) and reports
+# the whole words the model judged most probable in the slot — the same idea as
+# a "cloze" test, where a reader guesses a missing word from context.
+#
+# Concretely, for "Les randonneurs fatigués _____ ... la montagne enneigée.",
+# the model sees every position blanked in turn and offers its top-k fill-ins.
+# We show k = 5 candidates per word, plus:
+#   surprisal      — bits of surprise for the word actually written
+#   word_prob      — the model's probability for the written word (shown as "-"
+#                    when the word is split into several sub-word pieces, which
+#                    a single mask cannot spell; see (e) for how to recover it)
+#   actual_in_topk — TRUE (shown as "*") when the written word was itself among
+#                    the model's top 5 guesses
+#
+# `print_word_predictions()` lays this out as a fixed-width table.
+
+message("\n0d) Top-5 whole-word predictions per position (cloze-style, MLM)")
+demo_topk <- llm_word_predictions(
+  sentence   = "Les randonneurs fatigués grimpaient lentement la montagne enneigée.",
+  k          = 5L,
+  model_name = "almanach/moderncamembert-base"
+)
+print_word_predictions(demo_topk)
+
+# --- (e) Recovering multi-piece candidates by beam search ------------------
+#
+# The single-mask view in (d) can only propose words that are a SINGLE
+# vocabulary token, so longer or rarer words (which the tokenizer splits into
+# pieces) never appear and their `word_prob` is "-". `llm_beam_word_predictions()`
+# lifts that limit: it refills each blank with one to `max_pieces` masks and
+# assembles multi-piece words left-to-right by beam search. It is slower, but
+# every word now gets a probability. Compare the rows for "randonneurs",
+# "fatigués" and "grimpaient" against (d): those split words now carry a
+# probability and appear among their own top-5 candidates.
+
+message("\n0e) Top-5 predictions incl. multi-piece words (beam search, MLM)")
+demo_beam <- llm_beam_word_predictions(
+  sentence   = "Les randonneurs fatigués grimpaient lentement la montagne enneigée.",
+  k          = 5L,
+  max_pieces = 3L,
+  model_name = "almanach/moderncamembert-base"
+)
+print_word_predictions(demo_beam)
 
 # DEMO ON THE ALECTOR CORPUS -----
 
