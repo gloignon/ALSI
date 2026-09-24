@@ -2,7 +2,9 @@
 
 ILSA: Integrated Lexico-Syntactic Analyzer
 
-Produces classic readability features, more advanced psycholinguistic features, and LLM-based features such as surprisal, entropy and embeddings.
+Produces classic readability and psycholinguistic features from UDPipe dependency parses — pure R, no Python required.
+
+For LLM-based features (surprisal, entropy, embeddings, spaCy/Trankit parsing, Ollama querying) see the companion, Python-backed repo: **[alsi-ai](https://github.com/gloignon/alsi-ai)**.
 
 This is a complete re-write of the pipeline described Loignon (2021). Please cite the 2021 paper if you use ALSI/ILSA (see bibliography at the end of this page)as no other papers have been published yet presenting this toolkit.
 
@@ -20,14 +22,14 @@ ALSI extracts many types of features ([see the full feature list](https://github
 - **Clausal complexity** — clausal density, mean clause length, complex nominals, and complex verbs, operationalized from Universal Dependency relations following Lu (2010); mean dependency distance following Liu (2008).
 - **T-unit complexity** — the full Lu (2010) 14-measure battery (T-unit construct origin: Hunt, 1965; the T-units-per-sentence ratio is Hunt's 1966 main clause coordination index), plus an ALSI coordination-sentence proportion index. Note that t-unit features are adapted to dependency parsing, we don't do s-bar plots.
 - **Lexical cohesion** — token and lemma overlap across sentence windows, argument overlap, and cosine similarity between adjacent sentences.
-- **Semantic embeddings and coherence** — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
-- **POS surprisal** — token-, sentence-, and document-level surprisal and entropy from a UPOS trigram model. Includes Stupid Backoff (Brants et al. 2007) for unseen trigrams, optional sentence-boundary padding, and SD of surprisal as a Uniform Information Density proxy (Jaeger 2010). NEW: our custom llm trained on POS tags allows us to produce llm-surprisal and entropy for POS.
+- **Semantic embeddings and coherence** *(alsi-ai)* — sentence and document embeddings; thematic dispersion, sequential similarity, topic drift, novelty, and conceptual convexity.
+- **POS surprisal** — token-, sentence-, and document-level surprisal and entropy from a UPOS trigram model. Includes Stupid Backoff (Brants et al. 2007) for unseen trigrams, optional sentence-boundary padding, and SD of surprisal as a Uniform Information Density proxy (Jaeger 2010). *(alsi-ai)* our custom GRU language model trained on POS tags allows us to produce neural surprisal and entropy for POS (`pos_surprisal_nn()`), alongside the trigram version above.
 - **Dependency-triple surprisal** — syntactic predictability over dependency-tree arcs (head POS, relation, dependent POS), scoring −log₂ p(dependent_pos | head_pos, relation). A tree-local counterpart to POS surprisal, adapted from syntactic n-grams (Sidorov et al. 2014) with Stupid Backoff.
 - **Dependency-attachment surprisal** — the same arc triples with the target flipped: −log₂ p(relation | head_pos, dependent_pos), measuring how ambiguous the attachment label is between two categories. Shares the model artefact with dependency-triple surprisal.
-- **LLM surprisal** — token-level surprisal and entropy from masked (MLM) or autoregressive (AR) language models.
+- **LLM surprisal** *(alsi-ai)* — token-level surprisal and entropy from masked (MLM) or autoregressive (AR) language models.
 - **Word burstiness** — Weibull β scores (Altmann, Pierrehumbert & Motter, 2009) and negative-binomial adaptation scores (Church & Gale, 1995) measuring how clustered each word's occurrences are across documents.
 - **Multi-word expression (MWE) matching** — density features for any user-supplied MWE lexicon, broken down by relation group and category.
-- **Ollama LLM querying** — general-purpose row-by-row querying of a locally-run LLM (via [Ollama](https://ollama.com/)) for annotation, classification, paraphrase, or any templated task.
+- **Ollama LLM querying** *(alsi-ai)* — general-purpose row-by-row querying of a locally-run LLM (via [Ollama](https://ollama.com/)) for annotation, classification, paraphrase, or any templated task.
 - **Lexical database features** (see below)
 
 ## Works with several French lexical frequency databases:
@@ -50,7 +52,7 @@ We do not redistribute these databases. Download your own copy with `alsi_setup_
 
 ## Parser/taggers
 
-By default, ALSI uses a Universal Dependency based model, with a custom model of the French language. spaCy and trankit are also available. Our custom French models are trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). They will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
+By default, ALSI uses a Universal Dependency based model, with a custom model of the French language. spaCy and Trankit backends are also available, via `parse_text_spacy()`/`parse_text_trankit()` in the [alsi-ai](https://github.com/gloignon/alsi-ai) companion repo (both are Python-backed). Our custom French models are trained on the French-GSD treebank, slightly modified so that AUX tags refer only to actual auxiliary verb, as proposed by Duran et al. (2021). They will therefore produce what we consider to be a more sensible tagging and an appropriate use of the AUX tag, e.g.:
 -    ALSI/ISLA custom model: "Le (DET) chat (NOUN) est (VERB) gris (ADJ). Il (PRON) est (AUX) parti (VERB)." The copula "est" is tagged as VERB. The auxiliary "est" in the second sentence is also correctly tagged as AUX.
 -    Official model: "Le (DET) chat (NOUN) est (AUX) gris (ADJ).  Il (PRON) est (AUX) parti (VERB)." Both "est" are tagged as AUX, which is confusing for languages that have actual auxiliary verbs.
 

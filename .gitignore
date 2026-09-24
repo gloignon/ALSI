@@ -10,7 +10,6 @@ aggregation.R
 /private/
 /out/*
 /.venv/
-__pycache__/
 /.claude/
 /experiments/
 /docs/
@@ -20,10 +19,6 @@ __pycache__/
 # Training pipeline — lives in its own git repo
 training/
 /training/*
-
-# Large transformer weights (users fetch from HuggingFace)
-/models/trankit_fr_v1/xlm-roberta-base/models--xlm-roberta-base/blobs/
-/models/trankit_fr_v1/xlm-roberta-base/models--xlm-roberta-base/snapshots/*/model.safetensors
 
 # Large UDPipe model — hosted as a GitHub release asset, fetched by
 # R/artefact_builders/fetch_udpipe_models.R

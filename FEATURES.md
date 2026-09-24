@@ -1,6 +1,9 @@
 # ALSI Feature Inventory
 
-Scope: features produced by the current pipeline in `R/main.R`.
+Scope: features produced by the current pipeline in `main.R`. Sections marked
+**(alsi-ai)** require the Python-backed companion repo,
+[gloignon/alsi-ai](https://github.com/gloignon/alsi-ai), and are not produced
+by this (ALSI classic) repo.
 
 Scripts covered:
 - `R/fnt_tunits.R`
@@ -10,12 +13,15 @@ Scripts covered:
 - `R/fnt_heights.R`
 - `R/fnt_syntactic_complexity.R`
 - `R/fnt_pos_surprisal.R`
-- `R/fnt_deprel_surprisal.R`
 - `R/fnt_cohesion.R`
-- `R/fnt_embeddings.R`
-- `R/fnt_ollama.R`
 - `R/fnt_mwe.R`
-- `R/main.R`
+- `main.R`
+
+alsi-ai scripts covered:
+- `R/fnt_pos_surprisal_nn.R`
+- `R/fnt_embeddings.R`
+- `R/fnt_surprisal.R`
+- `R/fnt_ollama.R`
 
 ## 1) `features$simple_counts$doc_level_counts`
 Produced in: `R/fnt_counters.R` (`simple_count_features`)
@@ -282,7 +288,7 @@ Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
 | `pos_entropy` | Token-level POS context entropy (bits); `NA` when Stupid Backoff reaches unigram level. | word |
 | `pos_entropy_reduction` | entropy[t−1] − entropy[t] within sentence. | word |
 
-## 11b) `features$deprel_surprisal$doc_surprisal`
+## 11b) `features$deprel_surprisal$doc_surprisal` (not yet implemented — no fnt_deprel_surprisal.R in either repo)
 Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
 
 Dependency-triple surprisal over tree arcs (head UPOS, dependency relation,
@@ -299,7 +305,7 @@ bits (log₂). `deprel_surprisal()` accepts `exclude_pos` and `backoff_scale`
 | `mean_deprel_entropy_reduction` | Mean arc-to-arc entropy change in reading order. | document |
 | `sd_deprel_entropy_reduction` | SD of entropy change. | document |
 
-## 11c) `features$deprel_surprisal$sent_surprisal`
+## 11c) `features$deprel_surprisal$sent_surprisal` (not yet implemented)
 Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
 
 | Feature name | Short description | Level |
@@ -311,7 +317,7 @@ Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
 | `mean_deprel_entropy_reduction` | Mean entropy reduction at sentence level. | sentence |
 | `sd_deprel_entropy_reduction` | SD of entropy reduction at sentence level. | sentence |
 
-## 11d) `features$deprel_surprisal$token_surprisal`
+## 11d) `features$deprel_surprisal$token_surprisal` (not yet implemented)
 Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
 
 | Feature name | Short description | Level |
@@ -320,7 +326,7 @@ Produced in: `R/fnt_deprel_surprisal.R` (`deprel_surprisal`)
 | `deprel_entropy` | Arc-level (head_pos, dep_rel)-context entropy (bits); `NA` when Stupid Backoff reaches unigram level. | word |
 | `deprel_entropy_reduction` | entropy[t−1] − entropy[t] in reading order within sentence. | word |
 
-## 11e) `features$attach_surprisal$doc_surprisal`
+## 11e) `features$attach_surprisal$doc_surprisal` (not yet implemented)
 Produced in: `R/fnt_deprel_surprisal.R` (`attach_surprisal`)
 
 Dependency-attachment surprisal: same arc triples as the deprel model, flipped
@@ -338,7 +344,7 @@ see [docs/features/deprel-surprisal.md](docs/features/deprel-surprisal.md). Back
 | `mean_attach_entropy_reduction` | Mean arc-to-arc entropy change in reading order. | document |
 | `sd_attach_entropy_reduction` | SD of entropy change. | document |
 
-## 11f) `features$attach_surprisal$sent_surprisal`
+## 11f) `features$attach_surprisal$sent_surprisal` (not yet implemented)
 Produced in: `R/fnt_deprel_surprisal.R` (`attach_surprisal`)
 
 | Feature name | Short description | Level |
@@ -350,7 +356,7 @@ Produced in: `R/fnt_deprel_surprisal.R` (`attach_surprisal`)
 | `mean_attach_entropy_reduction` | Mean entropy reduction at sentence level. | sentence |
 | `sd_attach_entropy_reduction` | SD of entropy reduction at sentence level. | sentence |
 
-## 11g) `features$attach_surprisal$token_surprisal`
+## 11g) `features$attach_surprisal$token_surprisal` (not yet implemented)
 Produced in: `R/fnt_deprel_surprisal.R` (`attach_surprisal`)
 
 | Feature name | Short description | Level |
@@ -383,21 +389,21 @@ Default current context windows in `main.R`: `n_sent_context = c(1, 5)`.
 | `global_local_gap` | Document-level minus adjacent-sentence token overlap (positive = global coherence without local repetition). | document |
 | `content_global_local_gap` | Same as `global_local_gap` for content words only. | document |
 
-## 13) `features$embeddings$dt_sent_embeddings`
+## 13) `features$embeddings$dt_sent_embeddings` (alsi-ai)
 Produced in: `R/fnt_embeddings.R` (`encode_embeddings`, `corpus_embeddings`)
 
 | Feature name | Short description | Level |
 |---|---|---|
 | `dim1` ... `dimN` | Sentence embedding dimensions (N depends on embedding model). | sentence |
 
-## 14) `features$embeddings$dt_doc_embeddings`
+## 14) `features$embeddings$dt_doc_embeddings` (alsi-ai)
 Produced in: `R/fnt_embeddings.R` (`corpus_embeddings`)
 
 | Feature name | Short description | Level |
 |---|---|---|
 | `dim1` ... `dimN` | Document-level mean of sentence embedding dimensions. | document |
 
-## 15) `features$embedding_coherence`
+## 15) `features$embedding_coherence` (alsi-ai)
 Produced in: `R/fnt_embeddings.R` (`embedding_coherence`)
 
 Input: sentence embeddings from `corpus_embeddings()`. Returns one row per document.
@@ -421,7 +427,7 @@ Input: sentence embeddings from `corpus_embeddings()`. Returns one row per docum
 | `emb_local_segment_support` | Consecutive-pair version of local-scale segment support. | document |
 | `emb_local_segment_occupancy` | Consecutive-pair version of local-scale segment occupancy. | document |
 
-## 16) `features$surprisal$mlm` and `features$surprisal$ar`
+## 16) `features$surprisal$mlm` and `features$surprisal$ar` (alsi-ai)
 Produced in: `R/fnt_surprisal.R` (`llm_surprisal_entropy`)
 
 | Feature name | Short description | Level |
@@ -430,7 +436,7 @@ Produced in: `R/fnt_surprisal.R` (`llm_surprisal_entropy`)
 | `llm_entropy` | Token-level predictive entropy from language model. | word |
 | `llm_subword_n` | Number of subword pieces used for the token. | word |
 
-## 17) Ollama LLM querying
+## 17) Ollama LLM querying (alsi-ai)
 Provided by: `R/fnt_ollama.R` (`ollama_generate`)
 
 Not a fixed feature set — this is a general-purpose utility for querying a local LLM
