@@ -190,10 +190,13 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
   rbindlist(list(
     rule("ocr", "re-join word hyphenated across lines",
          "(?<=\\p{Ll})-\n(?=\\p{Ll})", ""),
-    # NB: together these collapse blank lines, so paragraphs end up
-    # separated by a single "\n".
-    rule("layout", "hard-wrapped line break -> space", "\n(?=[^\n])", " "),
-    rule("layout", "whitespace after line break", "(\n)\\s+", "$1"),
+    # A single "\n" is a hard wrap and becomes a space; a blank line is a
+    # paragraph break and is kept ("\n\n"). UDPipe treats "\n" as a space but
+    # a blank line as a sentence boundary, so this matters for dialogue lines.
+    rule("layout", "spaces around line breaks", "[ \t]*\n[ \t]*", "\n"),
+    rule("layout", "at most one blank line", "\n{3,}", "\n\n"),
+    rule("layout", "hard-wrapped line break -> space", "(?<!\n)\n(?!\n)", " "),
+    rule("layout", "trim document ends", "^\\s+|\\s+$", ""),
     rule("punctuation", "ASCII << guillemet",  "<<", "\u00AB", TRUE),
     rule("punctuation", "ASCII >> guillemet",  ">>", "\u00BB", TRUE),
     rule("punctuation", "doubled apostrophe",  "''", "'", TRUE),
@@ -205,8 +208,8 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
     # Digit-digit with no space ("3,5", "3.5", "1.000") is a number, not a
     # sentence boundary.
     rule("punctuation", "space after sentence dot",
-         paste0("\\.(?=\\s*[A-Z\u00C0\u00C9\u00C8\u00D9])|",
-                "(?<![0-9])\\.(?=\\s*[0-9])|(?<=[0-9])\\.(?=\\s+[0-9])"), ". "),
+         paste0("\\.(?=[ \\t]*[A-Z\u00C0\u00C9\u00C8\u00D9])|",
+                "(?<![0-9])\\.(?=[ \\t]*[0-9])|(?<=[0-9])\\.(?=[ \\t]+[0-9])"), ". "),
     rule("punctuation", "space after comma",
          paste0(",(?=[A-Za-z\u00C0\u00C9\u00C8\u00D9])|",
                 "(?<![0-9]),(?=[0-9])"), ", "),
