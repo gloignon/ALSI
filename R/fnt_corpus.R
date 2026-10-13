@@ -18,8 +18,17 @@ library(udpipe)
 #'
 #' @param path Path to a directory of text files or to a single file.
 #' @param verbose Logical; if TRUE, prints progress messages.
-#' @param clean Logical; if TRUE (default), applies French-specific text
-#'   cleaning (see \code{.clean_french_text}).
+#' @param clean \code{TRUE} (default), \code{FALSE}, or a character vector of
+#'   rule groups to apply (see \code{.corpus_rules}):
+#'   \code{"encoding"} repairs mojibake (\code{\u00C3\u00A9} -> \code{\u00E9});
+#'   \code{"layout"} joins hard-wrapped lines;
+#'   \code{"punctuation"} normalises French spacing and guillemets;
+#'   \code{"ocr"} (opt-in) re-joins words hyphenated across a line break.
+#'   \code{TRUE} means \code{c("encoding", "layout", "punctuation")}. Decoding,
+#'   Unicode normalisation (curly quotes, invisible characters, non-breaking
+#'   and other special spaces -> plain space) and
+#'   control-character removal always happen. With \code{verbose = TRUE},
+#'   the number of documents each rule changed is reported.
 #' @param encoding Character; encoding of the input files. Defaults to
 #'   \code{"UTF-8"} (an invalid file raises an informative error). Use
 #'   \code{"latin1"} or \code{"windows-1252"} for legacy French files. Use
@@ -74,11 +83,14 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
     }
   }
 
-  texts <- utf8::utf8_normalize(texts, map_quote = TRUE)
+  groups <- .resolve_clean_groups(clean)
+  if ("encoding" %in% groups) texts <- .repair_mojibake(texts, verbose)
+  texts <- utf8::utf8_normalize(texts, map_quote = TRUE, remove_ignorable = TRUE)
+  texts <- stringi::stri_replace_all_regex(texts, "\\p{Zs}", " ")  # NBSP etc.
   texts <- stringi::stri_replace_all_regex(
     texts, "[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]", "")
   texts <- stringi::stri_replace_all_regex(texts, "\r\n?", "\n")
-  if (clean) texts <- .clean_french_text(texts)
+  texts <- .clean_french_text(texts, groups, verbose)
 
   dt_corpus <- data.table(doc_id = doc_ids, text = texts)
 
@@ -155,33 +167,103 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
   list(text = text, encoding = if (is_utf8) "UTF-8" else enc)
 }
 
-# French-specific cleaning, vectorised over a character vector. Expects "\n"
-# line endings (build_corpus normalises them beforehand).
-.clean_french_text <- function(x) {
-  rx <- stringi::stri_replace_all_regex
-  fx <- stringi::stri_replace_all_fixed
+.clean_groups <- c("encoding", "ocr", "layout", "punctuation")
 
-  x <- fx(x, "\\", "")                       # remove backslashes
+.resolve_clean_groups <- function(clean) {
+  if (isTRUE(clean)) return(c("encoding", "layout", "punctuation"))
+  if (is.null(clean) || isFALSE(clean)) return(character())
+  bad <- setdiff(clean, .clean_groups)
+  if (length(bad)) {
+    stop("build_corpus | unknown clean group(s): ", paste(bad, collapse = ", "),
+         ". Available: ", paste(.clean_groups, collapse = ", "))
+  }
+  clean
+}
 
-  # Line breaks: a single "\n" before text becomes a space, then whitespace
-  # after a line break is dropped. NB: this collapses blank lines too, so
-  # paragraphs end up separated by a single "\n".
-  x <- rx(x, "\n(?=[^\n])", " ")
-  x <- rx(x, "(\n)\\s+", "$1")
-  x <- rx(x, "\n{3,}", "\n\n")
+# Cleaning rules, applied in table order to "\n"-normalised text. One row per
+# problem; add, reorder or delete rows here. Inclusive writing ("\u00E9tudiant.e.s")
+# needs no rule: the dot-spacing rule only fires before an uppercase/digit.
+.corpus_rules <- local({
+  rule <- function(group, name, pattern, replacement, fixed = FALSE)
+    data.table(group, name, pattern, replacement, fixed)
+  upper <- "A-Z0-9\u00C0\u00C9\u00C8\u00D9"
+  rbindlist(list(
+    rule("ocr", "re-join word hyphenated across lines",
+         "(?<=\\p{Ll})-\n(?=\\p{Ll})", ""),
+    # NB: together these collapse blank lines, so paragraphs end up
+    # separated by a single "\n".
+    rule("layout", "hard-wrapped line break -> space", "\n(?=[^\n])", " "),
+    rule("layout", "whitespace after line break", "(\n)\\s+", "$1"),
+    rule("punctuation", "ASCII << guillemet",  "<<", "\u00AB", TRUE),
+    rule("punctuation", "ASCII >> guillemet",  ">>", "\u00BB", TRUE),
+    rule("punctuation", "doubled apostrophe",  "''", "'", TRUE),
+    rule("punctuation", "space around \u00AB", "\u00AB", " \u00AB ", TRUE),
+    rule("punctuation", "space around \u00BB", "\u00BB", " \u00BB ", TRUE),
+    rule("punctuation", "space after !",       "!", "! ", TRUE),
+    rule("punctuation", "space around ;",      ";", " ; ", TRUE),
+    rule("punctuation", "space around :",      ":", " : ", TRUE),
+    rule("punctuation", "space after sentence dot",
+         paste0("\\.(?=\\s*[", upper, "])"), ". "),
+    rule("punctuation", "space after comma",
+         paste0(",(?=[A-Za-z", upper, "])"), ", "),
+    rule("punctuation", "space after )",
+         paste0("\\)(?=[A-Za-z", upper, "])"), ") ")
+  ))
+})
 
-  # Punctuation. "<<" / ">>" are guillemets typed as ASCII.
-  x <- fx(x, c("<<", ">>", "\u2019", "''", "\u00AB", "\u00BB", "!", ";", ":"),
-          c("\u00AB", "\u00BB", "'", "'", " \u00AB ", " \u00BB ", "! ", " ; ", " : "),
-          vectorize_all = FALSE)
+.clean_french_text <- function(x, groups, verbose = FALSE) {
+  x <- stringi::stri_replace_all_fixed(x, "\\", "")   # stray backslashes
+  rules <- .corpus_rules[group %in% groups]
+  if (nrow(rules) == 0L) return(x)
 
-  # Space after a sentence-ending dot (before uppercase/digit). Dots between
-  # lowercase letters (inclusive writing: "\u00E9tudiant.e.s") are untouched.
-  x <- rx(x, "\\.(?=\\s*[A-Z0-9\u00C0\u00C9\u00C8\u00D9])", ". ")
-  x <- rx(x, ",(?=[A-Za-z\u00C0\u00C9\u00C8\u00D90-9])", ", ")
-  x <- rx(x, "\\)(?=[A-Za-z\u00C0\u00C9\u00C8\u00D90-9])", ") ")
+  rules[, n_docs := 0L]
+  for (i in seq_len(nrow(rules))) {
+    before <- x
+    x <- if (rules$fixed[i]) {
+      stringi::stri_replace_all_fixed(x, rules$pattern[i], rules$replacement[i])
+    } else {
+      stringi::stri_replace_all_regex(x, rules$pattern[i], rules$replacement[i])
+    }
+    if (verbose) set(rules, i, "n_docs", sum(x != before))
+  }
+  x <- stringi::stri_replace_all_regex(x, " {2,}", " ")   # runs of spaces
 
-  rx(x, " {2,}", " ")                        # collapse runs of spaces
+  if (verbose) {
+    message("build_corpus | cleaning rules, documents changed:")
+    message(paste(utils::capture.output(print(rules[, .(group, name, n_docs)])),
+                  collapse = "\n"))
+  }
+  x
+}
+
+# Repair UTF-8 text that was decoded as windows-1252 / Latin-1 ("\u00C3\u00A9" for
+# "\u00E9", "\u00E2\u20AC\u2122" for "\u2019"). A dictionary of the garbled forms of
+# French letters and typographic marks keeps the repair local, so documents
+# that mix good and garbled text are handled; it runs before normalisation.
+.repair_mojibake <- function(x, verbose = FALSE) {
+  hit <- stringi::stri_detect_regex(
+    x, "[\u00C2\u00C3\u00C5\u00E2][\u0080-\u00BF\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u0192\u02C6\u02DC\u2013-\u203A\u20AC\u2122]")
+  if (!any(hit)) return(x)
+
+  codes <- c(0xE0, 0xE2, 0xE4, 0xE7, 0xE9, 0xE8, 0xEA, 0xEB, 0xEE, 0xEF, 0xF4,
+             0xF6, 0xF9, 0xFB, 0xFC, 0xFF, 0x153, 0xC0, 0xC2, 0xC4, 0xC7, 0xC9,
+             0xC8, 0xCA, 0xCB, 0xCE, 0xCF, 0xD4, 0xD6, 0xD9, 0xDB, 0xDC, 0x178,
+             0x152, 0xAB, 0xBB, 0x2018, 0x2019, 0x201C, 0x201D, 0x2013, 0x2014,
+             0x2026, 0x20AC)
+  good <- vapply(codes, intToUtf8, character(1))
+  bad  <- unlist(lapply(c("windows-1252", "latin1"), function(enc) {
+    vapply(good, function(g) {
+      stringi::stri_encode(charToRaw(g), from = enc, to = "UTF-8")
+    }, character(1))
+  }))
+  map <- unique(data.table(bad = unname(bad), good = rep(good, 2L)))
+  map <- map[bad != good][order(-nchar(bad))]
+
+  x[hit] <- stringi::stri_replace_all_fixed(x[hit], map$bad, map$good,
+                                            vectorize_all = FALSE)
+  if (verbose) message("build_corpus | mojibake repaired in ", sum(hit),
+                       " document(s)")
+  x
 }
 
 #' Parse Text with UDPipe

@@ -142,3 +142,17 @@ dt_mixed <- build_corpus(tmp_mixed, encoding = "auto")
 message(nrow(dt_mixed), " documents read from mixed-encoding directory")
 
 unlink(tmp_mixed, recursive = TRUE)
+
+
+# 7) Choosing and auditing the cleaning rules ----
+# `clean` accepts TRUE (default: encoding + layout + punctuation), FALSE, or a
+# vector of rule groups: "encoding" (repairs mojibake such as "Ã©" -> "é"),
+# "layout", "punctuation", and the opt-in "ocr" (re-joins words hyphenated
+# across a line break). The rules themselves are a table, .corpus_rules in
+# R/fnt_corpus.R: one named row per problem, easy to add to or prune.
+# With verbose = TRUE, build_corpus() reports how many documents each rule
+# changed, so rules that never fire on your corpus are easy to spot.
+
+dt_audit <- build_corpus(corpus_dir, verbose = TRUE)
+dt_ocr   <- build_corpus(corpus_dir, clean = c("encoding", "ocr", "layout", "punctuation"))
+dt_raw   <- build_corpus(corpus_dir, clean = FALSE)  # decode + normalise only
