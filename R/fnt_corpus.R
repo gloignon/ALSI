@@ -202,10 +202,14 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
     rule("punctuation", "space after !",       "!", "! ", TRUE),
     rule("punctuation", "space around ;",      ";", " ; ", TRUE),
     rule("punctuation", "space around :",      ":", " : ", TRUE),
+    # Digit-digit with no space ("3,5", "3.5", "1.000") is a number, not a
+    # sentence boundary.
     rule("punctuation", "space after sentence dot",
-         paste0("\\.(?=\\s*[", upper, "])"), ". "),
+         paste0("\\.(?=\\s*[A-Z\u00C0\u00C9\u00C8\u00D9])|",
+                "(?<![0-9])\\.(?=\\s*[0-9])|(?<=[0-9])\\.(?=\\s+[0-9])"), ". "),
     rule("punctuation", "space after comma",
-         paste0(",(?=[A-Za-z", upper, "])"), ", "),
+         paste0(",(?=[A-Za-z\u00C0\u00C9\u00C8\u00D9])|",
+                "(?<![0-9]),(?=[0-9])"), ", "),
     rule("punctuation", "space after )",
          paste0("\\)(?=[A-Za-z", upper, "])"), ") ")
   ))
