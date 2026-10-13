@@ -38,6 +38,7 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
   if (dir.exists(path)) {
     doc_ids <- list.files(path = path, pattern = pattern, recursive = recursive,
                           ignore.case = TRUE)
+    doc_ids <- doc_ids[!dir.exists(file.path(path, doc_ids))]
     if (length(doc_ids) == 0L) {
       stop("build_corpus | no files matching '", pattern, "' in ", path)
     }
@@ -126,6 +127,10 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
   } else {
     "windows-1252"
   }
+
+  # NUL bytes (e.g. the terminator writeBin() leaves on a string) cannot be
+  # decoded; they are meaningful only in UTF-16
+  if (!grepl("^UTF-?16", toupper(enc))) bytes <- bytes[bytes != as.raw(0)]
 
   if (length(bytes) == 0L) return(list(text = "", encoding = enc))
 
