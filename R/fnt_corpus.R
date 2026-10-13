@@ -205,6 +205,10 @@ build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8"
     rule("punctuation", "space after !",       "!", "! ", TRUE),
     rule("punctuation", "space around ;",      ";", " ; ", TRUE),
     rule("punctuation", "space around :",      ":", " : ", TRUE),
+    # UDPipe splits "parti. \u00BB Il" before the \u00BB (orphaning it) and misses the
+    # boundary in "! \u00BB Il"; "parti.\u00BB Il" is tokenised correctly.
+    rule("punctuation", "closing \u00BB sticks to sentence-final punctuation",
+         "(?<=[.!?\u2026])[ \\t]+\u00BB", "\u00BB"),
     # Digit-digit with no space ("3,5", "3.5", "1.000") is a number, not a
     # sentence boundary.
     rule("punctuation", "space after sentence dot",
