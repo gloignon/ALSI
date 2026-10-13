@@ -9,175 +9,174 @@ library(udpipe)
 #'
 #' Reads text files from a directory or a single file path and returns a
 #' two-column data.table. Optionally cleans French text (normalises
-#' punctuation, guillemets, line breaks, inclusive writing dots, etc.).
+#' punctuation, guillemets, line breaks, etc.).
+#'
+#' Files are read once as raw bytes, decoded with \pkg{stringi}, and cleaned
+#' with vectorised regular expressions, so large corpora are handled quickly.
+#' A UTF-8 / UTF-16 byte-order mark is stripped, line endings (CRLF, CR, LF)
+#' are unified, and control characters (e.g. NUL) are removed.
 #'
 #' @param path Path to a directory of text files or to a single file.
 #' @param verbose Logical; if TRUE, prints progress messages.
 #' @param clean Logical; if TRUE (default), applies French-specific text
-#'   cleaning via an internal \code{clean_text} helper.
-#' @param encoding Character; file encoding passed to \code{readr::read_file}.
-#'   Defaults to \code{"UTF-8"}. Use \code{"latin1"} or \code{"windows-1252"}
-#'   for legacy French text files. Use \code{"auto"} to auto-detect encoding
-#'   from the first file (all files in a directory are assumed to share the
-#'   same encoding).
-#' @returns A \code{data.table} with columns \code{doc_id} (file basename) and
-#'   \code{text}.
-build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8") {
+#'   cleaning (see \code{.clean_french_text}).
+#' @param encoding Character; encoding of the input files. Defaults to
+#'   \code{"UTF-8"} (an invalid file raises an informative error). Use
+#'   \code{"latin1"} or \code{"windows-1252"} for legacy French files. Use
+#'   \code{"auto"} to detect the encoding of each file: a BOM is honoured,
+#'   valid UTF-8 (including plain ASCII) is read as UTF-8, and anything else
+#'   is read as windows-1252 (a superset of Latin-1).
+#' @param pattern Regular expression selecting files when \code{path} is a
+#'   directory (case-insensitive). Default \code{"\\\\.txt$"}; use \code{NULL}
+#'   to read every non-hidden file. Ignored when \code{path} is a single file.
+#' @param recursive Logical; if TRUE, also read files in sub-directories.
+#'   \code{doc_id} is then the path relative to \code{path}.
+#' @returns A \code{data.table} with columns \code{doc_id} (file name, or
+#'   relative path when \code{recursive = TRUE}) and \code{text}.
+build_corpus <- function(path, verbose = FALSE, clean = TRUE, encoding = "UTF-8",
+                         pattern = "\\.txt$", recursive = FALSE) {
   if (dir.exists(path)) {
-    file_paths <- list.files(path = path, full.names = TRUE)
-    if (verbose) message("build_corpus | directory detected")
+    doc_ids <- list.files(path = path, pattern = pattern, recursive = recursive,
+                          ignore.case = TRUE)
+    if (length(doc_ids) == 0L) {
+      stop("build_corpus | no files matching '", pattern, "' in ", path)
+    }
+    file_paths <- file.path(path, doc_ids)
+    if (!recursive) doc_ids <- basename(doc_ids)
+    if (verbose) message("build_corpus | directory detected, ",
+                         length(file_paths), " file(s)")
   } else if (file_test("-f", path)) {
     file_paths <- normalizePath(path)
+    doc_ids    <- basename(file_paths)
   } else {
     stop("build_corpus | path does not exist")
   }
 
-  # Auto-detect encoding (per-file when processing a directory)
-  per_file_encoding <- NULL
+  reads <- lapply(file_paths, function(fp) {
+    if (verbose) message("working on ", fp)
+    .read_text_file(fp, encoding)
+  })
+  texts     <- vapply(reads, `[[`, character(1), "text")
+  used_encs <- vapply(reads, `[[`, character(1), "encoding")
+
   if (tolower(encoding) == "auto") {
-    per_file_encoding <- purrr::map_chr(file_paths, function(fp) {
-      guess <- readr::guess_encoding(fp)
-      if (nrow(guess) == 0 || guess$confidence[1] < 0.2) {
-        stop("build_corpus | could not detect encoding for '", basename(fp),
-             "'. Please specify encoding manually (e.g. encoding = 'latin1').")
-      }
-      guess$encoding[1]
-    })
-
-    # Treat ASCII as UTF-8 (ASCII is a strict subset)
-    per_file_encoding[per_file_encoding == "ASCII"] <- "UTF-8"
-
-    unique_enc <- unique(per_file_encoding)
-    if (length(unique_enc) == 1) {
+    unique_enc <- unique(used_encs)
+    if (length(unique_enc) == 1L) {
       message("build_corpus | auto-detected encoding: ", unique_enc)
     } else {
-      enc_table <- table(per_file_encoding)
-      enc_summary <- paste0(names(enc_table), " (", enc_table, " file",
-                            ifelse(enc_table > 1, "s", ""), ")",
-                            collapse = ", ")
-      warning("build_corpus | mixed encodings detected: ", enc_summary,
-              ". Each file will be read with its detected encoding.",
+      enc_table <- table(used_encs)
+      warning("build_corpus | mixed encodings detected: ",
+              paste0(names(enc_table), " (", enc_table, " file",
+                     ifelse(enc_table > 1, "s", ""), ")", collapse = ", "),
+              ". Each file was read with its detected encoding.",
               call. = FALSE)
     }
-    # Set encoding to the first file's for fallback/reporting
-    encoding <- per_file_encoding[1]
   }
 
-  get_locale <- function(file_path) {
-    if (!is.null(per_file_encoding)) {
-      idx <- match(file_path, file_paths)
-      locale(encoding = per_file_encoding[idx])
-    } else {
-      locale(encoding = encoding)
-    }
+  texts <- utf8::utf8_normalize(texts, map_quote = TRUE)
+  texts <- stringi::stri_replace_all_regex(
+    texts, "[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]", "")
+  texts <- stringi::stri_replace_all_regex(texts, "\r\n?", "\n")
+  if (clean) texts <- .clean_french_text(texts)
+
+  dt_corpus <- data.table(doc_id = doc_ids, text = texts)
+
+  empty <- !nzchar(trimws(dt_corpus$text))
+  if (any(empty)) {
+    warning("build_corpus | empty document(s): ",
+            paste(dt_corpus$doc_id[empty], collapse = ", "), call. = FALSE)
   }
 
-  read_file_safe <- function(file_path) {
-    file_locale <- get_locale(file_path)
-    tryCatch(
-      read_file(file_path, locale = file_locale),
-      error = function(e) {
-        # Try to guess the correct encoding for a helpful message
-        guess <- readr::guess_encoding(file_path)
-        suggestion <- if (nrow(guess) > 0) {
-          paste0("Detected encoding may be '", guess$encoding[1],
-                 "' (confidence: ", round(guess$confidence[1], 2),
-                 "). Try: build_corpus(..., encoding = '", guess$encoding[1], "')")
-        } else {
-          "Try: encoding = 'latin1' or encoding = 'windows-1252'"
-        }
-        stop("build_corpus | failed to read '", basename(file_path),
-             "' as ", encoding, ".\n", suggestion, call. = FALSE)
-      }
-    )
-  }
-
-  normalize_safe <- function(contenu, file_path) {
-    tryCatch(
-      utf8_normalize(contenu, map_quote = TRUE),
-      error = function(e) {
-        guess <- readr::guess_encoding(file_path)
-        suggestion <- if (nrow(guess) > 0) {
-          paste0("Detected encoding may be '", guess$encoding[1],
-                 "' (confidence: ", round(guess$confidence[1], 2),
-                 "). Try: build_corpus(..., encoding = '", guess$encoding[1], "')")
-        } else {
-          "Try: encoding = 'latin1' or encoding = 'windows-1252'"
-        }
-        stop("build_corpus | '", basename(file_path),
-             "' is not valid UTF-8.\n", suggestion, call. = FALSE)
-      }
-    )
-  }
-
-  clean_text <- function(file_path) {
-    if (verbose) message("working on ", file_path)
-    contenu <- read_file_safe(file_path)
-    contenu <- normalize_safe(contenu, file_path)
-    
-    # Remove backslashes
-    contenu <- gsub("\\\\", "", contenu)
-    
-    # Preserve true paragraph breaks (double line breaks), only remove single ones
-    contenu <- gsub("\r?\n(?=[^\r\n])", " ", contenu, perl = TRUE)  # single line breaks → space
-    contenu <- gsub("(\\r?\\n)\\s+", "\\1", contenu)                # remove space at beginning of line
-    contenu <- str_replace_all(contenu, "\r", "")                   # normalize returns
-    contenu <- str_replace_all(contenu, "\n{3,}", "\n\n")           # max two line breaks
-    
-    # Clean punctuation
-    # << should be replaced with the right French guillemet
-    contenu <- str_replace_all(contenu, "<<", "«")
-    # and >> will also become a guillemet
-    contenu <- str_replace_all(contenu, ">>", "»")
-    contenu <- str_replace_all(contenu, "’", "'")
-    contenu <- str_replace_all(contenu, "''", "'")
-    contenu <- str_replace_all(contenu, "«", " « ")
-    contenu <- str_replace_all(contenu, "»", " » ")
-    contenu <- str_replace_all(contenu, "!", "! ")
-    contenu <- str_replace_all(contenu, ";", " ; ")
-    contenu <- str_replace_all(contenu, ":", " : ")
-    # Protect dot(s) between lowercase letters (covers étudiant.e and étudiant.e.s)
-    contenu <- gsub("([a-zà-öù-ÿ])\\.([a-zà-öù-ÿ])", "\\1§DOT§\\2", contenu, perl = TRUE)
-    # Repeat to catch cases like e.s (two successive substitutions)
-    while (grepl("([a-zà-öù-ÿ])\\.([a-zà-öù-ÿ])", contenu, perl = TRUE)) {
-      contenu <- gsub("([a-zà-öù-ÿ])\\.([a-zà-öù-ÿ])", "\\1§DOT§\\2", contenu, perl = TRUE)
-    }
-    # Add a space after true sentence-ending dots (before uppercase/digit)
-    contenu <- gsub("\\.(?=\\s*[A-Z0-9ÀÉÈÙ])", ". ", contenu, perl = TRUE)
-    # Restore protected dots
-    contenu <- gsub("§DOT§", ".", contenu, fixed = TRUE)
-    
-    contenu <- gsub("\\,(?=[A-Za-zÀÉÈÙ0-9])", ", ", contenu, perl = TRUE)
-    contenu <- gsub("\\)(?=[A-Za-zÀÉÈÙ0-9])", ") ", contenu, perl = TRUE)
-    
-    # Clean extra spaces
-    contenu <- str_replace_all(contenu, " {3,}", "  ")
-    contenu <- str_replace_all(contenu, " {2}", " ")
-    
-    return(contenu)
-  }
-  
-  # Create corpus
-  dt_corpus <- data.table(
-    doc_id = basename(file_paths),
-    text = if (clean) unlist(lapply(file_paths, clean_text)) else unlist(lapply(file_paths, function(p) {
-      normalize_safe(read_file_safe(p), p)
-    }))
-  )
-
-  # Warn if replacement characters appear (sign of encoding mismatch)
-  has_replacement <- grepl("\uFFFD", dt_corpus$text)
+  # Replacement characters are a sign of an encoding mismatch
+  has_replacement <- grepl("\uFFFD", dt_corpus$text, fixed = TRUE)
   if (any(has_replacement)) {
-    bad_files <- dt_corpus$doc_id[has_replacement]
     warning(
       "build_corpus | replacement characters (\uFFFD) detected in: ",
-      paste(bad_files, collapse = ", "),
+      paste(dt_corpus$doc_id[has_replacement], collapse = ", "),
       ". Check the 'encoding' parameter (current: '", encoding, "').",
       call. = FALSE
     )
   }
 
   return(dt_corpus)
+}
+
+# Read one file as raw bytes and decode it to UTF-8.
+# Returns list(text, encoding) where encoding is the one actually used.
+.read_text_file <- function(file_path, encoding) {
+  bytes <- readBin(file_path, what = "raw", n = file.size(file_path))
+  auto  <- tolower(encoding) == "auto"
+
+  # Byte-order marks (always stripped; they pick the encoding in auto mode)
+  bom_enc <- NULL
+  if (length(bytes) >= 3L && identical(bytes[1:3], as.raw(c(0xEF, 0xBB, 0xBF)))) {
+    bytes <- bytes[-(1:3)]; bom_enc <- "UTF-8"
+  } else if (length(bytes) >= 2L && identical(bytes[1:2], as.raw(c(0xFF, 0xFE)))) {
+    bytes <- bytes[-(1:2)]; bom_enc <- "UTF-16LE"
+  } else if (length(bytes) >= 2L && identical(bytes[1:2], as.raw(c(0xFE, 0xFF)))) {
+    bytes <- bytes[-(1:2)]; bom_enc <- "UTF-16BE"
+  }
+
+  enc <- if (!auto) {
+    encoding
+  } else if (!is.null(bom_enc)) {
+    bom_enc
+  } else if (stringi::stri_enc_isutf8(bytes)) {
+    "UTF-8"
+  } else {
+    "windows-1252"
+  }
+
+  if (length(bytes) == 0L) return(list(text = "", encoding = enc))
+
+  is_utf8 <- toupper(enc) %in% c("UTF-8", "UTF8")
+  if (is_utf8) {
+    if (!stringi::stri_enc_isutf8(bytes)) {
+      stop("build_corpus | '", basename(file_path), "' is not valid UTF-8.\n",
+           "Try: build_corpus(..., encoding = 'auto') or encoding = 'windows-1252'",
+           call. = FALSE)
+    }
+    text <- rawToChar(bytes)
+    Encoding(text) <- "UTF-8"
+  } else {
+    text <- tryCatch(
+      stringi::stri_encode(bytes, from = enc, to = "UTF-8"),
+      error = function(e) {
+        stop("build_corpus | failed to read '", basename(file_path), "' as ",
+             enc, ": ", conditionMessage(e), call. = FALSE)
+      }
+    )
+  }
+  list(text = text, encoding = if (is_utf8) "UTF-8" else enc)
+}
+
+# French-specific cleaning, vectorised over a character vector. Expects "\n"
+# line endings (build_corpus normalises them beforehand).
+.clean_french_text <- function(x) {
+  rx <- stringi::stri_replace_all_regex
+  fx <- stringi::stri_replace_all_fixed
+
+  x <- fx(x, "\\", "")                       # remove backslashes
+
+  # Line breaks: a single "\n" before text becomes a space, then whitespace
+  # after a line break is dropped. NB: this collapses blank lines too, so
+  # paragraphs end up separated by a single "\n".
+  x <- rx(x, "\n(?=[^\n])", " ")
+  x <- rx(x, "(\n)\\s+", "$1")
+  x <- rx(x, "\n{3,}", "\n\n")
+
+  # Punctuation. "<<" / ">>" are guillemets typed as ASCII.
+  x <- fx(x, c("<<", ">>", "\u2019", "''", "\u00AB", "\u00BB", "!", ";", ":"),
+          c("\u00AB", "\u00BB", "'", "'", " \u00AB ", " \u00BB ", "! ", " ; ", " : "),
+          vectorize_all = FALSE)
+
+  # Space after a sentence-ending dot (before uppercase/digit). Dots between
+  # lowercase letters (inclusive writing: "\u00E9tudiant.e.s") are untouched.
+  x <- rx(x, "\\.(?=\\s*[A-Z0-9\u00C0\u00C9\u00C8\u00D9])", ". ")
+  x <- rx(x, ",(?=[A-Za-z\u00C0\u00C9\u00C8\u00D90-9])", ", ")
+  x <- rx(x, "\\)(?=[A-Za-z\u00C0\u00C9\u00C8\u00D90-9])", ") ")
+
+  rx(x, " {2,}", " ")                        # collapse runs of spaces
 }
 
 #' Parse Text with UDPipe

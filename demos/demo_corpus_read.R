@@ -84,8 +84,8 @@ unlink(tmp_cp1252)
 
 # 4) Auto-detection (single file) ----
 # If you don't know the encoding, pass encoding = "auto".
-# build_corpus() uses readr::guess_encoding() to sniff the file and
-# picks the most likely encoding automatically.
+# build_corpus() reads each file's bytes and picks UTF-8 if valid, else
+# windows-1252 (a superset of Latin-1).
 # It also prints a message telling you what it detected.
 
 tmp_auto <- file.path(tempdir(), "mystery_encoding.txt")
