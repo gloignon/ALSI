@@ -373,10 +373,12 @@ extra_syntactic_features <- function(dt,
   dt_sent_bv <- dt_corpus[, {
     root_pos <- token_id_num[which(dep_rel == "root")]
     if (length(root_pos) == 0L || is.na(root_pos[[1L]])) {
-      .(n_before_root = NA_integer_)
+      .(n_before_root = NA_integer_, n_after_root = NA_integer_)
     } else {
       .(n_before_root = sum(compte == TRUE &
-                              token_id_num < root_pos[[1L]], na.rm = TRUE))
+                              token_id_num < root_pos[[1L]], na.rm = TRUE),
+        n_after_root  = sum(compte == TRUE &
+                              token_id_num > root_pos[[1L]], na.rm = TRUE))
     }
   }, by = sent_keys]
 
@@ -424,6 +426,7 @@ extra_syntactic_features <- function(dt,
       # rather than averaging per-sentence means (which equal-weights short and
       # long sentences). n_tokens above already counts countable tokens.
       dep_count_sum     = sum(dep_count, na.rm = TRUE),
+      dep_count_sq_sum  = sum(dep_count^2, na.rm = TRUE),
       .groups = "drop"
     ) |>
     left_join(dt_sent_dd, by = sent_keys) |>
@@ -446,9 +449,16 @@ extra_syntactic_features <- function(dt,
       # / total countable tokens (matches the ratio-of-sums style used for the
       # Lu measures), not a mean of per-sentence means.
       avg_dep_count         = sum(dep_count_sum) / sum(n_tokens),
+      # Pooled sample sd (n - 1) of per-token out-degree, from running sums.
+      sd_dep_count          = if (sum(n_tokens) < 2L) NA_real_
+                              else sqrt(max(0, sum(dep_count_sq_sum) -
+                                  sum(dep_count_sum)^2 / sum(n_tokens)) /
+                                  (sum(n_tokens) - 1L)),
       # Coh-Metrix SYNLE (Graesser et al. 2011): mean tokens before the main
       # verb (root), averaged over sentences that have a root.
       avg_words_before_root = mean(n_before_root, na.rm = TRUE),
+      # Mirror of the above (FABRA SYNdevAFT, inspired): words after the root.
+      avg_words_after_root  = mean(n_after_root, na.rm = TRUE),
       clausal_density       = sum(n_clause,  na.rm = TRUE) / n(),
       # Lu (2010) DC/C and CN/C are sample-level ratios of sums (total
       # dependent clauses / total clauses; total complex nominals / total
@@ -463,4 +473,34 @@ extra_syntactic_features <- function(dt,
     )
 
   return(sum_extra_syn_features)
+}
+
+#' Proportion of words in selected UD dependency relations
+#'
+#' Share of countable words attached by each requested relation, per document.
+#' Relation subtypes are folded into the base relation (\code{acl:relcl}
+#' counts as \code{acl}).
+#'
+#' @details Inspired by FABRA \code{SYNdep*}; see
+#'   \code{vignettes/specs/fabra-cheap-ud-features.Rmd} (including the
+#'   listed gaps).
+#' @citation_type "inspired" (FABRA dependency-relation family)
+#'
+#' @param parsed_corpus data.table, parser output after
+#'   \code{post_process_lexicon}, with \code{doc_id}, \code{dep_rel} and
+#'   \code{compte}.
+#' @param rels Character vector of base UD relations.
+#' @returns data.table with one row per \code{doc_id} and one
+#'   \code{prop_dep_<rel>} column per relation in \code{rels}.
+#' @export
+ud_relation_proportions <- function(parsed_corpus,
+                                    rels = c("amod", "nmod", "acl", "appos",
+                                             "conj", "case")) {
+  dt <- data.table::as.data.table(parsed_corpus)[compte == TRUE]
+  dt[, base_rel := sub(":.*", "", dep_rel)]
+  result <- dt[, c(
+    lapply(rels, \(r) sum(base_rel == r, na.rm = TRUE) / .N) |>
+      setNames(paste0("prop_dep_", rels))
+  ), by = doc_id]
+  return(result)
 }

@@ -297,3 +297,45 @@ sent_length_variability <- function(parsed_corpus) {
   setkey(result, doc_id)
   return(result)
 }
+
+#' Referential-expression ratios (pronouns, definite articles, possessives)
+#'
+#' Document-level ratios of pronouns, personal pronouns, possessives and
+#' definite articles to nouns or to all countable words.
+#'
+#' @details Inspired by FABRA \code{DISref*}; see
+#'   \code{vignettes/specs/fabra-cheap-ud-features.Rmd}. Nouns are
+#'   \code{upos == "NOUN"} (proper nouns excluded); words are
+#'   \code{compte == TRUE} tokens. A zero denominator yields \code{NA}.
+#' @citation_type "inspired" (FABRA referential-expressions family)
+#'
+#' @param parsed_corpus data.table, parser output after
+#'   \code{post_process_lexicon}, with \code{doc_id}, \code{upos},
+#'   \code{feats} and \code{compte}.
+#' @returns data.table with one row per \code{doc_id}: \code{ref_pron_per_noun},
+#'   \code{ref_pron_per_word}, \code{ref_personal_pron_per_word},
+#'   \code{ref_possessive_per_word}, \code{ref_def_art_per_noun},
+#'   \code{ref_def_art_per_word}.
+#' @export
+referential_features <- function(parsed_corpus) {
+  dt <- data.table::as.data.table(parsed_corpus)[compte == TRUE]
+  has_feat <- \(pattern) !is.na(dt$feats) & grepl(pattern, dt$feats)
+  dt[, `:=`(
+    is_noun     = upos == "NOUN",
+    is_pron     = upos == "PRON",
+    is_personal = upos == "PRON" & has_feat("PronType=Prs") &
+      !has_feat("Poss=Yes"),
+    is_poss     = has_feat("Poss=Yes"),
+    is_def_art  = upos == "DET" & has_feat("Definite=Def")
+  )]
+  ratio <- \(num, den) if (den == 0L) NA_real_ else num / den
+  result <- dt[, .(
+    ref_pron_per_noun          = ratio(sum(is_pron), sum(is_noun)),
+    ref_pron_per_word          = ratio(sum(is_pron), .N),
+    ref_personal_pron_per_word = ratio(sum(is_personal), .N),
+    ref_possessive_per_word    = ratio(sum(is_poss), .N),
+    ref_def_art_per_noun       = ratio(sum(is_def_art), sum(is_noun)),
+    ref_def_art_per_word       = ratio(sum(is_def_art), .N)
+  ), by = doc_id]
+  return(result)
+}

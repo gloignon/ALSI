@@ -299,10 +299,26 @@ Source split: clause length, clausal density, and the dependent-clause / complex
 | `avg_dep_dist` | Mean Dependency Distance (MDD, Liu 2008, Formula 2): total \|position(head) − position(dependent)\| over all real (non-root, non-PUNCT) dependencies, divided by the total number of real dependencies (pooled across sentences). Positions are renumbered over non-punctuation tokens (intervening punctuation adds no distance), the same scale as `avg_head_distance` in `fnt_heights.R`. | document |
 | `avg_dep_count` | Mean out-degree per token, pooled across the document: total countable children / total countable tokens, leaves counted as 0. Derived graph statistic. | document |
 | `avg_words_before_root` | Mean number of tokens preceding the root (usually the main verb): for each sentence, count the tokens whose surface position is before the `root` token, then average across sentences (Coh-Metrix left embeddedness SYNLE, Graesser et al. 2011, adapted — pre-verbal working memory load). | document |
+| `avg_words_after_root` | Mean number of countable tokens following the root, averaged over sentences with a root. Mirror of `avg_words_before_root`. Inspired by FABRA `SYNdevAFT`; see `vignettes/specs/fabra-cheap-ud-features.Rmd`. | document |
+| `sd_dep_count` | Pooled sample standard deviation (n − 1) of per-token out-degree; companion of `avg_dep_count`. Inspired by FABRA `SYNdevSUB`. | document |
 
 **Caveat (clause finiteness).** The default `dc_rels` set (`ccomp`, `advcl`, `acl`, `acl:relcl`) is a UD *approximation* of Lu's finite dependent-clause definition, not an exact match: these relations are not conditioned on finiteness, so a non-finite `acl`/`advcl` head (e.g. a participial adjunct) is still counted as a dependent clause. The non-finite `xcomp` is excluded by default; `csubj`/`csubj:pass` are excluded because they are essentially absent in parsed French. Pass a custom `dc_rels` to change this.
 
 Optional clause-counting mode: `extra_syntactic_features(..., count_parataxis = TRUE)` also follows UD `parataxis` arcs when detecting independent clauses, which can recover asyndetic main-clause coordination. The default is `FALSE` because `parataxis` also covers comment and quotative clauses that Hunt/Lu-style T-unit logic would often keep inside one unit.
+
+### 8b) `ud_relation_proportions()` and `referential_features()`
+
+Inspired by the FABRA feature catalog (`SYNdep*`, `DISref*`); operationalised on UD parses, so values are not numerically comparable to FABRA's. Spec, gaps and worked example: `vignettes/specs/fabra-cheap-ud-features.Rmd`. "Words" are `compte == TRUE` tokens; a zero denominator gives `NA`.
+
+| Feature | Definition | Level |
+|---|---|---|
+| `prop_dep_<rel>` | Words whose base UD relation (subtype removed) is `<rel>`, over all words. Default relations: `amod`, `nmod`, `acl`, `appos`, `conj`, `case`. | document |
+| `ref_pron_per_noun` | PRON words / NOUN words (PROPN excluded). | document |
+| `ref_pron_per_word` | PRON words / words. | document |
+| `ref_personal_pron_per_word` | PRON with `PronType=Prs` and not `Poss=Yes` / words. | document |
+| `ref_possessive_per_word` | Words with `Poss=Yes` / words. | document |
+| `ref_def_art_per_noun` | DET with `Definite=Def` / NOUN words. | document |
+| `ref_def_art_per_word` | DET with `Definite=Def` / words. | document |
 
 ## 9) `features$pos_surprisal$doc_surprisal`
 Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)
