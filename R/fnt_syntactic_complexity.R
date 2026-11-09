@@ -457,7 +457,7 @@ extra_syntactic_features <- function(dt,
       # Coh-Metrix SYNLE (Graesser et al. 2011): mean tokens before the main
       # verb (root), averaged over sentences that have a root.
       avg_words_before_root = mean(n_before_root, na.rm = TRUE),
-      # Mirror of the above (FABRA SYNdevAFT, inspired): words after the root.
+      # Mirror of the above: words after the root (derived, no external source).
       avg_words_after_root  = mean(n_after_root, na.rm = TRUE),
       clausal_density       = sum(n_clause,  na.rm = TRUE) / n(),
       # Lu (2010) DC/C and CN/C are sample-level ratios of sums (total
@@ -481,10 +481,10 @@ extra_syntactic_features <- function(dt,
 #' Relation subtypes are folded into the base relation (\code{acl:relcl}
 #' counts as \code{acl}).
 #'
-#' @details Inspired by FABRA \code{SYNdep*}; see
+#' @details Descriptive counts; FABRA \code{SYNdep*} is a cross-reference only. See
 #'   \code{vignettes/specs/fabra-cheap-ud-features.Rmd} (including the
 #'   listed gaps).
-#' @citation_type "inspired" (FABRA dependency-relation family)
+#' @citation_type "derived" (no external backing; needs motivation)
 #'
 #' @param parsed_corpus data.table, parser output after
 #'   \code{post_process_lexicon}, with \code{doc_id}, \code{dep_rel} and

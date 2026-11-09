@@ -43,6 +43,11 @@
 #   salazar2020: Salazar, Liang, Nguyen & Kirchhoff (2020). Masked language
 #                model scoring. Proc. ACL, 2699-2712.
 #                doi:10.18653/v1/2020.acl-main.240
+#   fabra_catalog: FABRA feature catalog (UCLouvain CENTAL),
+#                https://cental.uclouvain.be/fabra/static/feat_desc_fr.js
+#                (fetched 2026-11-09). Catalog descriptions only; the FABRA
+#                paper reference is NOT yet filled in -- confirm before
+#                citing in a publication.
 #   francois2014: François, Gala, Watrin & Fairon (2014). FLELex, LREC.
 #   vajjala_meurers2012: Vajjala & Meurers (2012). Readability classification
 #                using SLA insights. BEA 2012, 163-173; Section 4.1, p. 166.
@@ -236,6 +241,26 @@ features:
       the main clause; UD sentence root approximates the main-verb anchor.
       Previously misattributed to Vajjala & Meurers (2012); corrected
       2026-07-04.
+  avg_words_after_root:
+    papers: []
+    backing: derived
+    note: >
+      Mirror of avg_words_before_root (words after the main verb). Same-name
+      FABRA feature SYNdevAFT is a cross-reference only, not a source. Spec: vignettes/specs/fabra-cheap-ud-features.Rmd.
+  sd_dep_count:
+    papers: []
+    backing: derived
+    note: >
+      Pooled sd of per-token out-degree; companion of avg_dep_count. Descriptive
+      statistic; FABRA SYNdevSUB is a naming cross-reference only.
+  prop_dep_rel:
+    papers: []
+    backing: derived
+    note: >
+      prop_dep_<rel>: share of words per base UD relation. Plain descriptive
+      counts of existing parser output; FABRA SYNdep* is a cross-reference
+      only. Needs external motivation (candidate: Wen, Zeng & Yu 2026,
+      full text not yet read). Denominator = compte words (ALSI choice, see spec gaps).
 
   # ------------------------------------------------------------------
   # features$tunits -- R/fnt_tunits.R (tunit_features)
@@ -356,3 +381,15 @@ features:
     papers: [salazar2020]
     backing: adapted
     note: Multi-piece whole-word completion via left-to-right beam search over the Salazar et al. 2020 masked scorer; ALSI operationalization.
+  # ------------------------------------------------------------------
+  # referential_features() -- R/fnt_counters.R
+  # ------------------------------------------------------------------
+  referential_features:
+    papers: []
+    backing: derived
+    note: >
+      ref_pron_per_noun, ref_pron_per_word, ref_personal_pron_per_word,
+      ref_possessive_per_word, ref_def_art_per_noun, ref_def_art_per_word.
+      Descriptive UPOS/feats ratios; FABRA DISref* is a cross-reference only.
+      Needs external motivation. NOUN excludes PROPN. Spec:
+      vignettes/specs/fabra-cheap-ud-features.Rmd.

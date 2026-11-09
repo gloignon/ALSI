@@ -303,11 +303,11 @@ sent_length_variability <- function(parsed_corpus) {
 #' Document-level ratios of pronouns, personal pronouns, possessives and
 #' definite articles to nouns or to all countable words.
 #'
-#' @details Inspired by FABRA \code{DISref*}; see
+#' @details Descriptive ratios; FABRA \code{DISref*} is a cross-reference only. See
 #'   \code{vignettes/specs/fabra-cheap-ud-features.Rmd}. Nouns are
 #'   \code{upos == "NOUN"} (proper nouns excluded); words are
 #'   \code{compte == TRUE} tokens. A zero denominator yields \code{NA}.
-#' @citation_type "inspired" (FABRA referential-expressions family)
+#' @citation_type "derived" (no external backing; needs motivation)
 #'
 #' @param parsed_corpus data.table, parser output after
 #'   \code{post_process_lexicon}, with \code{doc_id}, \code{upos},
