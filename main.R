@@ -51,6 +51,8 @@ source("R/fnt_pos_surprisal.R", encoding = "UTF-8")
 source("R/fnt_pos_surprisal_nn.R", encoding = "UTF-8")
 source("R/fnt_deprel_surprisal.R", encoding = "UTF-8")
 source("R/fnt_syntactic_complexity.R",  encoding = "UTF-8")
+source("R/fnt_tunits.R",     encoding = "UTF-8")
+source("R/fnt_morphology.R", encoding = "UTF-8")
 source("R/fnt_cohesion.R",      encoding = "UTF-8")
 source("R/fnt_utility.R",       encoding = "UTF-8")
 source("R/fnt_embeddings.R",    encoding = "UTF-8")
@@ -108,6 +110,17 @@ features$heights <- docwise_graph_stats(features$parsed_corpus)
 
 # 10) Clausal and dependency complexity (Lu 2010, Liu 2008)
 features$syntactic <- extra_syntactic_features(features$parsed_corpus)
+
+# 10b) T-unit indices (Lu 2010)
+features$tunits <- tunit_features(features$parsed_corpus)
+
+# 10c) Dependency-relation shares and referential-expression ratios
+features$ud_relations <- ud_relation_proportions(features$parsed_corpus)
+features$referential  <- referential_features(features$parsed_corpus)
+features$nominals    <- nominal_dependent_features(features$parsed_corpus)
+
+# 10d) Inflectional profile (UD feats)
+features$morphology <- inflectional_profile(features$parsed_corpus)
 
 # 11) POS trigram surprisal — uses the distributed model (PUNCT/SYM excluded,
 #     sentence boundaries enabled). Swap for a custom model if needed.

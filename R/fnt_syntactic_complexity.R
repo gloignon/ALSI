@@ -50,6 +50,19 @@
 #'       the sentence root (main verb), averaged over sentences with a root
 #'       (Coh-Metrix left embeddedness, SYNLE — Graesser, McNamara &
 #'       Kulikowich 2011, adapted — pre-verbal working-memory load).}
+#'     \item{advcl_per_clause, ccomp_per_clause, xcomp_per_clause,
+#'       csubj_per_clause, relcl_per_clause, advmod_per_clause}{Tokens with
+#'       that UD relation (base relation for the first four and
+#'       \code{advmod}; \code{acl:relcl} for relative clauses) divided by
+#'       total clauses. Adapted from TAASSC per-clause indices (Kyle &
+#'       Crossley 2018; Wen, Zeng & Yu 2026) with ALSI's clause count as
+#'       denominator, so not numerically comparable to TAASSC.}
+#'     \item{cc_per_clause}{Coordinating conjunctions (\code{cc}) attached to
+#'       a predicate (clausal coordination) divided by total clauses;
+#'       adapted from TAASSC \code{cc_per_cl}.}
+#'     \item{deps_per_predicate}{Countable children of predicate tokens
+#'       (\code{is_predicate}) divided by the number of predicate tokens;
+#'       analogue of TAASSC \code{cl_av_deps}.}
 #'   }
 #'
 #' @citation_type \code{clausal_density}, \code{avg_clause_length},
@@ -352,6 +365,17 @@ extra_syntactic_features <- function(dt,
   # to use a different relation set.
   dt_corpus <- add_predicate_flag(dt_corpus)
 
+  # Clausal coordination: a `cc` whose head is a predicate (UD attaches `cc`
+  # to the conjunct that follows it).
+  dt_pred_ids <- dt_corpus[is_predicate == TRUE,
+                           .(doc_id, paragraph_id, sentence_id, token_id)]
+  if ("head_is_pred" %in% names(dt_corpus)) dt_corpus[, head_is_pred := NULL]
+  dt_corpus[dt_pred_ids,
+            on = .(doc_id, paragraph_id, sentence_id,
+                   head_token_id = token_id),
+            head_is_pred := TRUE]
+  dt_corpus[is.na(head_is_pred), head_is_pred := FALSE]
+
   dt_corpus[, is_dependent_clause := dep_rel %in% dc_rels]
 
   dt_sent_tu <- dt_corpus[, .(
@@ -421,6 +445,18 @@ extra_syntactic_features <- function(dt,
       n_tokens          = n(),
       n_complex_nominal = sum(is_complex_nominal,  na.rm = TRUE),
       n_complex_verb    = sum(is_complex_verb,     na.rm = TRUE),
+      # Relation counts for the per-clause ratios (adapted from TAASSC; see
+      # vignettes/specs/kyle-nominal-clausal-ratios.Rmd).
+      n_advcl           = sum(sub(":.*", "", dep_rel) == "advcl", na.rm = TRUE),
+      n_ccomp           = sum(sub(":.*", "", dep_rel) == "ccomp", na.rm = TRUE),
+      n_xcomp           = sum(sub(":.*", "", dep_rel) == "xcomp", na.rm = TRUE),
+      n_csubj           = sum(sub(":.*", "", dep_rel) == "csubj", na.rm = TRUE),
+      n_advmod          = sum(sub(":.*", "", dep_rel) == "advmod", na.rm = TRUE),
+      n_relcl           = sum(dep_rel == "acl:relcl", na.rm = TRUE),
+      n_cc_clausal      = sum(sub(":.*", "", dep_rel) == "cc" & head_is_pred,
+                              na.rm = TRUE),
+      n_predicate       = sum(is_predicate, na.rm = TRUE),
+      predicate_deps    = sum(dep_count[is_predicate], na.rm = TRUE),
       # Pooled out-degree bookkeeping: total out-degree and the number of
       # countable tokens, so the document mean pools per token (sum / count)
       # rather than averaging per-sentence means (which equal-weights short and
@@ -469,6 +505,15 @@ extra_syntactic_features <- function(dt,
       dc_per_clause         = sum(n_dc)              / sum(n_clause),
       cn_per_clause         = sum(n_complex_nominal) / sum(n_clause),
       cv_per_clause         = sum(n_complex_verb)    / sum(n_clause),
+      advcl_per_clause      = sum(n_advcl)  / sum(n_clause),
+      ccomp_per_clause      = sum(n_ccomp)  / sum(n_clause),
+      xcomp_per_clause      = sum(n_xcomp)  / sum(n_clause),
+      csubj_per_clause      = sum(n_csubj)  / sum(n_clause),
+      relcl_per_clause      = sum(n_relcl)  / sum(n_clause),
+      advmod_per_clause     = sum(n_advmod) / sum(n_clause),
+      cc_per_clause         = sum(n_cc_clausal) / sum(n_clause),
+      deps_per_predicate    = if (sum(n_predicate) == 0) NA_real_
+                              else sum(predicate_deps) / sum(n_predicate),
       .groups = "drop"
     )
 
@@ -502,5 +547,144 @@ ud_relation_proportions <- function(parsed_corpus,
     lapply(rels, \(r) sum(base_rel == r, na.rm = TRUE) / .N) |>
       setNames(paste0("prop_dep_", rels))
   ), by = doc_id]
+  return(result)
+}
+
+#' Nominal-dependent ratios (TAASSC-style phrasal complexity)
+#'
+#' Per document, the average number of dependents per common noun, in total
+#' and by relation type (determiners, possessives, adjectival modifiers,
+#' nominal modifiers, relative clauses, other adnominal clauses, compounds,
+#' adverbial modifiers).
+#'
+#' @details Adapts the fine-grained phrasal indices of TAASSC (Kyle 2016;
+#'   Kyle & Crossley 2018) to Universal Dependencies. Index names and grade-level evidence come
+#'   from Wen, Zeng & Yu (2026), who only name the indices; the behaviour
+#'   follows the TAASSC 2.0.0.58 release (Kyle et al. 2021) because the formal
+#'   definitions (Kyle 2016) were not available. A nominal is a \code{NOUN}
+#'   (pronouns and proper nouns excluded). Dependents are the nominal's
+#'   children, excluding \code{case} (UD makes the preposition a dependent of
+#'   its object; TAASSC's scheme makes it the head), punctuation,
+#'   multi-word-token range rows and any token with a missing \code{upos}. The
+#'   \code{compte} flag is not used, so words inside a contraction ("du")
+#'   count. UD-to-TAASSC relation mappings are judgement calls; see
+#'   \code{vignettes/specs/kyle-nominal-clausal-ratios.Rmd}.
+#' @citation_type "adapted" (Kyle & Crossley 2018; Wen, Zeng & Yu 2026)
+#'
+#' @param parsed_corpus data.table, parser output after
+#'   \code{post_process_lexicon}, with \code{doc_id}, \code{paragraph_id},
+#'   \code{sentence_id}, \code{token_id}, \code{head_token_id},
+#'   \code{dep_rel}, \code{upos} and \code{feats}.
+#' @returns data.table with one row per \code{doc_id} and columns
+#'   \code{np_deps_per_nominal}, \code{np_det_per_nominal},
+#'   \code{np_poss_per_nominal}, \code{np_amod_per_nominal},
+#'   \code{np_nmod_per_nominal}, \code{np_relcl_per_nominal},
+#'   \code{np_acl_per_nominal}, \code{np_compound_per_nominal},
+#'   \code{np_advmod_per_nominal}, \code{np_deps_sd} (sample sd of the
+#'   per-nominal dependent counts; \code{NA} below two nominals),
+#'   \code{np_nsubj_deps} (mean dependents of nominal subjects) and
+#'   \code{np_pobj_deps} (mean dependents of objects of a preposition, i.e.
+#'   nominals with a \code{case} child); \code{NA} where undefined.
+#' @references
+#'   Kyle, K., & Crossley, S. (2018). Measuring syntactic complexity in L2
+#'   writing using fine-grained clausal and phrasal indices. *Modern Language
+#'   Journal*. \doi{10.1111/modl.12468}
+#'
+#'   Wen, Zeng & Yu (2026). *International Journal of Applied Linguistics*.
+#'   \doi{10.1111/ijal.70402}
+#' @export
+nominal_dependent_features <- function(parsed_corpus) {
+  dt <- data.table::as.data.table(parsed_corpus)
+  dt[, `:=`(
+    token_id_num = suppressWarnings(as.integer(token_id)),
+    head_id_num  = suppressWarnings(as.integer(head_token_id)),
+    base_rel     = sub(":.*", "", dep_rel)
+  )]
+  dt <- dt[!is.na(token_id_num) & upos != "PUNCT"]
+
+  sent_keys <- c("doc_id", "paragraph_id", "sentence_id")
+  nominal_keys <- c(sent_keys, "token_id_num")
+  dt_nominal <- dt[upos == "NOUN", c(nominal_keys, "base_rel"), with = FALSE]
+  data.table::setnames(dt_nominal, "base_rel", "own_rel")
+
+  has_poss <- !is.na(dt$feats) & grepl("Poss=Yes", dt$feats, fixed = TRUE)
+  dt[, dep_cat := data.table::fcase(
+    dep_rel == "acl:relcl", "relcl",
+    dep_rel == "nmod:poss" | (base_rel == "det" & has_poss), "poss",
+    base_rel == "det", "det",
+    base_rel == "acl", "acl",
+    base_rel %in% c("amod", "nmod", "compound", "advmod"), base_rel,
+    default = "other"
+  )]
+
+  dt_children <- dt[!is.na(head_id_num) & head_id_num > 0L,
+                    c(sent_keys, "head_id_num", "dep_cat", "base_rel"),
+                    with = FALSE]
+  data.table::setnames(dt_children, "head_id_num", "token_id_num")
+
+  # UD makes the preposition a `case` child of its object; TAASSC's scheme
+  # makes it the head, so `case` is not a dependent here.
+  dt_case <- unique(dt_children[base_rel == "case", nominal_keys,
+                                with = FALSE])
+  dt_case[, has_case := TRUE]
+  dt_dep <- dt_nominal[dt_children[is.na(base_rel) | base_rel != "case"],
+                       on = nominal_keys, nomatch = NULL]
+
+  dt_per_nominal <- dt_dep[, .(
+    n_deps     = .N,
+    n_det      = sum(dep_cat == "det"),
+    n_poss     = sum(dep_cat == "poss"),
+    n_amod     = sum(dep_cat == "amod"),
+    n_nmod     = sum(dep_cat == "nmod"),
+    n_relcl    = sum(dep_cat == "relcl"),
+    n_acl      = sum(dep_cat == "acl"),
+    n_compound = sum(dep_cat == "compound"),
+    n_advmod   = sum(dep_cat == "advmod")
+  ), by = nominal_keys]
+  count_cols <- setdiff(names(dt_per_nominal), nominal_keys)
+  dt_per_nominal <- merge(dt_nominal, dt_per_nominal, by = nominal_keys,
+                          all.x = TRUE)
+  for (col in count_cols) {
+    data.table::set(dt_per_nominal, which(is.na(dt_per_nominal[[col]])),
+                    col, 0L)
+  }
+  dt_per_nominal <- merge(dt_per_nominal, dt_case, by = nominal_keys,
+                          all.x = TRUE)
+  dt_per_nominal[is.na(has_case), has_case := FALSE]
+
+  dt_doc <- dt_per_nominal[, .(
+    n_nominal = .N,
+    n_deps = sum(n_deps), n_det = sum(n_det), n_poss = sum(n_poss),
+    n_amod = sum(n_amod), n_nmod = sum(n_nmod), n_relcl = sum(n_relcl),
+    n_acl = sum(n_acl), n_compound = sum(n_compound),
+    n_advmod = sum(n_advmod),
+    np_deps_sd = if (.N > 1L) stats::sd(n_deps) else NA_real_,
+    np_nsubj_deps = if (any(own_rel %in% "nsubj")) {
+      mean(n_deps[own_rel %in% "nsubj"])
+    } else NA_real_,
+    np_pobj_deps = if (any(has_case)) mean(n_deps[has_case]) else NA_real_
+  ), by = doc_id]
+
+  all_docs <- data.table::data.table(doc_id = unique(parsed_corpus$doc_id))
+  result <- merge(all_docs, dt_doc, by = "doc_id", all.x = TRUE)
+  for (col in c("n_nominal", paste0("n_", c("deps", "det", "poss", "amod",
+                "nmod", "relcl", "acl", "compound", "advmod")))) {
+    data.table::set(result, which(is.na(result[[col]])), col, 0L)
+  }
+
+  ratio_names <- c(deps = "n_deps", det = "n_det", poss = "n_poss",
+                   amod = "n_amod", nmod = "n_nmod", relcl = "n_relcl",
+                   acl = "n_acl", compound = "n_compound",
+                   advmod = "n_advmod")
+  for (nm in names(ratio_names)) {
+    data.table::set(
+      result, j = paste0("np_", nm, "_per_nominal"),
+      value = ifelse(result$n_nominal > 0L,
+                     result[[ratio_names[[nm]]]] / result$n_nominal,
+                     NA_real_)
+    )
+  }
+  result <- result[, c("doc_id", grep("^np_", names(result), value = TRUE)),
+                   with = FALSE]
   return(result)
 }

@@ -301,6 +301,8 @@ Source split: clause length, clausal density, and the dependent-clause / complex
 | `avg_words_before_root` | Mean number of tokens preceding the root (usually the main verb): for each sentence, count the tokens whose surface position is before the `root` token, then average across sentences (Coh-Metrix left embeddedness SYNLE, Graesser et al. 2011, adapted — pre-verbal working memory load). | document |
 | `avg_words_after_root` | Mean number of countable tokens following the root, averaged over sentences with a root. Mirror of `avg_words_before_root`. Derived descriptive (same-name FABRA `SYNdevAFT` is a cross-reference only). | document |
 | `sd_dep_count` | Pooled sample standard deviation (n − 1) of per-token out-degree; companion of `avg_dep_count`. Derived descriptive (cf. FABRA `SYNdevSUB`, cross-reference only). | document |
+| `advcl_per_clause`, `ccomp_per_clause`, `xcomp_per_clause`, `csubj_per_clause`, `relcl_per_clause`, `advmod_per_clause`, `cc_per_clause` | Tokens with the UD relation (base relation; `acl:relcl` for relative clauses; for `cc`, only coordinating conjunctions whose head is a predicate, i.e. clausal coordination) / total clauses (ALSI clause count: T-units + dependent-clause heads). Adapted from TAASSC per-clause indices (Kyle & Crossley 2018; Wen, Zeng & Yu 2026). Not numerically comparable to TAASSC, whose clause is a finite verb with a subject. | document |
+| `deps_per_predicate` | Countable children of predicate tokens (VERB/AUX or copular heads) / number of predicate tokens. Analogue of TAASSC `cl_av_deps`. | document |
 
 **Caveat (clause finiteness).** The default `dc_rels` set (`ccomp`, `advcl`, `acl`, `acl:relcl`) is a UD *approximation* of Lu's finite dependent-clause definition, not an exact match: these relations are not conditioned on finiteness, so a non-finite `acl`/`advcl` head (e.g. a participial adjunct) is still counted as a dependent clause. The non-finite `xcomp` is excluded by default; `csubj`/`csubj:pass` are excluded because they are essentially absent in parsed French. Pass a custom `dc_rels` to change this.
 
@@ -319,6 +321,25 @@ Optional clause-counting mode: `extra_syntactic_features(..., count_parataxis = 
 | `ref_possessive_per_word` | Words with `Poss=Yes` / words. | document |
 | `ref_def_art_per_noun` | DET with `Definite=Def` / NOUN words. | document |
 | `ref_def_art_per_word` | DET with `Definite=Def` / words. | document |
+
+### 8c) `features$nominals` -- `nominal_dependent_features()`
+
+Produced in: `R/fnt_syntactic_complexity.R`. **Adapted** from the TAASSC fine-grained phrasal indices (Kyle & Crossley 2018), with index names and grade-level evidence from Wen, Zeng & Yu (2026) (who only name the indices) and behaviour read from the TAASSC 2.0.0.58 release (Kyle et al. 2021); Kyle & Crossley (2018) and Kyle (2016), where the formal definitions are, were **not read**. Several columns (`np_nmod`, `np_acl`, `np_compound`, `np_pobj_deps`, `cc_per_clause`, `deps_per_predicate`) are ALSI mappings of TAASSC concepts onto UD, closer to *inspired* than *identical*; UD relation mappings are judgement calls (spec: `vignettes/specs/kyle-nominal-clausal-ratios.Rmd`). A nominal is a `NOUN` (no pronouns or proper nouns); dependents are its children excluding `case` (UD makes the preposition a dependent of its object; in TAASSC's scheme it is the head), punctuation and multi-word-token range rows. Ratios are sums over the document; `NA` when the document has no nominal. Not implemented (definition unavailable): dependents per nominal complement, `conj_per_cl`, `ncomp_per_cl`.
+
+| Feature | Dependents counted (UD) | TAASSC concept | Level |
+|---|---|---|---|
+| `np_deps_per_nominal` | all | dependents per nominal | document |
+| `np_det_per_nominal` | `det` without `Poss=Yes` | determiners per nominal | document |
+| `np_poss_per_nominal` | `det` with `Poss=Yes`, `nmod:poss` | possessives per nominal | document |
+| `np_amod_per_nominal` | `amod` | adjectival modifiers per nominal | document |
+| `np_nmod_per_nominal` | `nmod` | prepositions per nominal (mapping) | document |
+| `np_relcl_per_nominal` | `acl:relcl` | relative-clause modifiers per nominal | document |
+| `np_acl_per_nominal` | `acl` (non-relative) | verbal modifiers per nominal (mapping) | document |
+| `np_compound_per_nominal` | `compound` | nouns as nominal dependent (mapping; ~0 in French) | document |
+| `np_advmod_per_nominal` | `advmod` | adverbial modifiers per nominal | document |
+| `np_deps_sd` | Sample sd (n − 1) of per-nominal dependent counts over the document's nominals (zero-dependent nominals count as 0); `NA` below two nominals. Definition of TAASSC `nominal_deps_stdev` unverified (sample vs population sd). | document |
+| `np_nsubj_deps` | Mean dependents of nominals whose relation is `nsubj` (incl. `nsubj:pass`); `NA` if none. | document |
+| `np_pobj_deps` | Mean dependents of nominals that carry a `case` child (objects of a preposition); `case` excluded from their count; `NA` if none. Mapping from TAASSC `pobj`. | document |
 
 ## 9) `features$pos_surprisal$doc_surprisal`
 Produced in: `R/fnt_pos_surprisal.R` (`pos_surprisal`)

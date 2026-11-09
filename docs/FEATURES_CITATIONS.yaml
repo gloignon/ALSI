@@ -48,6 +48,20 @@
 #                (fetched 2026-11-09). Catalog descriptions only; the FABRA
 #                paper reference is NOT yet filled in -- confirm before
 #                citing in a publication.
+#   kyle_crossley2018: Kyle & Crossley (2018). Measuring syntactic complexity
+#                in L2 writing using fine-grained clausal and phrasal indices.
+#                Modern Language Journal. doi:10.1111/modl.12468. NOT yet read
+#                (abstract only); formal definitions are in Kyle (2016)
+#                dissertation, also not read.
+#   kyle2021_taassc: Kyle, Choe, Eguchi, LaFlair & Zeigler (2021), ETS Research
+#                Report (title not verified); the TAASSC 2.0.0.58 code README
+#                (github.com/kristopherkyle/TAASSC). Source of the behaviour
+#                actually read for the nominal/clausal ratios.
+#   wen2026:     Wen, Zeng & Yu (2026). How syntactic complexity develops across
+#                grade levels in online graded reading materials? Int. J.
+#                Applied Linguistics. doi:10.1111/ijal.70402.
+#                internal_docs/papers/md/wen-zeng-yu-2026-syntactic-complexity-
+#                grade-levels.md
 #   francois2014: François, Gala, Watrin & Fairon (2014). FLELex, LREC.
 #   vajjala_meurers2012: Vajjala & Meurers (2012). Readability classification
 #                using SLA insights. BEA 2012, 163-173; Section 4.1, p. 166.
@@ -393,3 +407,36 @@ features:
       Descriptive UPOS/feats ratios; FABRA DISref* is a cross-reference only.
       Needs external motivation. NOUN excludes PROPN. Spec:
       vignettes/specs/fabra-cheap-ud-features.Rmd.
+  nominal_dependent_features:
+    papers: [kyle2021_taassc, kyle_crossley2018, wen2026]
+    backing: adapted
+    note: >
+      PROVENANCE: kyle_crossley2018 and Kyle 2016 NOT read; Wen only names the
+      indices. Direct counterparts in TAASSC 2.0.0.58: np_deps, det, amod,
+      poss, relcl. ALSI mappings (closer to inspired): np_nmod, np_acl,
+      np_compound, np_pobj_deps; np_deps_sd and np_nsubj_deps have no
+      definition in any source read.
+      np_*_per_nominal: TAASSC fine-grained phrasal indices (dependents per
+      common noun, by relation) on UD. Index names/grade evidence from Wen et al.
+      Table 2/7; behaviour read from TAASSC 2.0.0.58 code and the 1.1 variable
+      spreadsheet. Formal definitions (Kyle 2016) not read. UD mappings
+      (prep->nmod, vmod->acl, nn->compound, pobj->noun with a case child) are ALSI judgement calls; UD `case` dependents are excluded from a nominal's dependents. Spec:
+      vignettes/specs/kyle-nominal-clausal-ratios.Rmd.
+  clausal_relation_ratios:
+    papers: [kyle2021_taassc, kyle_crossley2018, wen2026]
+    backing: adapted
+    note: >
+      PROVENANCE: only ccomp and relcl per finite clause exist in TAASSC
+      2.0.0.58; advcl/xcomp/csubj/advmod/cc are Wen Table 2 names with ALSI
+      mappings (closer to inspired).
+      advcl/ccomp/xcomp/csubj/relcl/advmod/cc_per_clause (cc = clausal
+      coordination, head is a predicate; mapping): TAASSC per-clause
+      indices with ALSI's clause count (T-units + dependent-clause heads) as
+      denominator, not TAASSC's finite-clause count; not numerically
+      comparable.
+  deps_per_predicate:
+    papers: [kyle_crossley2018]
+    backing: adapted
+    note: >
+      Analogue of TAASSC cl_av_deps (dependents per clause) with predicate
+      tokens as the clause proxy.

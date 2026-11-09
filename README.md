@@ -89,6 +89,8 @@ Hunt, K. W. (1966). Recent measures in syntactic development. Elementary English
 
 Jaeger, T. F. (2010). Redundancy and reduction: Speakers manage syntactic information density. *Cognitive Psychology*, 61(1), 23–62. <https://doi.org/10.1016/j.cogpsych.2010.02.002>
 
+Kyle, K., & Crossley, S. (2018). Measuring syntactic complexity in L2 writing using fine-grained clausal and phrasal indices. *Modern Language Journal*. <https://doi.org/10.1111/modl.12468>
+
 Lété, B., Sprenger-Charolles, L., & Colé, P. (2004). MANULEX: A grade-level lexical database from French elementary school readers. Behavior Research Methods, Instruments, & Computers, 36(1), 156-166.
 
 Liu, H. (2008). Dependency distance as a metric of language comprehension difficulty. Journal of Cognitive Science, 9(2), 159–191. <https://doi.org/10.17791/jcs.2008.9.2.159>
@@ -104,3 +106,6 @@ Sagot, B. (2010). The Lefff, a freely available and large-coverage morphological
 Sidorov, G., Velasquez, F., Stamatatos, E., Gelbukh, A., & Chanona-Hernández, L. (2014). Syntactic n-grams as machine learning features for natural language processing. *Expert Systems with Applications*, 41(3), 853–860. <https://doi.org/10.1016/j.eswa.2013.08.015>
 
 Stanké, B., Le Mené, M., Rezzonico, S., Moreau, A., Dumais, C., Robidoux, J., Dault, C., & Royle, P. (2019). ÉQOL: Une nouvelle base de données québécoise du lexique scolaire du primaire comportant une échelle d’acquisition de l’orthographe lexicale. Corpus, (19). <https://doi.org/10.4000/corpus.3818>
+
+Wen, Zeng & Yu (2026). How syntactic complexity develops across grade levels in online graded reading materials? Evidence from clausal and phrasal indices. *International Journal of Applied Linguistics*. <https://doi.org/10.1111/ijal.70402>
+
