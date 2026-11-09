@@ -207,6 +207,218 @@ def test_mlm_batching_consistency():
                      tol=1e-4, label=f"{tok} entropy")
 
 
+# ── Entropy-mode aggregation (pure, model-free) ──────────────────────
+#
+# _aggregate_to_words is the single place where a multi-subword word's
+# entropy is reduced to one number. It takes per-subword entropies plus a
+# word_ids mapping, so its onset/offset/mean/sum contract can be verified
+# exactly against hand-set subword scores — no model, fully deterministic.
+#
+# Fixture: three words, the middle one split into THREE subtokens. Three
+# is the minimum needed to separate all four modes at once (with two
+# subtokens, mean and offset can coincide and sum/mean ordering is
+# ambiguous). The middle word's subtoken entropies are 2.0, 8.0, 4.0, so
+#   onset  = 2.0   (first subtoken)
+#   offset = 4.0   (last subtoken)
+#   mean   = (2 + 8 + 4) / 3 = 4.6666...
+#   sum    = 2 + 8 + 4       = 14.0
+# — four distinct values, so each mode is pinned uniquely.
+
+# word_ids: subword position -> word index. Word 1 owns positions 1,2,3.
+_MODE_WORD_IDS = [0, 1, 1, 1, 2]
+_MODE_N_WORDS = 3
+# Per-subword entropies aligned to _MODE_WORD_IDS (context_len == 0).
+_MODE_SUB_ENTS = [5.0, 2.0, 8.0, 4.0, 9.0]
+# Surprisals are always summed regardless of entropy mode; distinct values
+# let us confirm the surprisal sum for the multi-subword word too.
+_MODE_SUB_SURPS = [1.0, 3.0, 6.0, 2.0, 7.0]
+
+
+def _aggregate_modes(entropy, context_len=0, pad=0):
+    """Run _aggregate_to_words on the fixture for one entropy mode.
+
+    `pad` prepends `context_len` throwaway subword slots (all NaN) to check
+    that the context_len offset indexes the subword arrays correctly.
+    """
+    surps = [float("nan")] * pad + _MODE_SUB_SURPS
+    ents = [float("nan")] * pad + _MODE_SUB_ENTS
+    return llm_scoring._aggregate_to_words(
+        _MODE_WORD_IDS, _MODE_N_WORDS, context_len,
+        surps, ents, entropy=entropy,
+    )
+
+
+def test_entropy_mode_onset():
+    """onset -> entropy of the word's FIRST subtoken."""
+    res = _aggregate_modes("onset")
+    assert res["word_token_counts"] == [1, 3, 1]
+    assert_close(res["word_entropies"][0], 5.0, tol=1e-9, label="w0 onset")
+    assert_close(res["word_entropies"][1], 2.0, tol=1e-9, label="w1 onset")
+    assert_close(res["word_entropies"][2], 9.0, tol=1e-9, label="w2 onset")
+
+
+def test_entropy_mode_offset():
+    """offset -> entropy of the word's LAST subtoken."""
+    res = _aggregate_modes("offset")
+    assert_close(res["word_entropies"][0], 5.0, tol=1e-9, label="w0 offset")
+    assert_close(res["word_entropies"][1], 4.0, tol=1e-9, label="w1 offset")
+    assert_close(res["word_entropies"][2], 9.0, tol=1e-9, label="w2 offset")
+
+
+def test_entropy_mode_mean():
+    """mean -> arithmetic mean of the word's subtoken entropies."""
+    res = _aggregate_modes("mean")
+    assert_close(res["word_entropies"][0], 5.0, tol=1e-9, label="w0 mean")
+    assert_close(res["word_entropies"][1], 14.0 / 3.0, tol=1e-9, label="w1 mean")
+    assert_close(res["word_entropies"][2], 9.0, tol=1e-9, label="w2 mean")
+
+
+def test_entropy_mode_sum():
+    """sum -> sum of the word's subtoken entropies."""
+    res = _aggregate_modes("sum")
+    assert_close(res["word_entropies"][0], 5.0, tol=1e-9, label="w0 sum")
+    assert_close(res["word_entropies"][1], 14.0, tol=1e-9, label="w1 sum")
+    assert_close(res["word_entropies"][2], 9.0, tol=1e-9, label="w2 sum")
+
+
+def test_entropy_mode_none():
+    """none -> every word entropy is NaN; surprisals still summed."""
+    res = _aggregate_modes("none")
+    for i in range(_MODE_N_WORDS):
+        assert math.isnan(res["word_entropies"][i]), f"w{i} entropy should be NaN"
+    # Surprisal of the 3-subtoken word is still its subtoken sum.
+    assert_close(res["word_surprisals"][1], 3.0 + 6.0 + 2.0, tol=1e-9,
+                 label="w1 surprisal (none)")
+
+
+def test_entropy_modes_are_distinct():
+    """The 3-subtoken word must get a different value under each mode."""
+    vals = {m: _aggregate_modes(m)["word_entropies"][1]
+            for m in ("onset", "offset", "mean", "sum")}
+    assert len(set(vals.values())) == 4, (
+        f"modes should be mutually distinguishable, got {vals}"
+    )
+
+
+def test_entropy_mode_single_subword_invariant():
+    """Single-subword words get the same entropy under every mode."""
+    for mode in ("onset", "offset", "mean", "sum"):
+        res = _aggregate_modes(mode)
+        assert_close(res["word_entropies"][0], 5.0, tol=1e-9,
+                     label=f"w0 under {mode}")
+        assert_close(res["word_entropies"][2], 9.0, tol=1e-9,
+                     label=f"w2 under {mode}")
+
+
+def test_entropy_surprisal_is_summed_all_modes():
+    """Surprisal is the subtoken sum regardless of the entropy mode."""
+    for mode in ("onset", "offset", "mean", "sum"):
+        res = _aggregate_modes(mode)
+        assert_close(res["word_surprisals"][1], 3.0 + 6.0 + 2.0, tol=1e-9,
+                     label=f"w1 surprisal under {mode}")
+
+
+def test_entropy_mode_context_len_offset():
+    """A nonzero context_len must offset indexing into the subword arrays."""
+    res = _aggregate_modes("sum", context_len=4, pad=4)
+    assert_close(res["word_entropies"][1], 14.0, tol=1e-9,
+                 label="w1 sum with context_len=4")
+    assert_close(res["word_entropies"][0], 5.0, tol=1e-9,
+                 label="w0 onset with context_len=4")
+
+
+def test_entropy_mode_unknown_raises():
+    """An unrecognized mode is a hard error, never a silent fallback."""
+    try:
+        _aggregate_modes("bogus")
+        assert False, "Should have raised ValueError for unknown mode"
+    except ValueError:
+        pass
+
+
+def test_entropy_mode_nan_subword_poisons_word():
+    """A word with any NaN subtoken is reported NaN, not a partial aggregate."""
+    ents = list(_MODE_SUB_ENTS)
+    ents[2] = float("nan")  # middle subtoken of word 1
+    res = llm_scoring._aggregate_to_words(
+        _MODE_WORD_IDS, _MODE_N_WORDS, 0,
+        list(_MODE_SUB_SURPS), ents, entropy="sum",
+    )
+    assert math.isnan(res["word_entropies"][1]), "w1 should be NaN (bad subtoken)"
+    assert math.isnan(res["word_surprisals"][1]), "w1 surprisal should be NaN too"
+    # Clean words are unaffected.
+    assert_close(res["word_entropies"][0], 5.0, tol=1e-9, label="w0 unaffected")
+
+
+# ── Entropy-mode round-trip against exposed subword arrays ───────────
+#
+# The pure tests above pin the mode math. These verify the *plumbing*:
+# that the per-subtoken arrays the backend exposes (subword_entropies +
+# subword_word_ids) are the same ones the per-word aggregation consumed.
+# We score a real word that splits into many subtokens, regroup its
+# subtoken entropies from the result's own arrays, and check the per-word
+# entropy equals the mode applied to those subtokens.
+
+def _subword_entropies_for_word(result, target_wid):
+    """Pull the per-subtoken entropies of one word from a scoring result,
+    in subtoken order, using the result's own subword_word_ids mapping."""
+    return [
+        e for e, wid in zip(result["subword_entropies"],
+                            result["subword_word_ids"])
+        if wid == target_wid
+    ]
+
+
+def test_mlm_entropy_modes_roundtrip_multi_subword():
+    """Per-word entropy must equal the mode applied to the word's own
+    exposed subtoken entropies, for a word split into >=3 subtokens."""
+    os.environ["ALSIO_FORCE_CPU"] = "1"
+    llm_scoring.load_llm_model("google-bert/bert-base-uncased", mode="mlm")
+
+    # "antidisestablishmentarianism" splits into 8 BERT subtokens.
+    tokens = ["The", "word", "antidisestablishmentarianism", "is", "long"]
+    target = 2  # index of the multi-subword word
+
+    modes = {
+        "onset": lambda xs: xs[0],
+        "offset": lambda xs: xs[-1],
+        "mean": lambda xs: sum(xs) / len(xs),
+        "sum": lambda xs: sum(xs),
+    }
+
+    seen = {}
+    for mode, reduce_fn in modes.items():
+        res = llm_scoring.score_masked_lm_tokens(tokens, entropy=mode)
+        subs = _subword_entropies_for_word(res, target)
+        assert len(subs) >= 3, (
+            f"need >=3 subtokens to separate modes, got {len(subs)}"
+        )
+        expected = reduce_fn(subs)
+        assert_close(res["word_entropies"][target], expected, tol=1e-5,
+                     label=f"{mode} (word from its own subtokens)")
+        seen[mode] = res["word_entropies"][target]
+
+    # The four modes must land on four different values for this word,
+    # otherwise the round-trip could pass by coincidence.
+    assert len(set(round(v, 6) for v in seen.values())) == 4, (
+        f"modes should differ for a multi-subword word, got {seen}"
+    )
+
+
+def test_mlm_single_subword_word_ignores_mode():
+    """A word that is one subtoken has the same entropy under every mode."""
+    os.environ["ALSIO_FORCE_CPU"] = "1"
+    llm_scoring.load_llm_model("google-bert/bert-base-uncased", mode="mlm")
+
+    tokens = ["The", "cat", "eats"]  # all single-subtoken for BERT
+    vals = [
+        llm_scoring.score_masked_lm_tokens(tokens, entropy=m)["word_entropies"][1]
+        for m in ("onset", "offset", "mean", "sum")
+    ]
+    for m, v in zip(("offset", "mean", "sum"), vals[1:]):
+        assert_close(v, vals[0], tol=1e-6, label=f"cat under {m} vs onset")
+
+
 # ── AR Tests ─────────────────────────────────────────────────────────
 
 def test_ar_surprisal():
@@ -310,6 +522,19 @@ if __name__ == "__main__":
         test_mlm_raw_sentence,
         test_mlm_raw_empty_string,
         test_mlm_batching_consistency,
+        test_entropy_mode_onset,
+        test_entropy_mode_offset,
+        test_entropy_mode_mean,
+        test_entropy_mode_sum,
+        test_entropy_mode_none,
+        test_entropy_modes_are_distinct,
+        test_entropy_mode_single_subword_invariant,
+        test_entropy_surprisal_is_summed_all_modes,
+        test_entropy_mode_context_len_offset,
+        test_entropy_mode_unknown_raises,
+        test_entropy_mode_nan_subword_poisons_word,
+        test_mlm_entropy_modes_roundtrip_multi_subword,
+        test_mlm_single_subword_word_ignores_mode,
         test_ar_surprisal,
         test_ar_empty_input,
         test_ar_entropy_positive,

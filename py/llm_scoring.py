@@ -1,9 +1,13 @@
 import math
 import os
+import importlib.util
+import sys
 import warnings
 from typing import List, Dict, Optional
 
 import torch
+import transformers
+import tokenizers
 from transformers import AutoTokenizer, AutoModelForMaskedLM, AutoModelForCausalLM
 
 LN2 = math.log(2.0)
@@ -17,6 +21,20 @@ _device = globals().get("_device")
 _mode = globals().get("_mode")
 _model_name = globals().get("_model_name")
 _add_prefix_space = globals().get("_add_prefix_space")
+_tokenizer_policy = globals().get("_tokenizer_policy", "official")
+_tokenizer_metadata = globals().get("_tokenizer_metadata", {})
+
+
+def _load_tokenizer_policy_module():
+    module = sys.modules.get("tokenizer_policy")
+    if module is not None:
+        return module
+    path = os.path.abspath(os.path.join("py", "tokenizer_policy.py"))
+    spec = importlib.util.spec_from_file_location("tokenizer_policy", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["tokenizer_policy"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _best_device():
@@ -36,6 +54,7 @@ def load_llm_model(
     trust_remote_code: bool = True,
     add_prefix_space: Optional[bool] = None,
     force_fast: bool = False,
+    tokenizer_policy: str = "official",
 ):
     """Load tokenizer + model.
 
@@ -60,6 +79,7 @@ def load_llm_model(
     failure mode).
     """
     global _tokenizer, _model, _device, _mode, _model_name, _add_prefix_space
+    global _tokenizer_policy, _tokenizer_metadata
     _device = _best_device()
     if add_prefix_space is None:
         add_prefix_space = (mode == "ar")
@@ -69,7 +89,12 @@ def load_llm_model(
         "add_prefix_space": add_prefix_space,
     }
 
-    if force_fast:
+    if tokenizer_policy != "official":
+        policy_module = _load_tokenizer_policy_module()
+        _tokenizer, _tokenizer_metadata = policy_module.load_tokenizer(
+            model_name, tokenizer_policy, add_prefix_space
+        )
+    elif force_fast:
         from transformers import PreTrainedTokenizerFast
         _tokenizer = PreTrainedTokenizerFast.from_pretrained(
             model_name, add_prefix_space=add_prefix_space
@@ -109,6 +134,25 @@ def load_llm_model(
     _mode = mode
     _model_name = model_name
     _add_prefix_space = bool(add_prefix_space)
+    _tokenizer_policy = tokenizer_policy
+    if tokenizer_policy == "official":
+        import hashlib
+        policy_module = _load_tokenizer_policy_module()
+        _tokenizer_metadata = {
+            "tokenizer_policy": "official",
+            "tokenizer_policy_version": "1",
+            "tokenizer_sha256": hashlib.sha256(
+                policy_module.tokenizer_effective_bytes(_tokenizer)
+            ).hexdigest(),
+            "tokenizer_source_sha256": None,
+            "tokenizer_source_revision": None,
+            "tokenizer_original_cap": None,
+            "tokenizer_effective_cap": None,
+            "tokenizer_library_version": {
+                "transformers": transformers.__version__,
+                "tokenizers": tokenizers.__version__,
+            },
+        }
     _model = _model.to(_device)
     _model.eval()
     print(f"Loaded {mode.upper()} model: {model_name} on {_device}")
@@ -116,7 +160,9 @@ def load_llm_model(
 
 
 def get_llm_state():
-    return {"model_name": _model_name, "mode": _mode, "add_prefix_space": _add_prefix_space}
+    return {"model_name": _model_name, "mode": _mode,
+            "add_prefix_space": _add_prefix_space,
+            **_tokenizer_metadata}
 
 
 def _compute_surprisal_entropy(logits: torch.Tensor, target_id: int, temperature: float = 1.0,

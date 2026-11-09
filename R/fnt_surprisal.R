@@ -34,13 +34,17 @@
 #'   only \code{tokenizer.json} (e.g., \code{almanach/camembertv2-base}),
 #'   which would otherwise cause AutoTokenizer to fall through to
 #'   character-level tokenization.
+#' @param tokenizer_policy Tokenizer policy; code{"official"} is the
+#'   default, while code{"camembertv2_cap100_v1"} opts into the verified
+#'   CamemBERTv2 WordPiece cap repair.
 #' @returns Invisible TRUE on success.
 load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
                             mode = "mlm",
                             use_fast = TRUE,
                             trust_remote_code = TRUE,
                             add_prefix_space = NULL,
-                            force_fast = FALSE) {
+                            force_fast = FALSE,
+                            tokenizer_policy = "official") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -53,7 +57,8 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
     use_fast = use_fast,
     trust_remote_code = trust_remote_code,
     add_prefix_space = add_prefix_space,
-    force_fast = isTRUE(force_fast)
+    force_fast = isTRUE(force_fast),
+    tokenizer_policy = tokenizer_policy
   )
   invisible(TRUE)
 }
@@ -75,6 +80,7 @@ load_llm_scorer <- function(model_name = "almanach/moderncamembert-base",
 #' @param use_fast Logical; use the fast tokenizer.
 #' @param trust_remote_code Logical; allow remote code for the model.
 #' @param add_prefix_space Logical or NULL; add a leading space to tokens.
+#' @param tokenizer_policy Tokenizer policy; defaults to code{"official"}.
 #' @param pll_mode Character; PLL scoring mode for MLM models. Either
 #'   \code{"original"} (Salazar et al. 2020) or \code{"within_word_l2r"}
 #'   (Kauf & Ivanova 2023). Ignored for AR models.
@@ -108,7 +114,8 @@ llm_surprisal_entropy <- function(dt_corpus,
                                   add_prefix_space = NULL,
                                   pll_mode = "original",
                                   entropy = NULL,
-                                  drop_mwt_parts = TRUE) {
+                                  drop_mwt_parts = TRUE,
+                                  tokenizer_policy = "official") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -193,11 +200,13 @@ llm_surprisal_entropy <- function(dt_corpus,
   py_model <- if (!is.null(py_state)) py_state$model_name else NULL
   py_mode <- if (!is.null(py_state)) py_state$mode else NULL
   py_prefix_space <- if (!is.null(py_state)) py_state$add_prefix_space else NULL
+  py_policy <- if (!is.null(py_state)) py_state$tokenizer_policy else NULL
 
   if (is.null(py_model) ||
       is.null(py_mode) ||
       py_model != model_name ||
       py_mode != mode ||
+      !identical(py_policy, tokenizer_policy) ||
       is.null(py_prefix_space) ||
       (!is.null(add_prefix_space) && isTRUE(add_prefix_space) != isTRUE(py_prefix_space))) {
     load_llm_model(
@@ -205,7 +214,8 @@ llm_surprisal_entropy <- function(dt_corpus,
       mode = mode,
       use_fast = use_fast,
       trust_remote_code = trust_remote_code,
-      add_prefix_space = add_prefix_space
+      add_prefix_space = add_prefix_space,
+      tokenizer_policy = tokenizer_policy
     )
   }
 
@@ -303,6 +313,7 @@ llm_surprisal_entropy <- function(dt_corpus,
   }
 
   dt_out[, token_index := NULL]
+  attr(dt_out, "tokenizer_signature") <- get_llm_state()
 
   return(dt_out)
 }
@@ -340,7 +351,8 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
                                             trust_remote_code = TRUE,
                                             add_prefix_space = NULL,
                                             pll_mode = "original",
-                                            entropy = NULL) {
+                                            entropy = NULL,
+                                            tokenizer_policy = "official") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -367,7 +379,8 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
     trust_remote_code = trust_remote_code,
     add_prefix_space = add_prefix_space,
     pll_mode = pll_mode,
-    entropy = entropy
+    entropy = entropy,
+    tokenizer_policy = tokenizer_policy
   )
 
   dt_result <- dt_scored[, .(
@@ -383,6 +396,7 @@ llm_surprisal_entropy_sentences <- function(dt_sentences,
   )
 
   data.table::setorderv(dt_result, c("doc_id", "sentence_id"))
+  attr(dt_result, "tokenizer_signature") <- attr(dt_scored, "tokenizer_signature")
   dt_result
 }
 
@@ -422,7 +436,8 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
                                       trust_remote_code = TRUE,
                                       add_prefix_space = NULL,
                                       pll_mode = "original",
-                                      entropy = NULL) {
+                                      entropy = NULL,
+                                      tokenizer_policy = "official") {
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     stop("Package 'reticulate' is required. Install it with install.packages('reticulate').")
   }
@@ -447,9 +462,11 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
   py_model <- if (!is.null(py_state)) py_state$model_name else NULL
   py_mode  <- if (!is.null(py_state)) py_state$mode       else NULL
   py_prefix_space <- if (!is.null(py_state)) py_state$add_prefix_space else NULL
+  py_policy <- if (!is.null(py_state)) py_state$tokenizer_policy else NULL
 
   if (is.null(py_model) || is.null(py_mode) ||
       py_model != model_name || py_mode != mode ||
+      !identical(py_policy, tokenizer_policy) ||
       is.null(py_prefix_space) ||
       (!is.null(add_prefix_space) && isTRUE(add_prefix_space) != isTRUE(py_prefix_space))) {
     load_llm_model(
@@ -457,7 +474,8 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
       mode = mode,
       use_fast = use_fast,
       trust_remote_code = trust_remote_code,
-      add_prefix_space = add_prefix_space
+      add_prefix_space = add_prefix_space,
+      tokenizer_policy = tokenizer_policy
     )
   }
 
@@ -534,11 +552,15 @@ llm_surprisal_entropy_raw <- function(dt_sentences,
 
   results <- Filter(Negate(is.null), results)
   if (length(results) == 0) {
-    return(data.table::data.table(
+    dt_out <- data.table::data.table(
       doc_id = character(), sentence_id = integer(), token_id = integer(),
       token = character(), llm_surprisal = numeric(),
       llm_entropy = numeric(), llm_subword_n = integer()
-    ))
+    )
+    attr(dt_out, "tokenizer_signature") <- get_llm_state()
+    return(dt_out)
   }
-  data.table::rbindlist(results, use.names = TRUE, fill = TRUE)
+  dt_out <- data.table::rbindlist(results, use.names = TRUE, fill = TRUE)
+  attr(dt_out, "tokenizer_signature") <- get_llm_state()
+  return(dt_out)
 }
