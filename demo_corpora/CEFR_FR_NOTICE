@@ -1,0 +1,42 @@
+CEFR-FR demo corpus — attribution and license
+==============================================
+
+The file demo_corpora/cefr_fr_corpus.csv combines two French CEFR-labeled
+text collections from the UniversalCEFR project on HuggingFace, fetched and
+merged by R/artefact_builders/fetch_universalcefr_fr.R:
+
+  - readme_fr — 1,669 sentence-level texts labeled A1-C2, drawn from the
+    ReadMe++ benchmark.
+      Naous, T., Ryan, M. J., Lukin, S., & Xu, W. (2024). ReadMe++:
+      Benchmarking Multilingual Language Models for Multi-Domain
+      Readability Assessment. Proceedings of EMNLP 2024.
+      https://huggingface.co/datasets/UniversalCEFR/readme_fr
+
+  - kwiqiz_fr — 344 document-level texts (full articles) labeled with CEFR
+    levels A1-C1, sourced from the Kwiziq language-learning platform.
+      https://huggingface.co/datasets/UniversalCEFR/kwiqiz_fr
+
+Both are public, non-gated HuggingFace dataset repos (no login required).
+
+Source dataset collection
+--------------------------
+  UniversalCEFR (https://huggingface.co/UniversalCEFR) re-indexes existing
+  CEFR-labeled corpora into a common schema (title, lang, source_name,
+  format, category, cefr_level, license, text).
+
+License
+-------
+  - readme_fr is distributed under CC BY-NC-SA 4.0
+    (https://creativecommons.org/licenses/by-nc-sa/4.0/). Confirmed directly
+    from the dataset's own `license` column (value: "CC BY SA NC 4.0").
+  - kwiqiz_fr is distributed under CC BY-NC 4.0
+    (https://creativecommons.org/licenses/by-nc/4.0/). Confirmed directly
+    from the dataset's own `license` column (value: "CC BY NC 4.0").
+
+Both are NonCommercial. readme_fr additionally carries ShareAlike (SA):
+any redistribution or derivative must keep the same CC BY-NC-SA license.
+kwiqiz_fr (no SA/ND clause) can be redistributed more freely — e.g. as a
+GitHub release asset — as long as attribution is kept and use stays
+non-commercial. The combined CSV produced by fetch_universalcefr_fr.R is
+not committed to this repo (see .gitignore); re-run the fetch script to
+regenerate it locally, or package kwiqiz_fr specifically if redistributing.
