@@ -14,6 +14,7 @@
 #
 # Output:
 #   lexical_dbs/dt_flelex.Rds — data.table keyed on (word, upos)
+#   lexical_dbs/dt_corpus_flelex.Rds — token-keyed table for main.R
 #
 # Columns in output:
 #   word       — lemma / word form (lowercase)
@@ -22,6 +23,7 @@
 #   freq_log10 — log10(freq_u)
 #   grade      — CEFR level of first appearance (lowest non-zero level)
 #   num_grade  — numeric grade: A1=1 … C2=6
+#   freq_a1 … freq_c2 — frequency in each CEFR-level subcorpus
 #
 # Run from the repo root:
 #   Rscript R/artefact_builders/fetch_flelex.R
@@ -66,6 +68,8 @@ setnames(dt, "tag", "pos_raw")
 
 LEVEL_COLS  <- c("freq_a1", "freq_a2", "freq_b1", "freq_b2", "freq_c1", "freq_c2")
 CEFR_LABELS <- c("A1", "A2", "B1", "B2", "C1", "C2")
+
+dt[, (LEVEL_COLS) := lapply(.SD, as.numeric), .SDcols = LEVEL_COLS]
 
 dt[, word      := tolower(trimws(word))]
 dt[, freq_u    := as.numeric(freq_total)]
@@ -122,7 +126,10 @@ if (!requireNamespace("dplyr", quietly = TRUE)) {
   dt[, upos := tt_to_upos(sub(":.*", "", pos_raw))]
 }
 
-dt <- dt[nzchar(word), .(word, upos, freq_u, freq_log10, grade, num_grade)]
+dt <- dt[nzchar(word), c(
+  "word", "upos", "freq_u", "freq_log10", "grade", "num_grade",
+  LEVEL_COLS
+), with = FALSE]
 dt <- dt[!is.na(freq_u)]
 
 setkey(dt, word, upos)
@@ -133,5 +140,12 @@ message("Rows: ", nrow(dt), " (", uniqueN(dt$word), " unique word forms)")
 
 saveRDS(dt, OUT_PATH)
 message("Saved: ", OUT_PATH)
+dt_corpus <- copy(dt)
+setnames(dt_corpus, "word", "token")
+dt_corpus[, freq_sfi := ifelse(freq_u > 0, 10 * log10(freq_u) + 40,
+                              NA_real_)]
+dt_corpus[, freq_log10 := NULL]
+saveRDS(dt_corpus, "lexical_dbs/dt_corpus_flelex.Rds")
+message("Saved: lexical_dbs/dt_corpus_flelex.Rds")
 print(dt[word %in% c("maison", "aimer", "beau")])
 print(head(dt, 5))

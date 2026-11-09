@@ -747,6 +747,33 @@ calculate_TTR <- function(tokens, types) {
   return(ttr)
 }
 
+#' Calculate Root Type-Token Ratio
+#'
+#' Scales the number of distinct types by the square root of token count.
+#'
+#' @param tokens Character vector defining the token denominator.
+#' @param types Character vector defining the distinct types; it must
+#'   represent the same selected stream as \code{tokens}.
+#' @returns A numeric scalar, or \code{NA_real_} for an empty stream.
+#' @details
+#' Source and edge-case policy: \code{vignettes/specs/root-ttr.Rmd}.
+#' @references
+#' Vajjala, S., & Meurers, D. (2012). On improving the accuracy of
+#' readability classification using insights from second language
+#' acquisition. Proceedings of BEA 2012, 163--173, Section 4.1, p. 166.
+#' @citation_type "computationally_identical" for the formula;
+#'   filtering and casing are ALSI conventions.
+#' @export
+calculate_root_ttr <- function(tokens, types) {
+  n_token <- length(tokens)
+  if (n_token == 0L) {
+    return(NA_real_)
+  }
+
+  n_type <- length(unique(types))
+  return(n_type / sqrt(n_token))
+}
+
 #' Calculate Moving-Average Type-Token Ratio (MATTR)
 #'
 #' Computes TTR over a sliding window using \code{zoo::rollapply} and
@@ -821,9 +848,9 @@ D_measure_from_tokens <- function(tokens) {
 
 #' Compute All Lexical Diversity Indexes per Document
 #'
-#' Wrapper that computes TTR, MATTR, Maas index, and Simpson's D for each
-#' document. When a \code{upos} column is present, additional content-word-only
-#' and verb-only variants are computed.
+#' Wrapper that computes TTR, root TTR, MATTR, Maas index, and Simpson's D
+#' for each document. When a \code{upos} column is present, additional
+#' content-word-only and verb-only variants are computed.
 #'
 #' @param df A data.table or data.frame with at least \code{doc_id} and
 #'   \code{token} columns. Optional columns: \code{upos}, \code{start},
@@ -833,7 +860,24 @@ D_measure_from_tokens <- function(tokens) {
 #'   (default: NOUN, VERB, ADJ, ADV).
 #' @param window_size Window width for MATTR (default 50).
 #' @returns A data.table with one row per document and columns for each
-#'   diversity index.
+#'   diversity index, including \code{RTTR} and, when \code{upos} is present,
+#'   \code{RTTR_content}. Documents without content tokens receive
+#'   \code{NA} for \code{RTTR_content}.
+#' @details
+#' Root TTR uses exact, case-sensitive surface \code{token} values. Its
+#' denominator is the count of tokens in the selected stream. The content
+#' variant uses \code{content_upos} for both types and denominator. Rows with
+#' missing \code{start} are removed first; then \code{compte} determines
+#' eligibility when present, otherwise \code{PUNCT} is excluded if UPOS
+#' exists. Entirely filtered documents have no result row. See
+#' \code{vignettes/specs/root-ttr.Rmd}.
+#' @references
+#' Vajjala, S., & Meurers, D. (2012). On improving the accuracy of
+#' readability classification using insights from second language
+#' acquisition. Proceedings of BEA 2012, 163--173, Section 4.1, p. 166.
+#' @citation_type "computationally_identical" for root TTR's formula;
+#'   selection and casing are ALSI conventions.
+#' @export
 lexical_diversity_general <- function(df,
                                       upos = NA,
                                       content_upos = c("NOUN", "VERB", "ADJ", "ADV"),
@@ -853,6 +897,7 @@ lexical_diversity_general <- function(df,
 
   df_result <- dt[, .(
     TTR        = calculate_TTR(token, token),
+    RTTR       = calculate_root_ttr(token, token),
     maas       = calculate_maas(token, token),
     MATTR      = calculate_moving_TTR(token, window_size),
     simpsons_D = D_measure_from_tokens(token)
@@ -861,6 +906,7 @@ lexical_diversity_general <- function(df,
   if ("upos" %in% names(dt)) {
     extra <- dt[!is.na(upos) & upos %in% content_upos, .(
       TTR_content        = calculate_TTR(token, token),
+      RTTR_content       = calculate_root_ttr(token, token),
       maas_content       = calculate_maas(token, token),
       MATTR_content      = calculate_moving_TTR(token, window_size),
       simpsons_D_content = D_measure_from_tokens(token)
@@ -875,4 +921,96 @@ lexical_diversity_general <- function(df,
   }
 
   return(df_result)
+}
+
+
+#' Summarize FLELex level frequencies by document
+#'
+#' Computes the 20th percentile of matched token frequencies for each of the
+#' six FLELex CEFR subcorpora, directly across document token occurrences.
+#'
+#' @param parsed_corpus A data.table of parser output after
+#'   \code{post_process_lexicon}, with \code{doc_id}, \code{token},
+#'   \code{lemma}, and \code{upos}.
+#' @param lexical_db A FLELex data.table containing \code{word} or
+#'   \code{token}, \code{upos}, pooled \code{freq_u}, and the six
+#'   \code{freq_a1} through \code{freq_c2} columns.
+#' @param match_method \code{"lemma_pos"} (default) keeps only lowercase
+#'   lemma/UPOS exact matches. \code{"fuzzy"} uses the existing lexical
+#'   matcher's token and lemma fallback priorities.
+#' @returns A data.table with one row per input \code{doc_id}, matched-token
+#'   count \code{flelex_n_matched}, and six numeric
+#'   \code{flelex_freq_*_p20} columns. Empty streams yield \code{NA_real_}.
+#' @details
+#' Matched zero frequencies remain observations; unmatched tokens are omitted.
+#' Percentiles use \code{stats::quantile(type = 7)} with no sentence grouping.
+#' See \code{vignettes/specs/flelex-level-frequencies.Rmd}.
+#' @references
+#' François, T., Gala, N., Watrin, P., & Fairon, C. (2014). FLELex: A graded
+#' lexical resource for French foreign learners. \emph{LREC 2014}.
+#' @citation_type "lexical_database" (François et al., 2014); document
+#'   percentile is an ALSI aggregation, not a method from that paper.
+#' @export
+flelex_level_freq_p20 <- function(parsed_corpus, lexical_db,
+                                  match_method = c("lemma_pos", "fuzzy")) {
+  match_method <- match.arg(match_method)
+  level_cols <- paste0("freq_", c("a1", "a2", "b1", "b2", "c1", "c2"))
+  required <- c("doc_id", "token", "lemma", "upos")
+  if (!all(required %in% names(parsed_corpus))) {
+    stop("parsed_corpus must contain doc_id, token, lemma, and upos")
+  }
+  dt_db <- as.data.table(copy(lexical_db))
+  if ("word" %in% names(dt_db) && !"token" %in% names(dt_db)) {
+    setnames(dt_db, "word", "token")
+  }
+  if (!all(c("token", "upos", "freq_u", level_cols) %in% names(dt_db))) {
+    stop("lexical_db must contain token/word, upos, freq_u, and six levels")
+  }
+  dt_corpus <- as.data.table(copy(parsed_corpus))
+  dt_docs <- unique(dt_corpus[, .(doc_id)])
+  if ("compte" %in% names(dt_corpus)) {
+    dt_corpus <- dt_corpus[compte == TRUE]
+  } else {
+    dt_corpus <- dt_corpus[!is.na(upos) & upos != "PUNCT"]
+  }
+  if (nrow(dt_corpus) == 0L) {
+    dt_docs[, flelex_n_matched := 0L]
+    for (level_col in level_cols) {
+      dt_docs[, (paste0("flelex_", level_col, "_p20")) := NA_real_]
+    }
+    return(dt_docs)
+  }
+  dt_corpus[, .flelex_row_id := as.character(seq_len(.N))]
+  if (match_method == "lemma_pos") {
+    dt_corpus[, token := lemma]
+  }
+  dt_matches <- fuzzy_match_lexical_db(
+    dt_corpus, dt_db, freq_col = "freq_u", prefix = "flelex",
+    id_col = ".flelex_row_id"
+  )
+  if (match_method == "lemma_pos") {
+    dt_matches <- dt_matches[flelex_match_level == "exact"]
+  } else {
+    dt_matches <- dt_matches[flelex_match_level != "none"]
+  }
+  dt_counts <- dt_matches[, .(flelex_n_matched = .N), by = doc_id]
+  dt_result <- merge(dt_docs, dt_counts, by = "doc_id", all.x = TRUE,
+                     sort = FALSE)
+  dt_result[is.na(flelex_n_matched), flelex_n_matched := 0L]
+  for (level_col in level_cols) {
+    matched_col <- paste0("flelex_", level_col)
+    output_col <- paste0(matched_col, "_p20")
+    dt_level <- dt_matches[, .(value = {
+      values <- get(matched_col)
+      values <- values[!is.na(values)]
+      if (length(values) == 0L) NA_real_ else
+        as.numeric(stats::quantile(values, 0.2, type = 7))
+    }), by = doc_id]
+    setnames(dt_level, "value", output_col)
+    dt_result <- merge(dt_result, dt_level, by = "doc_id", all.x = TRUE,
+                       sort = FALSE)
+  }
+  setcolorder(dt_result, c("doc_id", "flelex_n_matched",
+                           paste0("flelex_", level_cols, "_p20")))
+  return(dt_result)
 }

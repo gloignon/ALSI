@@ -24,7 +24,7 @@
 #                future.apply, reticulate, effsize
 #   Models     : models/french_gsd-remix_3.udpipe
 #                models/pos_trigram_fr_gsd_alsi.Rds
-#   Lexical DBs: lexical_dbs/dt_eqol.Rds, dt_franqus.Rds,
+#   Lexical DBs: lexical_dbs/dt_eqol.Rds, dt_franqus.rds,
 #                dt_manulex_token.Rds, dt_corpus_flelex.Rds
 #   Demo corpus: demo_corpora/viki_wiki.zip (200 paired Vikidia/Wikipedia docs)
 #
@@ -50,7 +50,7 @@ source("R/fnt_counters.R",      encoding = "UTF-8")
 source("R/fnt_pos_surprisal.R", encoding = "UTF-8")
 source("R/fnt_pos_surprisal_nn.R", encoding = "UTF-8")
 source("R/fnt_deprel_surprisal.R", encoding = "UTF-8")
-source("R/fnt_extra_syntax.R",  encoding = "UTF-8")
+source("R/fnt_syntactic_complexity.R",  encoding = "UTF-8")
 source("R/fnt_cohesion.R",      encoding = "UTF-8")
 source("R/fnt_utility.R",       encoding = "UTF-8")
 source("R/fnt_embeddings.R",    encoding = "UTF-8")
@@ -76,7 +76,7 @@ features <- list(parsed_corpus = dt_parsed_edit)
 
 # 4) Load lexical frequency databases
 dt_eqol    <- readRDS("lexical_dbs/dt_eqol.Rds")
-dt_franqus <- readRDS("lexical_dbs/dt_franqus.Rds")
+dt_franqus <- readRDS("lexical_dbs/dt_franqus.rds")
 dt_manulex <- readRDS("lexical_dbs/dt_manulex_token.Rds")
 dt_flelex  <- readRDS("lexical_dbs/dt_corpus_flelex.Rds")
 
@@ -94,6 +94,9 @@ features$lexical_db$eqol    <- fuzzy_match_lexical_db(features$parsed_corpus, dt
 features$lexical_db$franqus <- fuzzy_match_lexical_db(features$parsed_corpus, dt_franqus, prefix = "franqus")
 features$lexical_db$manulex <- fuzzy_match_lexical_db(features$parsed_corpus, dt_manulex, prefix = "manulex")
 features$lexical_db$flelex  <- fuzzy_match_lexical_db(features$parsed_corpus, dt_flelex,  prefix = "flelex")
+features$lexical_db$flelex_doc <- flelex_level_freq_p20(
+  features$parsed_corpus, dt_flelex
+)
 
 # 8) Lexical diversity
 features$lexical_diversity <- lexical_diversity_general(
