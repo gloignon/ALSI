@@ -11,6 +11,7 @@ Scripts covered:
 - `R/fnt_syntactic_complexity.R`
 - `R/fnt_pos_surprisal.R`
 - `R/fnt_deprel_surprisal.R`
+- `R/fnt_top_predictions.R`
 - `R/fnt_cohesion.R`
 - `R/fnt_embeddings.R`
 - `R/fnt_ollama.R`
@@ -90,6 +91,7 @@ Produced in: `R/fnt_counters.R` (`verb_tense_features`)
 | `past_participle_count` | Count of past participles. | document |
 | `present_participle_count` | Count of present participles. | document |
 | `past_simple_count` | Count of finite past indicative forms. | document |
+| `present_indicative_finite_count` | Countable VERB/AUX tokens jointly tagged `Mood=Ind`, `Tense=Pres`, and `VerbForm=Fin`. | document |
 
 ## 4) `features$verb_tenses$proportions`
 Produced in: `R/fnt_counters.R` (`verb_tense_features`)
@@ -107,6 +109,34 @@ Produced in: `R/fnt_counters.R` (`verb_tense_features`)
 | `past_participle_prop` | `past_participle_count / word_count`. | document |
 | `present_participle_prop` | `present_participle_count / word_count`. | document |
 | `past_simple_prop` | `past_simple_count / word_count`. | document |
+| `present_indicative_finite_prop` | `present_indicative_finite_count / word_count`. | document |
+
+## 4b) `features$verb_tenses$summaries`
+Produced in: `R/fnt_counters.R` (`verb_tense_features`)
+
+For each of the twelve indicators above, `*_n` counts eligible token
+observations, `*_mean` gives the share marked by that indicator, and `*_sd`
+gives the sample standard deviation of its binary observations. These
+statistics are computed directly across tokens in each document, without
+sentence aggregation. Only countable `VERB`/`AUX` tokens are eligible.
+Present/past/future require a `Tense` tag; conditional/subjunctive/indicative/
+imperative require `Mood`; infinitive requires `VerbForm`. Participles require
+`Tense` and `VerbForm`; past simple and present indicative finite require all
+three. A missing required tag excludes that token from the corresponding
+population. Empty populations have `n = 0` and missing mean/SD; singleton
+populations have missing SD; constant populations of two or more have SD zero.
+These derived UD-tag summaries are local descriptions of parser observations;
+they do not reproduce FABRA's unresolved compound/passive verb grouping.
+
+| Feature family | Meaning | Level |
+|---|---|---|
+| `<indicator>_n` | Number of eligible verb-token observations. | document |
+| `<indicator>_mean` | Indicator proportion among eligible verb tokens. | document |
+| `<indicator>_sd` | Sample SD of the token indicator. | document |
+
+Indicators: `present`, `past`, `future`, `conditional`, `subjunctive`,
+`indicative`, `imperative`, `infinitive`, `past_participle`,
+`present_participle`, `past_simple`, and `present_indicative_finite`.
 
 ## 5) Lexical database token-level features
 Produced in: `R/fnt_lexical.R` (`fuzzy_match_lexical_db`, `add_lexical_freq_with_imputation`)
@@ -170,8 +200,23 @@ Notes:
 | `flelex_freq_sfi` | FLELex SFI-like frequency field. | word |
 | `flelex_grade` | FLELex grade field. | word |
 | `flelex_num_grade` | FLELex numeric grade field. | word |
+| `flelex_freq_a1` through `flelex_freq_c2` | Source frequency by CEFR level (A1, A2, B1, B2, C1, C2). | word |
 
-### 5.8) `features$lexical_db$flelex_imp`
+### 5.8) `features$lexical_db$flelex_doc`
+Produced by `flelex_level_freq_p20()` using FLELex (François et al., 2014).
+Each value is the type-7 20th percentile of matched, countable lemma/UPOS
+**token occurrences** in a document. Unmatched tokens are omitted; matched
+zero frequencies remain. No sentence average or word-count denominator is used.
+The default match method is exact lemma/UPOS; `match_method = "fuzzy"` allows
+the existing fallback priorities. These are ALSI document summaries, not
+claimed FABRA equivalents.
+
+| Feature name | Short description | Level |
+|---|---|---|
+| `flelex_n_matched` | Number of matched token occurrences. | document |
+| `flelex_freq_a1_p20` through `flelex_freq_c2_p20` | Per-level frequency p20, ordered A1, A2, B1, B2, C1, C2. | document |
+
+### 5.9) `features$lexical_db$flelex_imp`
 | Feature name | Short description | Level |
 |---|---|---|
 | `flelex_freq_u_imputed` | Imputed FLELex frequency for missing matches. | word |
@@ -182,15 +227,27 @@ Produced in: `R/fnt_lexical.R` (`lexical_diversity_general`)
 | Feature name | Short description | Level |
 |---|---|---|
 | `TTR` | Type-token ratio. | document |
+| `RTTR` | Root TTR: distinct case-sensitive surface tokens divided by the square root of eligible surface-token count (Vajjala & Meurers 2012, Section 4.1, p. 166). | document |
 | `maas` | Maas lexical diversity index. | document |
 | `MATTR` | Moving-average type-token ratio. | document |
 | `simpsons_D` | Simpson-style lexical concentration/diversity metric. | document |
 | `TTR_content` | TTR on content words only. | document |
+| `RTTR_content` | Root TTR on selected content surface tokens; both numerator and denominator use the content stream (Vajjala & Meurers 2012, Section 4.1, p. 166; ALSI content selection). | document |
 | `maas_content` | Maas index on content words only. | document |
 | `MATTR_content` | MATTR on content words only. | document |
 | `simpsons_D_content` | Simpson metric on content words only. | document |
 | `maas_verb` | Maas index on verbs only. | document |
 | `simpsons_D_verb` | Simpson metric on verbs only. | document |
+
+Root TTR follows the existing `lexical_diversity_general()` filter: remove
+rows with missing `start` when available; use `compte == TRUE` when available,
+otherwise exclude `PUNCT` when UPOS exists. The content default is NOUN,
+VERB, ADJ, ADV (no PROPN); `content_upos` can change it. Types use `token`
+exactly as stored, with case preserved. A document with no selected content
+tokens has `NA` for `RTTR_content`; a document with no eligible tokens has no
+output row. These conventions differ from the lowercase surface and
+content-lemma, all-token-denominator proxies in
+`docs/TCFLE8_FABRA_FEATURE_ADDITIONS.md`.
 
 ## 7) `features$heights`
 Produced in: `R/fnt_heights.R` (`docwise_graph_stats`)
@@ -228,20 +285,20 @@ Produced in: `R/fnt_syntactic_complexity.R` (`extra_syntactic_features`)
 
 Operationalized following Lu (2010, *International Journal of Corpus Linguistics*, 15(4), 474–496), with the Penn Treebank tregex patterns *adapted* to Universal Dependencies (see caveats below). Dependency distance follows Liu (2008, *Journal of Cognitive Science*, 9(2), 159–191).
 
-Source split: clause length, clausal density, and the dependent-clause / complex-nominal ratios are Lu (2010)-adapted. Mean dependency distance is computationally identical to Liu (2008, Formula 2). Complex-verb measures are ALSI-derived (not a Lu index). `avg_dep_count` is a derived graph statistic with no Lu/Liu source. Words before the main verb is *adapted* from Vajjala & Meurers (2012, *Proceedings of the 7th Workshop on Building Educational Applications Using NLP* (BEA), 163–173), an SLA-motivated working-memory load index; they counted words before the main-clause main verb in a constituency parse, here approximated by the UD sentence root.
+Source split: clause length, clausal density, and the dependent-clause / complex-nominal ratios are Lu (2010)-adapted. Mean dependency distance is computationally identical to Liu (2008, Formula 2), with positions renumbered over non-punctuation tokens (Hudson's "intervening words" definition, quoted by Liu). Complex-verb measures are ALSI-derived (not a Lu index). `avg_dep_count` is a derived graph statistic with no Lu/Liu source. Words before the main verb is *adapted* from Coh-Metrix's left-embeddedness index SYNLE (Graesser, McNamara & Kulikowich 2011, *Educational Researcher*, 40(5), 223–234, doi:10.3102/0013189X11413260), a working-memory load index counting words before the main verb of the main clause in a constituency parse, here approximated by the UD sentence root. (An earlier revision of this table misattributed the feature to Vajjala & Meurers 2012, which contains the Lu-14 battery and parse-tree height but no such feature.)
 
 | Feature name | Short description | Level |
 |---|---|---|
 | `clausal_density` | Mean clauses per sentence (Lu C/S). Clause count = T-units plus dependent-clause heads identified by the UD relations `ccomp`, `advcl`, `acl`, `acl:relcl` (a UD approximation of Lu's finite dependent-clause set — see caveat). | document |
 | `avg_clause_length` | Mean tokens per clause (Lu MLC): total counted tokens / total clauses. | document |
 | `dc_per_clause` | Dependent clauses per clause (Lu DC/C): **total** dependent clauses / **total** clauses across the document (a ratio of sums, matching Lu — not a mean of per-sentence ratios). | document |
-| `complex_nom_per_sent` | Mean complex nominals per sentence, using Lu (2010) CN1-style detection adapted to UD. A NOUN head with at least one child bearing `amod`, `nmod`, `nmod:poss`, `acl`, `acl:relcl`, `nummod`, `appos`, `compound`, or `det:nummod`. Covers Lu's CN1 only; CN2/CN3 clausal nominals are not included here. | document |
+| `complex_nom_per_sent` | Mean complex nominals per sentence, using Lu (2010) CN1-style detection adapted to UD. A nominal head (NOUN, PROPN, or PRON — Lu's CN1 tregex matches NP nodes, which also head proper nouns and pronouns) with at least one child bearing `amod`, `nmod`, `nmod:poss`, `acl`, `acl:relcl`, `nummod`, `appos`, `compound`, or `det:nummod`. Covers Lu's CN1 only; CN2/CN3 clausal nominals are not included here. | document |
 | `cn_per_clause` | Complex nominals per clause (Lu CN/C): total complex nominals / total clauses across the document. | document |
 | `complex_verb_per_sent` | Mean complex verbs per sentence. A VERB head with at least one `aux`, `aux:pass`, `aux:tense`, or `aux:caus` child. Not one of Lu's 14 indices; added by ALSI. | document |
 | `cv_per_clause` | Complex verbs per clause: total complex verbs / total clauses (ALSI analogue of Lu CN/C). Not one of Lu's 14 indices; added by ALSI. | document |
-| `avg_dep_dist` | Mean Dependency Distance (MDD, Liu 2008, Formula 2): total \|position(head) − position(dependent)\| over all real (non-root, non-PUNCT) dependencies, divided by the total number of real dependencies (pooled across sentences). | document |
+| `avg_dep_dist` | Mean Dependency Distance (MDD, Liu 2008, Formula 2): total \|position(head) − position(dependent)\| over all real (non-root, non-PUNCT) dependencies, divided by the total number of real dependencies (pooled across sentences). Positions are renumbered over non-punctuation tokens (intervening punctuation adds no distance), the same scale as `avg_head_distance` in `fnt_heights.R`. | document |
 | `avg_dep_count` | Mean out-degree per token, pooled across the document: total countable children / total countable tokens, leaves counted as 0. Derived graph statistic. | document |
-| `avg_words_before_root` | Mean number of tokens preceding the root (usually the main verb): for each sentence, count the tokens whose surface position is before the `root` token, then average across sentences (Vajjala & Meurers 2012, adapted — pre-verbal working memory load). | document |
+| `avg_words_before_root` | Mean number of tokens preceding the root (usually the main verb): for each sentence, count the tokens whose surface position is before the `root` token, then average across sentences (Coh-Metrix left embeddedness SYNLE, Graesser et al. 2011, adapted — pre-verbal working memory load). | document |
 
 **Caveat (clause finiteness).** The default `dc_rels` set (`ccomp`, `advcl`, `acl`, `acl:relcl`) is a UD *approximation* of Lu's finite dependent-clause definition, not an exact match: these relations are not conditioned on finiteness, so a non-finite `acl`/`advcl` head (e.g. a participial adjunct) is still counted as a dependent clause. The non-finite `xcomp` is excluded by default; `csubj`/`csubj:pass` are excluded because they are essentially absent in parsed French. Pass a custom `dc_rels` to change this.
 
@@ -430,6 +487,26 @@ Produced in: `R/fnt_surprisal.R` (`llm_surprisal_entropy`)
 | `llm_entropy` | Token-level predictive entropy from language model. | word |
 | `llm_subword_n` | Number of subword pieces used for the token. | word |
 
+### 16b) MLM top-k prediction inspection
+Produced in: `R/fnt_top_predictions.R` (`llm_top_predictions`,
+`llm_word_predictions`, `llm_beam_word_predictions`).
+
+Inspection helpers that expose *what the masked language model expected* at
+each position, alongside the surprisal of what was actually written. Not part
+of the `features$` bundle — called directly on a sentence for qualitative
+analysis, error inspection, and demos. Each returns a `data.table`;
+`print_word_predictions()` / `print_top_predictions()` render them as
+fixed-width tables.
+
+| Function | What it returns | Level |
+|---|---|---|
+| `llm_top_predictions` | Per-subword top-k fill-ins (word *completions*, siblings visible), `surprisal`, `entropy`, `actual_in_topk`. | subword |
+| `llm_word_predictions` | Per-word whole-word alternatives (single `[MASK]` over the word's span; single-piece candidates only), `word_prob` (`NA` for multi-piece words). | word |
+| `llm_beam_word_predictions` | Per-word alternatives incl. multi-piece candidates via beam search; `word_prob` defined for every word. | word |
+
+Citation backing: **adapted** — the pseudo-log-likelihood scorer of Salazar
+et al. (2020), extended to return top-k fill-ins / whole-word completions.
+
 ## 17) Ollama LLM querying
 Provided by: `R/fnt_ollama.R` (`ollama_generate`)
 
@@ -500,10 +577,14 @@ count helpers (`n_tunits`, `n_sentences`) and one ALSI coordination derivative
 from Lu (2010).
 
 T-unit boundaries are detected from UD dependency parses: the sentence root
-anchors the first T-unit; each predicate (VERB, AUX, or ADJ-with-cop)
-reachable from the root via a chain of `conj` arcs starts an additional
-T-unit. Complex nominal detection reuses `add_complex_nominal_flag()` from
-`fnt_syntactic_complexity.R`, ensuring identical operationalization across feature sets.
+anchors the first T-unit; each predicate (VERB, AUX, or any token with a
+`cop` child) reachable from the root via a chain of `conj` arcs **and
+carrying its own overt subject** (`nsubj`, `nsubj:pass`, `nsubj:caus`,
+`csubj`, `csubj:pass`, `expl`, `expl:subj`) starts an additional T-unit;
+shared-subject coordination ("Marie chante et danse") stays in one T-unit
+per Hunt (1965, p. 20–21). Complex nominal detection reuses
+`add_complex_nominal_flag()` from `fnt_syntactic_complexity.R`, ensuring
+identical operationalization across feature sets.
 
 | Feature name | Short description | Level |
 |---|---|---|
@@ -518,10 +599,10 @@ T-unit. Complex nominal detection reuses `add_complex_nominal_flag()` from
 | `dc_c` | Dependent clauses per clause (Lu 2010 DC/C). Finite subordinate heads (`ccomp`, `advcl`, `acl`, `acl:relcl`) / total clauses. | document |
 | `dc_t` | Dependent clauses per T-unit (Lu 2010 DC/T). Same DC definition; denominator is T-units. | document |
 | `ct_t` | Complex T-unit ratio (Lu 2010 CT/T): proportion of T-units containing ≥ 1 dependent clause. Computed as a sentence-level proxy — `n_dc` is counted per sentence, so when a sentence contains multiple coordinated T-units this under-resolves which specific T-unit holds the dependent clause. | document |
-| `vp_t` | Verb phrases per T-unit (Lu 2010 VP/T): one verb phrase per predicate head — VERB tokens, plus AUX tokens that are not `aux`/`aux:pass`/`aux:tense`/`aux:caus` dependents of another verb — divided by n\_tunits. Auxiliary chains are folded into their governing verb so periphrastic forms (e.g. French passé composé "a mangé") count as one VP, not two. | document |
-| `cp_t` | Coordinate phrases per T-unit (Lu 2010 CP/T): `conj` arcs whose head is NOUN, PROPN, ADJ, or ADV (phrasal coordination within a T-unit, not clausal). Lu's CP also includes coordinated VPs; ALSI routes verbal `conj` coordination into `t_s`/`prop_coord_sent` (additional T-units) instead, so this is a UD adaptation rather than a literal CP/T. | document |
-| `cp_c` | Coordinate phrases per clause (Lu 2010 CP/C). Same CP definition and UD-adaptation caveat as `cp_t`; denominator is total clauses. | document |
-| `cn_t` | Complex nominals per T-unit (Lu 2010 CN/T): NOUN tokens with ≥ 1 substantive modifier child. Uses same relation set as `add_complex_nominal_flag()` in `fnt_syntactic_complexity.R`. | document |
+| `vp_t` | Verb phrases per T-unit (Lu 2010 VP/T): one verb phrase per predicate head — VERB tokens, plus AUX tokens that are not `aux`/`aux:pass`/`aux:tense`/`aux:caus` dependents of another verb — divided by n\_tunits. Auxiliary chains are folded into their governing verb so periphrastic forms (e.g. French passé composé "a mangé") count as one VP, not two. Shared-subject `conj` predicates ("chante et danse") also fold in: one coordinated VP (plus one CP), matching Lu's "VP > S" pattern. Non-finite `acl` participles are counted although Lu's pattern would skip reduced participial modifiers. | document |
+| `cp_t` | Coordinate phrases per T-unit (Lu 2010 CP/T, tregex `ADJP\|ADVP\|NP\|VP < CC`): counted once per coordinated head token (the phrase), not once per `conj` arc — "A, B et C" is one coordinate phrase. Eligible head upos: NOUN/PROPN/PRON/NUM (NP), ADJ (ADJP), ADV (ADVP), VERB/AUX (VP). Conjuncts that are predicates with their own subject are clausal coordination and are excluded (they surface in `t_s`/`prop_coord_sent` instead when anchored at the root). | document |
+| `cp_c` | Coordinate phrases per clause (Lu 2010 CP/C). Same CP definition as `cp_t`; denominator is total clauses. | document |
+| `cn_t` | Complex nominals per T-unit (Lu 2010 CN/T): nominal tokens (NOUN, PROPN, PRON) with ≥ 1 substantive modifier child. Uses same relation set as `add_complex_nominal_flag()` in `fnt_syntactic_complexity.R`. Lu's CN1 only; CN2 (nominal clauses) and CN3 (gerund/infinitive subjects) are not counted. | document |
 | `cn_c` | Complex nominals per clause (Lu 2010 CN/C). Same CN definition; denominator is total clauses. | document |
 | `prop_coord_sent` | Proportion of sentences containing more than one T-unit (ALSI addition). | document |
 
@@ -529,6 +610,38 @@ References: Hunt (1965) NCTE Research Report No. 3 (T-unit construct); Lu
 (2010) *IJCL* 15(4) (the 14 indices); Hunt (1966), *Elementary English* 43(7)
 (main clause coordination index, `t_s`; reprinted in Lester, Ed. (1970),
 *Readings in Applied Transformational Grammar*, p. 189).
+
+## 21) MetaTaal LEGO brick counter
+Produced in: `R/fnt_metataal.R` (`count_metataal_bricks`;
+`draw_metataal_bricks` renders one document's brick sequence as ascii art or
+a ggplot diagram of fixed-width colored rectangles, with embedded clauses
+dropped one row down per the paper's clause-layout rule)
+
+Tallies, per document, how many of each MetaTaal grammar LEGO brick a
+UD-parsed text requires — a physical brick-ordering estimate, not a spatial
+layout. One brick per counted token; a token with no corresponding brick
+(adverbs, coordinating conjunctions, punctuation, numerals, non-relative
+pronouns, etc.) contributes to no brick and is excluded from `n_total`.
+Full brick spec, color/size mapping, and provenance notes/flagged gaps:
+`vignettes/specs/metataal-lego.Rmd`.
+
+| Feature name | Short description | Level |
+|---|---|---|
+| `n_det` | Green 1x2 determiner bricks (`upos == "DET"`). | document |
+| `n_noun` | Blue 2x4 noun bricks (`upos` in NOUN/PROPN). | document |
+| `n_verb` | Red 2x3 verb bricks (`upos` in VERB/AUX). Periphrastic/auxiliary chains count one brick per token (flagged over-count risk; see spec). | document |
+| `n_adj` | Brown 2x2 adjective bricks (`upos == "ADJ"`). | document |
+| `n_adp` | Yellow 2x2 preposition bricks (`upos == "ADP"`). | document |
+| `n_bridge` | Grey complementizer/relative-marker bridge bricks: tokens with `PronType=Rel` in `feats`, or a `mark` dependent of a `ccomp`/`advcl`/`acl`/`acl:relcl` head. | document |
+| `n_total` | Sum of the six brick counts above (ALSI convenience total). | document |
+
+See `demos/demo_metataal_bricks.R` for a worked example on a French toy
+sentence set, including the per-sentence and pooled brick-order tallies.
+
+Reference: Zwitserlood, Wijnen, van Weerdenburg & Verhoeven (2015).
+"MetaTaal": Enhancing complex syntax in children with specific language
+impairment. *International Journal of Language & Communication Disorders*,
+50(3), 273–297. doi:10.1111/1460-6984.12131.
 
 ## Maintenance notes
 - If `n_sent_context` changes in `simple_lexical_cohesion`, overlap feature names change accordingly (`...prevK`).

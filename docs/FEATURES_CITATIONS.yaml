@@ -1,0 +1,358 @@
+# FEATURES_CITATIONS.yaml
+#
+# Citation backing per feature, per CLAUDE.md ("Citation backing for
+# features"). Backing types: computationally_identical | adapted | inspired |
+# lexical_database | lexical_resource | derived.
+#
+# Scope: currently covers the three syntactic feature families audited on
+# 2026-07-04 (FEATURES.md tables 7, 8, 20). Other families to be added as
+# they go through the audit workflow (see AUDIT_borrowed_features.md).
+#
+# Papers (keys used below):
+#   chen2024:    Chen, Zhao, Breitbarth, Stoeckel, Mehler & Eger (2024).
+#                Syntactic language change in English and German.
+#                internal_docs/papers/md/chen-zhao-...-2024-...md
+#   gibson1998:  Gibson (1998). Linguistic complexity: locality of syntactic
+#                dependencies. Cognition, 68(1), 1-76.
+#   liu2008:     Liu (2008). Dependency distance as a metric of language
+#                comprehension difficulty. J. Cognitive Science, 9(2), 159-191.
+#   liu2010:     Liu (2010). Dependency direction as a means of word-order
+#                typology. Lingua, 120(6), 1567-1578.
+#   leijockers2020: Lei & Jockers (2020). Normalized dependency distance.
+#                J. Quantitative Linguistics, 27(1), 62-79.
+#   yngve1960:   Yngve (1960). A model and an hypothesis for language
+#                structure. Proc. American Philosophical Society, 104(5).
+#   lu2010:      Lu (2010). Automatic analysis of syntactic complexity in
+#                second language writing. IJCL, 15(4), 474-496.
+#                doi:10.1075/ijcl.15.4.02lu
+#   hunt1965:    Hunt (1965). Grammatical structures written at three grade
+#                levels. NCTE Research Report No. 3.
+#   hunt1966:    Hunt (1966). Recent measures in syntactic development.
+#                Elementary English, 43(7), 732-739.
+#   graesser2011: Graesser, McNamara & Kulikowich (2011). Coh-Metrix:
+#                Providing multilevel analyses of text characteristics.
+#                Educational Researcher, 40(5), 223-234.
+#                doi:10.3102/0013189X11413260. PDF NOT yet in
+#                internal_docs/papers/ (paywalled) -- fetch when possible.
+#   duran2021:   Duran, Pagano, Rassi & Pardo (2021). Auxiliary verbs in UD.
+#   zwitserlood2015: Zwitserlood, Wijnen, van Weerdenburg & Verhoeven (2015).
+#                "MetaTaal": Enhancing complex syntax in children with
+#                specific language impairment. Int. J. Language &
+#                Communication Disorders, 50(3), 273-297.
+#                doi:10.1111/1460-6984.12131
+#   salazar2020: Salazar, Liang, Nguyen & Kirchhoff (2020). Masked language
+#                model scoring. Proc. ACL, 2699-2712.
+#                doi:10.18653/v1/2020.acl-main.240
+#   francois2014: François, Gala, Watrin & Fairon (2014). FLELex, LREC.
+#   vajjala_meurers2012: Vajjala & Meurers (2012). Readability classification
+#                using SLA insights. BEA 2012, 163-173; Section 4.1, p. 166.
+
+features:
+
+  # features$verb_tenses -- R/fnt_counters.R
+  verb_tense_summaries:
+    papers: []
+    backing: derived
+    note: >
+      Document-wise means and sample SDs of binary UD-tag indicators over
+      explicit eligible VERB/AUX token populations; no FABRA parity claim.
+
+  flelex_level_freq_p20:
+    papers: [francois2014]
+    backing: lexical_database
+    note: >
+      Reads FLELex level frequencies; document-level type-7 p20 over matched
+      lemma/UPOS token occurrences is an ALSI operational aggregation.
+
+  # features$lexical_diversity -- R/fnt_lexical.R
+  RTTR:
+    papers: [vajjala_meurers2012]
+    backing: computationally_identical
+    note: >
+      T / sqrt(N), with exact case-sensitive surface token types after ALSI's
+      existing eligibility filter.
+  RTTR_content:
+    papers: [vajjala_meurers2012]
+    backing: adapted
+    note: >
+      Same formula on ALSI's content surface-token stream (default
+      NOUN/VERB/ADJ/ADV); both types and denominator use that stream.
+
+  # ------------------------------------------------------------------
+  # features$heights -- R/fnt_heights.R (docwise_graph_stats)
+  # ------------------------------------------------------------------
+  avg_sent_height:
+    papers: [chen2024]
+    backing: adapted
+    note: >
+      Formula matches Chen's Height exactly; ALSI includes punctuation by
+      default while Chen excludes it, and ALSI averages per-sentence heights.
+  sd_sent_height:
+    papers: []
+    backing: derived
+    note: Cross-sentence variability of tree height; no Chen analogue.
+  avg_sd_depth:
+    papers: [chen2024]
+    backing: adapted
+    note: depthVar reported as SD instead of variance.
+  avg_depth_var:
+    papers: [chen2024]
+    backing: adapted
+    note: >
+      depthVar (population variance, verified against Chen's worked example
+      var([1,1,2,2,1,0]) = 0.47); punctuation policy differs.
+  avg_branching_factor:
+    papers: [chen2024]
+    backing: adapted
+    note: degreeMean (leaves count 0); punctuation policy differs.
+  avg_tree_degree:
+    papers: [chen2024]
+    backing: adapted
+    note: treeDegree is per-sentence max degree; ALSI averages across sentences.
+  avg_degree_var:
+    papers: [chen2024]
+    backing: adapted
+    note: >
+      degreeVar (population variance, verified against Chen's worked example
+      var([1,0,0,0,1,3]) = 1.14); punctuation policy differs.
+  avg_leaf_count:
+    papers: [chen2024]
+    backing: adapted
+    note: "#Leaves averaged per sentence rather than summed corpus-wide."
+  prop_leaves:
+    papers: []
+    backing: derived
+    note: "#Leaves normalized by sentence length; no Chen analogue."
+  avg_dependency_depth:
+    papers: [chen2024]
+    backing: computationally_identical
+    note: depthMean pooled as total_paths / n (root depth 0 included).
+  avg_root_position:
+    papers: [chen2024, leijockers2020]
+    backing: computationally_identical
+    note: droot / Lei & Jockers' rootDistance, exposed as a feature.
+  avg_max_incomplete_deps:
+    papers: [gibson1998]
+    backing: adapted
+    note: >
+      SPLT memory cost, hypothesis (10), M(n) = n; peak per-position cost.
+      Open dependent-to-later-head arcs approximate Gibson's predicted
+      syntactic heads; NOUN/PROPN/VERB approximates discourse referents.
+  avg_incomplete_deps:
+    papers: [gibson1998]
+    backing: adapted
+    note: Same cost, mean aggregation (ALSI's own; Gibson predicts via peak).
+  avg_integration_cost:
+    papers: [gibson1998]
+    backing: adapted
+    note: >
+      Integration cost, hypothesis (9), distance-based part I(n) = n; fixed
+      NOUN/PROPN/VERB set approximates new-discourse-referent criterion.
+  avg_head_distance:
+    papers: [liu2008]
+    backing: computationally_identical
+    note: >
+      Formula 2 sample-level MDD; root excluded (DD = 0), punctuation
+      excluded and positions renumbered over words.
+  max_head_distance:
+    papers: [liu2008]
+    backing: inspired
+    note: Liu discusses per-sentence max DD but rejects it as a metric.
+  avg_head_distance_adj:
+    papers: [leijockers2020]
+    backing: computationally_identical
+    note: NDD Formula 2, per sentence, averaged across the document.
+  prop_hf:
+    papers: [liu2010]
+    backing: computationally_identical
+  prop_hi:
+    papers: [liu2010]
+    backing: computationally_identical
+  avg_yngve:
+    papers: [yngve1960]
+    backing: adapted
+    note: >
+      Branch numbering from the right starting at 0, depth = sum along path
+      (Yngve's Fig. 6-7 procedure), applied to dependency co-dependents
+      instead of phrase-structure constituents.
+  avg_max_yngve:
+    papers: [yngve1960]
+    backing: adapted
+  avg_sd_yngve:
+    papers: [yngve1960]
+    backing: adapted
+
+  # ------------------------------------------------------------------
+  # features$syntactic -- R/fnt_syntactic_complexity.R
+  # ------------------------------------------------------------------
+  clausal_density:
+    papers: [lu2010]
+    backing: adapted
+    note: >
+      Lu C/S; clauses = T-units + dependent-clause heads (ccomp, advcl, acl,
+      acl:relcl), a UD approximation of Lu's finite-clause definition
+      (finiteness not tested on acl/advcl heads).
+  avg_clause_length:
+    papers: [lu2010]
+    backing: adapted
+    note: Lu MLC, ratio of sums.
+  dc_per_clause:
+    papers: [lu2010]
+    backing: adapted
+    note: Lu DC/C, ratio of sums; same DC caveat as clausal_density.
+  complex_nom_per_sent:
+    papers: [lu2010]
+    backing: adapted
+    note: >
+      Lu CN1 only (NOUN/PROPN/PRON heads with substantive modifier child);
+      CN2 nominal clauses and CN3 gerund/infinitive subjects not counted.
+  cn_per_clause:
+    papers: [lu2010]
+    backing: adapted
+    note: Same CN definition; Lu CN/C ratio of sums.
+  complex_verb_per_sent:
+    papers: [duran2021]
+    backing: inspired
+    note: ALSI-derived, not a Lu index; UD auxiliary-chain annotation.
+  cv_per_clause:
+    papers: [duran2021]
+    backing: inspired
+    note: ALSI analogue of CN/C.
+  avg_dep_dist:
+    papers: [liu2008]
+    backing: computationally_identical
+    note: >
+      Formula 2 pooled MDD, positions renumbered over non-PUNCT tokens;
+      same estimator and scale as avg_head_distance in fnt_heights.R.
+  avg_dep_count:
+    papers: []
+    backing: derived
+    note: Mean out-degree per token; no Lu/Liu source.
+  avg_words_before_root:
+    papers: [graesser2011]
+    backing: adapted
+    note: >
+      Coh-Metrix left embeddedness (SYNLE): words before the main verb of
+      the main clause; UD sentence root approximates the main-verb anchor.
+      Previously misattributed to Vajjala & Meurers (2012); corrected
+      2026-07-04.
+
+  # ------------------------------------------------------------------
+  # features$tunits -- R/fnt_tunits.R (tunit_features)
+  # ------------------------------------------------------------------
+  n_tunits:
+    papers: [hunt1965]
+    backing: adapted
+    note: >
+      T-unit construct (Hunt 1965); UD detection via conj-BFS from root,
+      predicate + own-subject gate per Hunt's one-main-clause criterion.
+  mls:
+    papers: [lu2010]
+    backing: adapted
+    note: Words exclude punctuation, as in Lu.
+  mlt:
+    papers: [lu2010, hunt1965]
+    backing: adapted
+  mlc:
+    papers: [lu2010]
+    backing: adapted
+    note: Denominator = T-units + dependent clauses.
+  c_s:
+    papers: [lu2010]
+    backing: adapted
+  t_s:
+    papers: [lu2010, hunt1966]
+    backing: adapted
+    note: Hunt's main-clause coordination index.
+  c_t:
+    papers: [lu2010]
+    backing: adapted
+    note: Identity c_t = 1 + dc_t holds by construction in the UD adaptation.
+  dc_c:
+    papers: [lu2010]
+    backing: adapted
+    note: DC set not conditioned on finiteness (UD approximation).
+  dc_t:
+    papers: [lu2010]
+    backing: adapted
+  ct_t:
+    papers: [lu2010]
+    backing: adapted
+    note: >
+      Sentence-level proxy: n_dc counted per sentence, so multi-T-unit
+      sentences under-resolve which T-unit holds the dependent clause.
+  vp_t:
+    papers: [lu2010]
+    backing: adapted
+    note: >
+      Lu VP1 ("VP > S|SQ|SINV"): one VP per predicate head; auxiliary
+      chains and shared-subject conj predicates fold into the governing
+      VP. Counts non-finite acl participles that Lu's pattern would skip.
+  cp_t:
+    papers: [lu2010]
+    backing: adapted
+    note: >
+      Lu CP ("ADJP|ADVP|NP|VP < CC"): one per coordinated head token;
+      own-subject predicate conjuncts (clausal coordination) excluded.
+  cp_c:
+    papers: [lu2010]
+    backing: adapted
+  cn_t:
+    papers: [lu2010]
+    backing: adapted
+    note: CN1 only (see complex_nom_per_sent).
+  cn_c:
+    papers: [lu2010]
+    backing: adapted
+  prop_coord_sent:
+    papers: [hunt1966]
+    backing: inspired
+    note: ALSI addition; proportion of sentences with > 1 T-unit.
+
+  # ------------------------------------------------------------------
+  # MetaTaal LEGO brick counter -- R/fnt_metataal.R (count_metataal_bricks)
+  # ------------------------------------------------------------------
+  n_det:
+    papers: [zwitserlood2015]
+    backing: adapted
+    note: Green 1x2 brick count (upos == DET); word-class-to-brick mapping is an ALSI adaptation, see vignettes/specs/metataal-lego.Rmd.
+  n_noun:
+    papers: [zwitserlood2015]
+    backing: adapted
+    note: Blue 2x4 brick count (upos in NOUN/PROPN); PROPN inclusion is an ALSI extension beyond the paper's crib sheet.
+  n_verb:
+    papers: [zwitserlood2015]
+    backing: adapted
+    note: Red 2x3 brick count (upos in VERB/AUX); periphrastic verb chains over-count relative to the paper's one-concept intent (flagged gap).
+  n_adj:
+    papers: [zwitserlood2015]
+    backing: adapted
+    note: Brown 2x2 brick count (upos == ADJ); matches crib sheet directly.
+  n_adp:
+    papers: [zwitserlood2015]
+    backing: adapted
+    note: Yellow 2x2 brick count (upos == ADP); matches crib sheet directly.
+  n_bridge:
+    papers: [zwitserlood2015]
+    backing: adapted
+    note: Grey bridge brick count (complementizer/relative marker); detected via PronType=Rel feats or a mark dependent of a ccomp/advcl/acl/acl:relcl head -- an ALSI operationalization, not paper-specified.
+  n_total:
+    papers: [zwitserlood2015]
+    backing: derived
+    note: Sum of the six brick counts; ALSI convenience total, not itself a paper construct.
+
+  # ------------------------------------------------------------------
+  # MLM top-k prediction inspection -- R/fnt_top_predictions.R
+  # ------------------------------------------------------------------
+  llm_top_predictions:
+    papers: [salazar2020]
+    backing: adapted
+    note: Per-subword PLL scorer (Salazar et al. 2020) extended to return the k most probable fill-ins at each masked position; not paper-specified.
+  llm_word_predictions:
+    papers: [salazar2020]
+    backing: adapted
+    note: Whole-word masking (collapse a word's span to one [MASK]) on top of the Salazar et al. 2020 scorer; single-piece candidates only.
+  llm_beam_word_predictions:
+    papers: [salazar2020]
+    backing: adapted
+    note: Multi-piece whole-word completion via left-to-right beam search over the Salazar et al. 2020 masked scorer; ALSI operationalization.
