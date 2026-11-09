@@ -206,7 +206,6 @@ dt_syntax |>
 
 plot_faceted_boxplot(
   dt_syntax, source,
-  c(clausal_density, dc_per_clause, cn_per_clause, cv_per_clause, avg_dep_dist),
   title = "Extra syntactic features: Vikidia vs Wikipedia",
   y_lab = NULL
 )

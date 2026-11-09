@@ -90,37 +90,107 @@ simple_count_features <- function(parsed_data, content_word_upos = c("NOUN", "VE
   return(results)
 }
 
-#' Compute Verb Tense and Mood Features per Document
+#' Summarise one verb-form indicator within documents
 #'
-#' Extracts verb tense and mood counts from the \code{feats} column of a parsed
-#' corpus, then computes proportions relative to each document's word count.
-#' Tracked categories: present, past, future, conditional, subjunctive,
-#' indicative, imperative, infinitive, past participle, present participle,
-#' and passe simple.
+#' Computes the observation count, mean, and sample standard deviation of a
+#' binary indicator over its eligible tokens. Documents with no eligible tokens
+#' have a zero observation count and missing mean and SD; singleton streams
+#' have a missing SD.
 #'
-#' @param parsed_corpus A \code{data.table} of parsed tokens with columns
-#'   \code{doc_id} and \code{feats} (Universal Dependencies morphological
-#'   features string).
-#' @param counts A \code{data.table} with at least columns \code{doc_id} and
-#'   \code{word_count}, used to compute per-document proportions.
+#' @param dt A parsed-corpus \code{data.table} containing \code{doc_id}.
+#' @param hit Logical vector marking tokens that meet the indicator definition.
+#' @param eligible Logical vector marking tokens in the indicator population.
+#' @param prefix Column-name prefix for the three statistics.
+#' @returns A \code{data.table} with one row per document and columns
+#'   \code{<prefix>_n}, \code{<prefix>_mean}, and \code{<prefix>_sd}.
+#' @keywords internal
+.verb_indicator_summary <- function(dt, hit, eligible, prefix) {
+  result <- unique(dt[, .(doc_id)])
+  observed <- data.table(doc_id = dt$doc_id, hit = hit, eligible = eligible)
+  stats <- observed[eligible == TRUE, .(
+    n = .N,
+    mean = mean(hit),
+    sd = if (.N > 1L) sd(as.numeric(hit)) else NA_real_
+  ), by = doc_id]
+  result <- merge(result, stats, by = "doc_id", all.x = TRUE, sort = FALSE)
+  result[is.na(n), n := 0L]
+  setnames(result, c("n", "mean", "sd"),
+           paste0(prefix, c("_n", "_mean", "_sd")))
+  return(result)
+}
+
+#' Compute verb tense and mood features per document
 #'
-#' @returns A list with two elements:
-#'   \describe{
-#'     \item{counts}{A \code{data.table} with one row per document and one
-#'       column per tense/mood count.}
-#'     \item{proportions}{A \code{data.table} with one row per document and
-#'       one column per tense/mood proportion (count divided by word_count).}
-#'   }
+#' Preserves the existing tag counts and word-count proportions, and adds
+#' document-level distribution summaries of binary verb indicators.
+#'
+#' @param parsed_corpus A \code{data.table} of parser output after
+#'   \code{post_process_lexicon}, with \code{doc_id}, \code{feats},
+#'   \code{upos}, and \code{compte} columns.
+#' @param counts A \code{data.table} with \code{doc_id} and
+#'   \code{word_count}, used for the existing proportions.
+#'
+#' @details
+#' Existing counts inspect all rows, including tokens without a verb UPOS tag;
+#' their proportions divide by \code{word_count}. The added
+#' \code{present_indicative_finite_count} counts countable VERB/AUX tokens
+#' jointly tagged \code{Mood=Ind}, \code{Tense=Pres}, and
+#' \code{VerbForm=Fin}; its \code{_prop} also divides by word count.
+#'
+#' Summary means and sample SDs use one binary observation per countable
+#' VERB/AUX token bearing the relevant UD attribute. Present, past, and future
+#' use tokens bearing \code{Tense}; mood indicators use tokens bearing
+#' \code{Mood}; infinitive uses tokens bearing \code{VerbForm}. Participles
+#' require \code{Tense} and \code{VerbForm}, and finite indicative forms
+#' require all three attributes. Missing required attributes are excluded
+#' from that indicator's population, not scored as absence. Zero eligible
+#' tokens yield \code{n=0} and missing mean/SD; a singleton yields missing
+#' SD; a constant stream of at least two yields SD zero. These summaries are
+#' local UD-tag statistics, not exact FABRA verb-group measures.
+#'
+#' @returns A list of three \code{data.table}s, each with one row per document:
+#'   \code{counts} (existing counts plus joint present-indicative-finite
+#'   count), \code{proportions} (counts divided by word count), and
+#'   \code{summaries} (\code{_n}, \code{_mean}, \code{_sd} per indicator).
+#' @citation_type "derived" (document-wise UD-tag indicator summaries)
+#' @export
 verb_tense_features <- function(parsed_corpus, counts) {
   if (!is.data.table(parsed_corpus)) {
     stop("parsed_corpus must be a data.table.")
   }
-  dt <- copy(parsed_corpus)
-  
   if (!is.data.table(counts)) {
     stop("Counts must be a data.table.")
   }
-  
+  required <- c("doc_id", "feats", "upos", "compte")
+  if (!all(required %in% names(parsed_corpus))) {
+    stop("parsed_corpus missing columns: ",
+         paste(setdiff(required, names(parsed_corpus)), collapse = ", "))
+  }
+  dt <- copy(parsed_corpus)
+  verb <- dt$compte == TRUE & dt$upos %in% c("VERB", "AUX")
+  has <- function(key, value = NULL) {
+    pattern <- if (is.null(value)) {
+      paste0("(^|\\|)", key, "=[^|]+(\\||$)")
+    } else {
+      paste0("(^|\\|)", key, "=", value, "(\\||$)")
+    }
+    return(!is.na(dt$feats) & grepl(pattern, dt$feats))
+  }
+  tense <- has("Tense")
+  mood <- has("Mood")
+  form <- has("VerbForm")
+  finite <- has("VerbForm", "Fin")
+  present <- has("Tense", "Pres")
+  past <- has("Tense", "Past")
+  future <- has("Tense", "Fut")
+  conditional <- has("Mood", "Cnd")
+  subjunctive <- has("Mood", "Sub")
+  indicative <- has("Mood", "Ind")
+  imperative <- has("Mood", "Imp")
+  infinitive <- has("VerbForm", "Inf")
+  participle <- has("VerbForm", "Part")
+  joint <- verb & present & indicative & finite
+
   results_n <- dt[, .(
     present_count = sum(grepl("Tense=Pres", feats), na.rm = TRUE),
     past_count = sum(grepl("Tense=Past", feats), na.rm = TRUE),
@@ -130,34 +200,59 @@ verb_tense_features <- function(parsed_corpus, counts) {
     indicative_count = sum(grepl("Mood=Ind", feats), na.rm = TRUE),
     imperative_count = sum(grepl("Mood=Imp", feats), na.rm = TRUE),
     infinitive_count = sum(grepl("VerbForm=Inf", feats), na.rm = TRUE),
-    past_participle_count = sum(grepl("VerbForm=Part", feats) & grepl("Tense=Past", feats), na.rm = TRUE),
-    present_participle_count = sum(grepl("VerbForm=Part", feats) & grepl("Tense=Pres", feats), na.rm = TRUE),
-    past_simple_count = sum(grepl("Tense=Past", feats) & grepl("Mood=Ind", feats) & grepl("VerbForm=Fin", feats), na.rm = TRUE)
+    past_participle_count = sum(grepl("VerbForm=Part", feats) &
+                                 grepl("Tense=Past", feats), na.rm = TRUE),
+    present_participle_count = sum(grepl("VerbForm=Part", feats) &
+                                    grepl("Tense=Pres", feats), na.rm = TRUE),
+    past_simple_count = sum(grepl("Tense=Past", feats) &
+                              grepl("Mood=Ind", feats) &
+                              grepl("VerbForm=Fin", feats), na.rm = TRUE)
   ), by = doc_id]
-  
-  # Long format
-  results_p <- melt(results_n, id.vars = "doc_id", variable.name = "feature", value.name = "count")
-  
-  # Merge word counts
-  results_p <- merge(results_p, counts[, .(doc_id, word_count)], by = "doc_id", all.x = TRUE)
-  
-  # Compute proportions
+  results_n[, present_indicative_finite_count :=
+              dt[, .(doc_id, joint = joint)][,
+                  .(n = sum(joint)), by = doc_id]$n]
+
+  results_p <- melt(results_n, id.vars = "doc_id",
+                    variable.name = "feature", value.name = "count")
+  results_p <- merge(results_p, counts[, .(doc_id, word_count)],
+                     by = "doc_id", all.x = TRUE)
   results_p[, proportion := count / word_count]
-  
-  # Wide format
-  results_p <- dcast(results_p, doc_id + word_count ~ feature, value.var = "proportion")
-  
-  # Rename columns from *_count → *_prop
-  setnames(
-    results_p,
-    old = setdiff(names(results_p), c("doc_id", "word_count")),
-    new = gsub("_count$", "_prop", setdiff(names(results_p), c("doc_id", "word_count")))
-  )
-  
-  # we no longer need the word_count column in results_p
+  results_p <- dcast(results_p, doc_id + word_count ~ feature,
+                     value.var = "proportion")
+  setnames(results_p,
+           old = setdiff(names(results_p), c("doc_id", "word_count")),
+           new = gsub("_count$", "_prop",
+                      setdiff(names(results_p), c("doc_id", "word_count"))))
   results_p[, word_count := NULL]
 
-  return(list(counts = results_n, proportions = results_p))
+  indicators <- list(
+    present = list(hit = present, eligible = verb & tense),
+    past = list(hit = past, eligible = verb & tense),
+    future = list(hit = future, eligible = verb & tense),
+    conditional = list(hit = conditional, eligible = verb & mood),
+    subjunctive = list(hit = subjunctive, eligible = verb & mood),
+    indicative = list(hit = indicative, eligible = verb & mood),
+    imperative = list(hit = imperative, eligible = verb & mood),
+    infinitive = list(hit = infinitive, eligible = verb & form),
+    past_participle = list(hit = past & participle,
+                           eligible = verb & tense & form),
+    present_participle = list(hit = present & participle,
+                              eligible = verb & tense & form),
+    past_simple = list(hit = past & indicative & finite,
+                       eligible = verb & tense & mood & form),
+    present_indicative_finite = list(hit = joint,
+                                     eligible = verb & tense & mood & form)
+  )
+  summaries <- unique(dt[, .(doc_id)])
+  for (feature in names(indicators)) {
+    indicator <- indicators[[feature]]
+    stats <- .verb_indicator_summary(dt, indicator$hit,
+                                     indicator$eligible, feature)
+    summaries <- merge(summaries, stats, by = "doc_id", sort = FALSE)
+  }
+
+  return(list(counts = results_n, proportions = results_p,
+              summaries = summaries))
 }
 
 #' Sentence-length variability within documents
